@@ -1,5 +1,5 @@
 import type { CSSProperties, Ref } from 'react';
-import type { RouteInfo, UpcomingStop, VehicleDetail } from './api';
+import type { ArrivalDirection, RouteInfo, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
@@ -17,6 +17,10 @@ interface Props {
   stationTransfers: string[];
   showTransfers: boolean;
   onShowTransfers: (show: boolean) => void;
+  /** The line's vehicles on their way to the picked station, both ways; null while loading. */
+  arrivals: ArrivalDirection[] | null;
+  /** Tapping one of them opens it. */
+  onArrival: (vehicleId: string) => void;
   onFollow: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
@@ -45,6 +49,58 @@ function Transfers({ lines }: { lines: RouteInfo[] }) {
   );
 }
 
+function Arrivals({
+  directions,
+  selectedId,
+  noun,
+  onPick,
+}: {
+  directions: ArrivalDirection[] | null;
+  selectedId: string;
+  noun: string;
+  onPick: (vehicleId: string) => void;
+}) {
+  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  if (!directions) return <p className="muted small">Finding the {nouns} on the way…</p>;
+  if (!directions.length) return <p className="muted small">No {nouns} on the way here right now.</p>;
+  return (
+    <div className="arrivals">
+      {directions.map((d) => (
+        <section key={d.arrivals[0].vehicle.id} aria-label={`To ${d.destinations.join(', ')}`}>
+          <h3 className="arrivals-heading">
+            {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
+          </h3>
+          <ol className="arrival-list">
+            {d.arrivals.map(({ vehicle: v, time, stopsAway }) => {
+              const stop = v.stopName && tidyStopName(v.stopName);
+              const where =
+                v.status === 'STOPPED_AT' && stop ? `At ${stop}` : stop ? `Heading to ${stop}` : 'On the way';
+              const away = stopsAway === 0 ? 'Next stop' : `${stopsAway} stop${stopsAway === 1 ? '' : 's'} away`;
+              const current = v.id === selectedId;
+              return (
+                <li key={v.id}>
+                  <button
+                    className={`arrival${current ? ' arrival-current' : ''}`}
+                    aria-current={current ? 'true' : undefined}
+                    onClick={() => onPick(v.id)}
+                  >
+                    <span className={`source-dot source-${v.source}`} aria-hidden="true" />
+                    <span className="arrival-text">
+                      <span className="arrival-where">{where}</span>
+                      <span className="muted small">{current ? `This ${noun} · ${away}` : away}</span>
+                    </span>
+                    <span className="eta">{formatEta(time)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function VehiclePanel({
   detail,
   routes,
@@ -53,6 +109,8 @@ export function VehiclePanel({
   stationTransfers,
   showTransfers,
   onShowTransfers,
+  arrivals,
+  onArrival,
   onFollow,
   onStop,
   onClose,
@@ -97,23 +155,31 @@ export function VehiclePanel({
 
       {station && (
         <section className="station-card" aria-label="Picked station">
-          <div className="station-card-text">
-            <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
-            {stationTransfers.length > 0 ? (
-              <Transfers lines={transferLines(stationTransfers, routes)} />
-            ) : (
-              <span className="muted small">No transfers here</span>
+          <div className="station-card-top">
+            <div className="station-card-text">
+              <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
+              {stationTransfers.length > 0 ? (
+                <Transfers lines={transferLines(stationTransfers, routes)} />
+              ) : (
+                <span className="muted small">No transfers here</span>
+              )}
+            </div>
+            {stationTransfers.length > 0 && (
+              <button
+                className="chip follow"
+                aria-pressed={showTransfers}
+                onClick={() => onShowTransfers(!showTransfers)}
+              >
+                {showTransfers ? 'Hide transfer lines' : 'Show transfer lines'}
+              </button>
             )}
           </div>
-          {stationTransfers.length > 0 && (
-            <button
-              className="chip follow"
-              aria-pressed={showTransfers}
-              onClick={() => onShowTransfers(!showTransfers)}
-            >
-              {showTransfers ? 'Hide transfer lines' : 'Show transfer lines'}
-            </button>
-          )}
+          <Arrivals
+            directions={arrivals}
+            selectedId={vehicle.id}
+            noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+            onPick={onArrival}
+          />
         </section>
       )}
 
