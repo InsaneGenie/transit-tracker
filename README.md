@@ -6,8 +6,7 @@ A live map of buses and trains across New York State, for commuters. New Jersey 
 
 1. **Live data** (done): collect real-time feeds and serve every vehicle's position from one API.
 2. **The map** (done): moving dots for every vehicle, more detail when zoomed in, tap a dot for its route and next stops.
-3. **Trip search**: from/to directions using OpenTripPlanner.
-4. **Launch**: public website, then an iPhone/Android app.
+3. **Launch**: public website, then an iPhone/Android app.
 
 ## Running the server
 
@@ -37,7 +36,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. Dots are colored by line. Zoom in to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
+Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
 
 ## Where the positions come from
 

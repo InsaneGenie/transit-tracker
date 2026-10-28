@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Vehicle } from './api';
-import { colorFor, formatEta, interpolate, textColorFor, toFeatureCollection } from './vehicles';
+import {
+  colorFor,
+  containsBounds,
+  formatEta,
+  interpolate,
+  padBounds,
+  textColorFor,
+  toFeatureCollection,
+} from './vehicles';
 
 const v = (over: Partial<Vehicle> = {}): Vehicle => ({
   id: 'mta-subway:1',
@@ -53,5 +61,14 @@ describe('formatEta', () => {
     expect(formatEta(1000 + 20, 1000)).toBe('Now');
     expect(formatEta(1000 + 5 * 60, 1000)).toBe('5 min');
     expect(formatEta(undefined)).toBe('');
+  });
+});
+
+describe('bounds', () => {
+  it('pads on every side and checks containment', () => {
+    const padded = padBounds([-74, 40, -73, 41], 0.5);
+    expect(padded).toEqual([-74.5, 39.5, -72.5, 41.5]);
+    expect(containsBounds(padded, [-74.2, 40.1, -73.1, 41.2])).toBe(true);
+    expect(containsBounds(padded, [-75, 40, -73, 41])).toBe(false);
   });
 });
