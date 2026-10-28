@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type VehicleDetail } from './api';
 import { Legend } from './Legend';
+import { LinePanel } from './LinePanel';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
-import { MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
+import { displayName, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
@@ -29,10 +30,38 @@ function save(key: string, value: string) {
   }
 }
 
+/** A line opened from a station's transfers. `back` is the vehicle and station it was opened from. */
+type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null } };
+
+/** A line's whole route with its stations. Retries while the server may still be starting. */
+function useRouteLine(key: string | null): RouteLine | null {
+  const [line, setLine] = useState<RouteLine | null>(null);
+  useEffect(() => {
+    setLine(null);
+    if (!key) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRouteLines([key], controller.signal)
+        .then((r) => {
+          setLine(r.lines[0] ?? null);
+          if (!r.lines.length) timer = setTimeout(load, 15_000);
+        })
+        .catch((err: Error) => {
+          if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [key]);
+  return line;
+}
+
 export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>(savedLines);
-  const [routeLine, setRouteLine] = useState<RouteLine | null>(null);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -62,28 +91,12 @@ export function App() {
 
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
 
-  // The whole route of the tapped vehicle's line, with its stations. Retry while the server may still be starting.
+  // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
-  useEffect(() => {
-    setRouteLine(null);
-    if (!selectedLine) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = () =>
-      fetchRouteLines([selectedLine], controller.signal)
-        .then((r) => {
-          setRouteLine(r.lines[0] ?? null);
-          if (!r.lines.length) timer = setTimeout(load, 15_000);
-        })
-        .catch((err: Error) => {
-          if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
-        });
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [selectedLine]);
+  const routeLine = useRouteLine(selectedLine);
+  // A line opened from a station's transfers, and where Back returns to.
+  const [viewLine, setViewLine] = useState<ViewLine | null>(null);
+  const viewRoute = useRouteLine(viewLine?.key ?? null);
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
@@ -115,10 +128,11 @@ export function App() {
   // Every vehicle of the line on its way to the picked station, both ways, kept fresh.
   useEffect(() => {
     setArrivals(null);
-    if (!station || !selectedLine) return;
+    const line = selectedLine ?? viewLine?.key;
+    if (!station || !line) return;
     const controller = new AbortController();
     const load = () =>
-      fetchArrivals(selectedLine, station, controller.signal)
+      fetchArrivals(line, station, controller.signal)
         .then((r) => setArrivals(r.directions))
         .catch(() => {});
     void load();
@@ -127,7 +141,7 @@ export function App() {
       controller.abort();
       clearInterval(timer);
     };
-  }, [station?.lat, station?.lon, selectedLine]);
+  }, [station?.lat, station?.lon, selectedLine, viewLine?.key]);
 
   // The lines picked in the Lines tab are drawn as soon as they're picked.
   useEffect(() => {
@@ -154,13 +168,15 @@ export function App() {
 
   // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
   const otherLines = useMemo(() => {
+    // A line opened on its own is shown alone.
+    if (viewLine && !detail) return [];
     const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
-  }, [filterRoutes, transferRoutes]);
+  }, [filterRoutes, transferRoutes, viewLine, detail]);
 
   // Stations tapped on the map arrive without their transfers; the line or the stop list knows them.
   const pickStation = (stop: Omit<Station, 'at' | 'transfers'>) => {
-    const known = [...(routeLine?.stops ?? []), ...(detail?.upcoming ?? [])].find(
+    const known = [...(routeLine?.stops ?? []), ...(viewRoute?.stops ?? []), ...(detail?.upcoming ?? [])].find(
       (s) => s.transfers && sameStation(s, stop),
     );
     setFollowing(false);
@@ -195,6 +211,41 @@ export function App() {
     if (id && window.matchMedia('(max-width: 640px)').matches) setLegendOpen(false);
   };
 
+  // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
+  const openLine = (key: string) => {
+    const back = detail
+      ? {
+          vehicleId: detail.vehicle.id,
+          label: `the ${displayName(detail.vehicle.routeName ?? detail.vehicle.routeId ?? '')} ${detail.vehicle.mode === 'bus' ? 'bus' : 'train'}`,
+          station,
+        }
+      : viewLine?.back;
+    setViewLine({ key, back });
+    setStation(null);
+    setShowTransfers(false);
+    select(null);
+  };
+
+  const closeLine = () => {
+    const back = viewLine?.back;
+    setViewLine(null);
+    setStation(null);
+    if (back) {
+      select(back.vehicleId);
+      // Show the station it was opened from, not the vehicle.
+      setFollowing(false);
+      setRestoreStation(back.station);
+    }
+  };
+
+  // Once the vehicle's panel is back, pick its station again, so the map centers it beside the panel.
+  const [restoreStation, setRestoreStation] = useState<Station | null>(null);
+  useEffect(() => {
+    if (!restoreStation || !detail) return;
+    setStation({ ...restoreStation, at: Date.now() });
+    setRestoreStation(null);
+  }, [detail, restoreStation]);
+
   // Keep the open vehicle's position, stops and arrival times fresh.
   useEffect(() => {
     setDetail(null);
@@ -222,9 +273,10 @@ export function App() {
     <div className="app">
       <MapView
         theme={theme}
-        modes={modes}
-        lines={lines}
-        routeLine={routeLine}
+        modes={viewLine && viewRoute && !modes.includes(viewRoute.mode) ? [...modes, viewRoute.mode] : modes}
+        lines={viewLine ? [viewLine.key] : lines}
+        routeLine={detail ? routeLine : viewRoute}
+        focusLine={viewRoute}
         otherLines={otherLines}
         station={station}
         onStation={pickStation}
@@ -278,6 +330,29 @@ export function App() {
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
       </div>
 
+      {!detail && viewLine && (
+        <LinePanel
+          ref={panelRef}
+          info={routesByKey.get(viewLine.key)}
+          line={viewRoute}
+          routes={routesByKey}
+          station={station}
+          arrivals={arrivals}
+          backLabel={viewLine.back?.label}
+          onBack={closeLine}
+          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
+          onArrival={(id) => {
+            keepStation.current = true;
+            select(id);
+          }}
+          onLine={openLine}
+          onClose={() => {
+            setViewLine(null);
+            setStation(null);
+          }}
+        />
+      )}
+
       {detail && (
         <VehiclePanel
           ref={panelRef}
@@ -294,6 +369,7 @@ export function App() {
             keepStation.current = true;
             select(id);
           }}
+          onLine={openLine}
           onShowTransfers={setShowTransfers}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
           onClose={() => select(null)}
