@@ -1,1 +1,40 @@
-﻿# Transit Tracker
+# Transit Tracker
+
+A live map of buses and trains across New York State, for commuters. New Jersey and other states come later.
+
+## Plan
+
+1. **Live data** (this step): collect real-time feeds and serve every vehicle's position from one API.
+2. **The map**: moving dots for every vehicle, more detail when zoomed in, tap a dot for its route and next stops.
+3. **Trip search**: from/to directions using OpenTripPlanner.
+4. **Launch**: public website, then an iPhone/Android app.
+
+## Running the server
+
+Needs [Node.js](https://nodejs.org) 22 or newer.
+
+```powershell
+cd server
+npm install
+copy .env.example .env   # then add your MTA Bus Time key to .env
+npm start
+```
+
+The first start downloads the MTA schedules (about a minute). Then open:
+
+- http://localhost:3000/api/vehicles: every vehicle. Add `?bbox=west,south,east,north` to get only what's on screen, or `?mode=subway,rail,bus`.
+- http://localhost:3000/api/health: whether each feed is working.
+
+Run the tests with `npm test`.
+
+## Where the positions come from
+
+| Feed | Source | Position |
+| --- | --- | --- |
+| MTA subway | MTA GTFS-Realtime, no key needed | Estimated |
+| LIRR, Metro-North | MTA GTFS-Realtime, no key needed | GPS when the feed has it, otherwise estimated |
+| MTA buses | MTA Bus Time, free key in `MTA_BUSTIME_KEY` | GPS |
+
+Subway trains don't report GPS. The server takes each train's predicted arrival at its next stop, works out when it left the stop before, and places it that far along the real track shape from the MTA schedule. Positions are recalculated on every request, so trains keep moving between feed updates. Each vehicle has `"source": "gps"` or `"source": "estimated"` so the map can show the difference.
+
+To add an agency, add an entry to `server/src/feeds.ts`.
