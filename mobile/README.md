@@ -15,8 +15,9 @@ Expo's cloud service, **EAS**, builds and signs the app on its own Macs and uplo
 
 ## 1. Try it on your iPhone (free, about 10 minutes)
 
-1. On your iPhone, install **Expo Go** from the App Store.
-2. On your PC, in PowerShell:
+1. Make a free Expo account at https://expo.dev/signup.
+2. On your iPhone, install **Expo Go** from the App Store, open it, and log in with that account.
+3. On your PC, in PowerShell:
 
    ```powershell
    cd transit-tracker
@@ -24,10 +25,13 @@ Expo's cloud service, **EAS**, builds and signs the app on its own Macs and uplo
    git pull
    cd mobile
    npm install
+   npx expo login
    npx expo start
    ```
 
-3. A QR code appears in PowerShell. Open the iPhone **Camera**, point it at the code, and tap the banner. The app opens inside Expo Go.
+   `npx expo login` is only needed the first time. Expo Go won't open the app unless the same account is signed in on both the PC and the phone.
+
+4. A QR code appears in PowerShell. Open the iPhone **Camera**, point it at the code, and tap the banner. The app opens inside Expo Go.
 
 Your phone and PC need to be on the same Wi-Fi. If the phone can't connect (Windows Firewall often blocks it), stop it with Ctrl+C and run `npx expo start --tunnel` instead.
 
@@ -36,7 +40,7 @@ The app uses the live server at `https://transit-tracker-vbfs.onrender.com`. If 
 ## 2. Make the accounts (once)
 
 1. **Apple Developer Program.** Go to https://developer.apple.com/programs/enroll/, sign in with your Apple ID (it needs two-factor authentication on), enroll as an **Individual**, and pay the $99. Approval usually takes a day or two; you'll get an email. As an individual, your own name appears on the App Store as the seller.
-2. **Expo.** Sign up at https://expo.dev/signup.
+2. **Expo.** Use the account from step 1.
 3. In PowerShell:
 
    ```powershell
