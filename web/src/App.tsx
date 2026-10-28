@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchRoutes, fetchVehicleDetail, type Mode, type RouteInfo, type VehicleDetail } from './api';
 import { Legend } from './Legend';
 import { MapView, SELECTED_POLL_MS, type MapInfo } from './MapView';
@@ -29,6 +29,7 @@ export function App() {
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [info, setInfo] = useState<MapInfo>({ count: 0 });
   const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
+  const panelRef = useRef<HTMLElement>(null);
 
   // Follow sunrise and sunset.
   useEffect(() => {
@@ -110,10 +111,14 @@ export function App() {
         onSelect={select}
         onFollowChange={setFollowing}
         onUpdate={setInfo}
+        panelRef={panelRef}
       />
 
       <div className="toolbar">
-        <h1>NY Transit Live</h1>
+        <h1>
+          <span className="brand-dot" aria-hidden="true" />
+          NY Transit Live
+        </h1>
         <div className="filters" role="group" aria-label="Show">
           {ALL_MODES.map((mode) => (
             <button
@@ -122,6 +127,7 @@ export function App() {
               aria-pressed={modes.includes(mode)}
               onClick={() => toggle(mode)}
             >
+              <span className="chip-dot" aria-hidden="true" />
               {MODE_LABELS[mode]}
             </button>
           ))}
@@ -139,12 +145,13 @@ export function App() {
         <Legend routes={routes} modes={modes} chosen={lines} onChange={setLines} onClose={() => setLegendOpen(false)} />
       )}
 
-      <div className={`status${info.error ? ' status-error' : ''}`}>
+      <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
       </div>
 
       {detail && (
         <VehiclePanel
+          ref={panelRef}
           detail={detail}
           following={following}
           onFollow={() => setFollowing((f) => !f)}

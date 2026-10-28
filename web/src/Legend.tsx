@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Mode, RouteInfo } from './api';
+import { CloseButton } from './CloseButton';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from './vehicles';
 
 const MAX_BUSES = 60;
@@ -49,6 +50,7 @@ export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
 
   return (
     <aside className="legend" aria-label="Lines">
+      <div className="sheet-handle" aria-hidden="true" />
       <header className="legend-header">
         <strong>Lines</strong>
         {chosen.length > 0 && (
@@ -56,11 +58,9 @@ export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
             Show all
           </button>
         )}
-        <button className="close" onClick={onClose} aria-label="Close">
-          ×
-        </button>
+        <CloseButton onClick={onClose} />
       </header>
-      <p className="muted small">
+      <p className="muted small legend-hint">
         {chosen.length ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.` : 'Tap lines to show only those.'}
       </p>
 

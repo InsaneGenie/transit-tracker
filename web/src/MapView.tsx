@@ -8,7 +8,7 @@ import {
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { fetchVehicles, type Bounds, type Mode, type Vehicle, type VehicleDetail } from './api';
 import type { Theme } from './theme';
 import { colorFor, interpolate, routeKey, toFeatureCollection } from './vehicles';
@@ -51,6 +51,8 @@ interface Props {
   onSelect: (id: string | null) => void;
   onFollowChange: (following: boolean) => void;
   onUpdate: (info: MapInfo) => void;
+  /** The vehicle panel, so a followed vehicle is kept in the part of the map it doesn't cover. */
+  panelRef: RefObject<HTMLElement | null>;
 }
 
 /** A small arrow drawn once and tinted per vehicle, pointing the way it is heading. */
@@ -222,6 +224,18 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   });
 }
 
+/**
+ * How far the middle of the uncovered map sits from the middle of the whole map, in pixels: up when the
+ * panel is a sheet along the bottom (phones), right when it sits on the left.
+ */
+function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, number] {
+  if (!panel) return [0, 0];
+  const c = map.getContainer().getBoundingClientRect();
+  const p = panel.getBoundingClientRect();
+  if (p.width >= c.width - 1) return [0, -Math.max(0, c.bottom - p.top) / 2];
+  return [Math.max(0, p.right - c.left) / 2, 0];
+}
+
 export function MapView(props: Props) {
   const { theme, modes, lines, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
@@ -338,7 +352,11 @@ export function MapView(props: Props) {
         const [pos] = from ? interpolate(new Map([[to.id, from]]), [to], (performance.now() - start) / SELECTED_POLL_MS) : [to];
         state.current.selected = toFeatureCollection([pos]);
         (map.getSource('selected-vehicle') as GeoJSONSource | undefined)?.setData(state.current.selected);
-        if (state.current.following && !map.isZooming() && performance.now() > state.current.easeUntil) map.setCenter([pos.lon, pos.lat]);
+        if (state.current.following && !map.isZooming() && performance.now() > state.current.easeUntil) {
+          const [dx, dy] = uncoveredOffset(map, callbacks.current.panelRef.current);
+          const at = map.project([pos.lon, pos.lat]);
+          map.setCenter(dx || dy ? map.unproject([at.x - dx, at.y - dy]) : [pos.lon, pos.lat]);
+        }
       }
       selectedFrame = requestAnimationFrame(drawSelected);
     };
@@ -461,7 +479,7 @@ export function MapView(props: Props) {
     const pos = glide.current.to;
     if (following && pos) {
       state.current.easeUntil = performance.now() + 650;
-      map.easeTo({ center: [pos.lon, pos.lat], duration: 600 });
+      map.easeTo({ center: [pos.lon, pos.lat], offset: uncoveredOffset(map, props.panelRef.current), duration: 600 });
     }
   }, [following, selectedId]);
 
