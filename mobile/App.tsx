@@ -15,11 +15,13 @@ import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'reac
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colorFor, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
+  fetchArrivals,
   fetchRouteLines,
   fetchRoutes,
   fetchVehicleDetail,
   fetchVehicles,
   NotFoundError,
+  type ArrivalDirection,
   type Mode,
   type RouteInfo,
   type RouteLine,
@@ -70,6 +72,9 @@ function TransitMap() {
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
+  const [arrivals, setArrivals] = useState<ArrivalDirection[] | null>(null);
+  // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
+  const keepStation = useRef(false);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [linesOpen, setLinesOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
@@ -122,11 +127,33 @@ function TransitMap() {
     };
   }, [selectedLine, active]);
 
-  // A picked station belongs to the vehicle it was picked for.
+  // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
+    if (keepStation.current) {
+      keepStation.current = false;
+      return;
+    }
     setStation(null);
     setShowTransfers(false);
   }, [selectedId]);
+
+  // Every vehicle of the line on its way to the picked station, both ways, kept fresh.
+  useEffect(() => {
+    setArrivals(null);
+    if (!station || !selectedLine || !active) return;
+    const controller = new AbortController();
+    const place = { lat: station.lat, lon: station.lon };
+    const load = () =>
+      fetchArrivals(selectedLine, place, controller.signal)
+        .then((r) => setArrivals(r.directions))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, SELECTED_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [station?.lat, station?.lon, selectedLine, active]);
 
   // The lines you can change to at the picked station, without express twins (7X beside the 7).
   const stationTransfers = useMemo(
@@ -504,6 +531,12 @@ function TransitMap() {
             stationTransfers={stationTransfers}
             showTransfers={showTransfers}
             onShowTransfers={setShowTransfers}
+            arrivals={arrivals}
+            onArrival={(id) => {
+              if (id === selectedId) return;
+              keepStation.current = true;
+              select(id);
+            }}
             onStop={pickStation}
             onClose={() => select(null)}
           />

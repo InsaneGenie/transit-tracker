@@ -1,6 +1,15 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
-import type { RouteInfo, Station, UpcomingStop, VehicleDetail } from './api';
+import {
+  colorFor,
+  displayName,
+  formatEta,
+  MODE_LABELS,
+  sameStation,
+  textColorFor,
+  tidyStopName,
+  transferLines,
+} from '../../web/src/vehicles';
+import type { ArrivalDirection, RouteInfo, Station, UpcomingStop, VehicleDetail } from './api';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
@@ -16,6 +25,10 @@ interface Props {
   stationTransfers: string[];
   showTransfers: boolean;
   onShowTransfers: (show: boolean) => void;
+  /** The line's vehicles on their way to the picked station, both ways; null while loading. */
+  arrivals: ArrivalDirection[] | null;
+  /** Tapping one of them opens it. */
+  onArrival: (vehicleId: string) => void;
   dark: boolean;
   bottomInset: number;
   onFollow: () => void;
@@ -47,6 +60,66 @@ function Transfers({ lines, muted }: { lines: RouteInfo[]; muted: string }) {
 }
 
 /** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
+/** The line's vehicles still heading to the picked station, by direction, soonest first. */
+function Arrivals({
+  directions,
+  selectedId,
+  noun,
+  dark,
+  onPick,
+}: {
+  directions: ArrivalDirection[] | null;
+  selectedId: string;
+  noun: string;
+  dark: boolean;
+  onPick: (vehicleId: string) => void;
+}) {
+  const c = palette(dark);
+  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  if (!directions) return <Text style={[styles.muted, { color: c.muted }]}>Finding the {nouns} on the way…</Text>;
+  if (!directions.length)
+    return <Text style={[styles.muted, { color: c.muted }]}>No {nouns} on the way here right now.</Text>;
+  return (
+    <View style={styles.arrivals}>
+      {directions.map((d) => (
+        <View key={d.arrivals[0].vehicle.id} accessibilityLabel={`To ${d.destinations.join(', ')}`}>
+          <Text style={[styles.arrivalsHeading, { color: c.muted }]}>
+            {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
+          </Text>
+          {d.arrivals.map(({ vehicle: v, time, stopsAway }) => {
+            const stop = v.stopName && tidyStopName(v.stopName);
+            const where = v.status === 'STOPPED_AT' && stop ? `At ${stop}` : stop ? `Heading to ${stop}` : 'On the way';
+            const away = stopsAway === 0 ? 'Next stop' : `${stopsAway} stop${stopsAway === 1 ? '' : 's'} away`;
+            const current = v.id === selectedId;
+            return (
+              <Pressable
+                key={v.id}
+                onPress={() => onPick(v.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: current }}
+                style={({ pressed }) => [
+                  styles.arrival,
+                  current && { backgroundColor: c.border },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.sourceDot, { color: c.muted }]}>{v.source === 'gps' ? '●' : '○'}</Text>
+                <View style={styles.stopText}>
+                  <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
+                    {where}
+                  </Text>
+                  <Text style={[styles.small, { color: c.muted }]}>{current ? `This ${noun} · ${away}` : away}</Text>
+                </View>
+                <Text style={[styles.eta, { color: c.muted }]}>{formatEta(time)}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function VehiclePanel({
   detail,
   routes,
@@ -55,6 +128,8 @@ export function VehiclePanel({
   stationTransfers,
   showTransfers,
   onShowTransfers,
+  arrivals,
+  onArrival,
   dark,
   bottomInset,
   onFollow,
@@ -97,7 +172,11 @@ export function VehiclePanel({
           onPress={onFollow}
           accessibilityRole="button"
           accessibilityState={{ selected: following }}
-          style={[styles.follow, { borderColor: c.border }, following && { backgroundColor: c.accent, borderColor: c.accent }]}
+          style={[
+            styles.follow,
+            { borderColor: c.border },
+            following && { backgroundColor: c.accent, borderColor: c.accent },
+          ]}
         >
           <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
             {following ? 'Following' : 'Follow'}
@@ -105,60 +184,79 @@ export function VehiclePanel({
         </Pressable>
       </View>
 
-      {station && (
-        <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">
-          <View style={styles.stationText}>
-            <Text style={[styles.titleText, { color: c.text }]} numberOfLines={1}>
-              {station.name ? tidyStopName(station.name) : 'Station'}
-            </Text>
-            {stationTransfers.length > 0 ? (
-              <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} />
-            ) : (
-              <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
-            )}
-          </View>
-          {stationTransfers.length > 0 && (
-            <Pressable
-              onPress={() => onShowTransfers(!showTransfers)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: showTransfers }}
-              style={[styles.follow, { borderColor: c.border }, showTransfers && { backgroundColor: c.accent, borderColor: c.accent }]}
-            >
-              <Text style={[styles.followText, { color: showTransfers ? '#ffffff' : c.text }]}>
-                {showTransfers ? 'Hide transfers' : 'Show transfers'}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-
-      {upcoming.length > 0 ? (
-        <ScrollView style={styles.stops}>
-          {upcoming.slice(0, MAX_STOPS).map((s, i) => {
-            const chosen = station !== null && sameStation(s, station);
-            return (
-              <Pressable
-                key={s.stopId}
-                style={({ pressed }) => [styles.stop, chosen && { backgroundColor: `${color}26` }, pressed && styles.pressed]}
-                disabled={s.lat === undefined || s.lon === undefined}
-                onPress={() => onStop(s)}
-                accessibilityRole="button"
-              >
-                <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
-                <View style={styles.stopText}>
-                  <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
-                    {s.name ? tidyStopName(s.name) : s.stopId}
+      <ScrollView style={styles.body}>
+        {station && (
+          <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">
+            <View style={styles.stationTop}>
+              <View style={styles.stationText}>
+                <Text style={[styles.titleText, { color: c.text }]} numberOfLines={1}>
+                  {station.name ? tidyStopName(station.name) : 'Station'}
+                </Text>
+                {stationTransfers.length > 0 ? (
+                  <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} />
+                ) : (
+                  <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
+                )}
+              </View>
+              {stationTransfers.length > 0 && (
+                <Pressable
+                  onPress={() => onShowTransfers(!showTransfers)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: showTransfers }}
+                  style={[
+                    styles.follow,
+                    { borderColor: c.border },
+                    showTransfers && { backgroundColor: c.accent, borderColor: c.accent },
+                  ]}
+                >
+                  <Text style={[styles.followText, { color: showTransfers ? '#ffffff' : c.text }]}>
+                    {showTransfers ? 'Hide transfers' : 'Show transfers'}
                   </Text>
-                  <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
-                </View>
-                <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      ) : (
-        <Text style={[styles.muted, { color: c.muted }]}>No upcoming stops reported for this vehicle.</Text>
-      )}
+                </Pressable>
+              )}
+            </View>
+            <Arrivals
+              directions={arrivals}
+              selectedId={vehicle.id}
+              noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+              dark={dark}
+              onPick={onArrival}
+            />
+          </View>
+        )}
+
+        {upcoming.length > 0 ? (
+          <View>
+            {upcoming.slice(0, MAX_STOPS).map((s, i) => {
+              const chosen = station !== null && sameStation(s, station);
+              return (
+                <Pressable
+                  key={s.stopId}
+                  style={({ pressed }) => [
+                    styles.stop,
+                    chosen && { backgroundColor: `${color}26` },
+                    pressed && styles.pressed,
+                  ]}
+                  disabled={s.lat === undefined || s.lon === undefined}
+                  onPress={() => onStop(s)}
+                  accessibilityRole="button"
+                >
+                  <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
+                  <View style={styles.stopText}>
+                    <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
+                      {s.name ? tidyStopName(s.name) : s.stopId}
+                    </Text>
+                    <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
+                  </View>
+                  <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <Text style={[styles.muted, { color: c.muted }]}>No upcoming stops reported for this vehicle.</Text>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -177,7 +275,14 @@ const styles = StyleSheet.create({
   },
   handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginBottom: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  badge: { minWidth: 40, height: 40, borderRadius: 20, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
+  badge: {
+    minWidth: 40,
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badgeText: { fontSize: 16, fontWeight: '800' },
   title: { flex: 1 },
   titleText: { fontSize: 16, fontWeight: '700' },
@@ -187,12 +292,30 @@ const styles = StyleSheet.create({
   meta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 8 },
   follow: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 },
   followText: { fontSize: 14, fontWeight: '600' },
-  stops: { flexGrow: 0, flexShrink: 1 },
-  stop: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 6, marginHorizontal: -6, borderRadius: 8, gap: 10 },
-  stationCard: {
+  body: { flexGrow: 0, flexShrink: 1 },
+  small: { fontSize: 12 },
+  arrivals: { marginTop: 8, gap: 6 },
+  arrivalsHeading: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+  arrival: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  sourceDot: { fontSize: 10 },
+  stop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    marginHorizontal: -6,
+    borderRadius: 8,
     gap: 10,
+  },
+  stationTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  stationCard: {
     borderLeftWidth: 4,
     borderRadius: 8,
     paddingVertical: 8,
@@ -205,7 +328,14 @@ const styles = StyleSheet.create({
   stopText: { flex: 1, gap: 3 },
   stopName: { fontSize: 14 },
   transfers: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  bullet: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
+  bullet: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bulletText: { fontSize: 10, fontWeight: '800' },
   named: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 4 },
   swatch: { width: 8, height: 8, borderRadius: 4 },

@@ -1,7 +1,7 @@
-import type { RouteInfo, RouteLine, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { ArrivalDirection, RouteInfo, RouteLine, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { Mode, RouteInfo, RouteLine, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { Arrival, ArrivalDirection, Mode, RouteInfo, RouteLine, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
@@ -44,4 +44,12 @@ export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[]
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+export function fetchArrivals(
+  line: string,
+  place: { lat: number; lon: number },
+  signal?: AbortSignal,
+): Promise<{ directions: ArrivalDirection[] }> {
+  return get(`/api/arrivals?line=${encodeURIComponent(line)}&lat=${place.lat}&lon=${place.lon}`, signal);
 }
