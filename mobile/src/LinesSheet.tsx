@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from '../../web/src/vehicles';
 import type { Mode, RouteInfo } from './api';
 import { palette } from './theme';
@@ -12,9 +12,6 @@ interface Props {
   chosen: string[];
   dark: boolean;
   onChange: (chosen: string[]) => void;
-  /** Whether the chosen lines' routes are drawn on the map. */
-  drawRoutes: boolean;
-  onDrawRoutesChange: (draw: boolean) => void;
   onClose: () => void;
 }
 
@@ -39,7 +36,7 @@ function LineButton({ route, on, dark, onToggle }: { route: RouteInfo; on: boole
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, drawRoutes, onDrawRoutesChange, onClose }: Props) {
+export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onClose }: Props) {
   const c = palette(dark);
   const [busSearch, setBusSearch] = useState('');
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
@@ -77,12 +74,6 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, dra
             ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.`
             : 'Tap lines to show only those.'}
         </Text>
-        {chosen.length > 0 && (
-          <View style={[styles.drawToggle, { borderColor: c.border }]}>
-            <Text style={[styles.drawText, { color: c.text }]}>Draw their routes on the map</Text>
-            <Switch value={drawRoutes} onValueChange={onDrawRoutesChange} />
-          </View>
-        )}
 
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
           {routes.length === 0 && <Text style={{ color: c.muted }}>The list of lines loads once the server answers.</Text>}
@@ -154,17 +145,6 @@ const styles = StyleSheet.create({
   body: { padding: 20, paddingBottom: 60, gap: 18 },
   h3: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   h4: { fontSize: 14, fontWeight: '600', marginTop: 6, marginBottom: 6 },
-  drawToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginTop: 12,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  drawText: { fontSize: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   line: { borderRadius: 20 },
   railLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },

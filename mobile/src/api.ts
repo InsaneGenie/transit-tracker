@@ -3,6 +3,9 @@ import type { Bounds } from './region';
 
 export type { Mode, RouteInfo, RouteLine, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
+/** A station picked from the stop list or the map. */
+export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
+
 /** The live data server. The app uses the same one as the website. */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://transit-tracker-vbfs.onrender.com').replace(/\/$/, '');
 
