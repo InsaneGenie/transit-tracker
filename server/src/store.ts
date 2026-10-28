@@ -125,15 +125,14 @@ export class VehicleStore {
   }
 
   async loadStatic(): Promise<void> {
-    await Promise.all(
-      this.feeds.filter((f) => this.enabled(f) && f.config.staticUrls?.length).map(async (feed) => {
-        try {
-          feed.index = await this.loadIndex(feed.config);
-        } catch (err) {
-          feed.staticError = (err as Error).message;
-        }
-      }),
-    );
+    // One at a time, so the unpacked schedules of every feed are never in memory together.
+    for (const feed of this.feeds.filter((f) => this.enabled(f) && f.config.staticUrls?.length)) {
+      try {
+        feed.index = await this.loadIndex(feed.config);
+      } catch (err) {
+        feed.staticError = (err as Error).message;
+      }
+    }
   }
 
   async poll(feed: FeedState): Promise<void> {

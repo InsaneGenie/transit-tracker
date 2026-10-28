@@ -176,8 +176,13 @@ export function zipFiles(zip: Buffer): GtfsFiles {
   const archive = new AdmZip(zip);
   return (name) => {
     const entry = archive.getEntries().find((e) => path.basename(e.entryName) === name);
-    return entry ? Readable.from([entry.getData()]) : null;
+    return entry ? Readable.from(chunks(entry.getData())) : null;
   };
+}
+
+/** Small pieces, so the CSV parser reads a big file a little at a time instead of every row at once. */
+function* chunks(data: Buffer, size = 64 * 1024): Generator<Buffer> {
+  for (let i = 0; i < data.length; i += size) yield data.subarray(i, i + size);
 }
 
 const CACHE_DIR = path.resolve(import.meta.dirname, '../data/cache');

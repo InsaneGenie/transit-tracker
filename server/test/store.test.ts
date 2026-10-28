@@ -1,4 +1,7 @@
 import type { AddressInfo } from 'node:net';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FeedConfig } from '../src/feeds.js';
 import { decodeFeed, snapshotFromFeed } from '../src/realtime.js';
@@ -211,6 +214,31 @@ describe('API', () => {
       longName: 'Test Local',
       color: 'EE352E',
     });
+  });
+});
+
+describe('the map page', () => {
+  it('serves the built map, and the map page for any other path', async () => {
+    const webDir = await mkdtemp(path.join(tmpdir(), 'web-'));
+    await mkdir(path.join(webDir, 'assets'));
+    await writeFile(path.join(webDir, 'index.html'), '<title>map</title>');
+    await writeFile(path.join(webDir, 'assets', 'app-1234.js'), 'run()');
+    const { store } = makeStore({});
+    const server = createApiServer(store, () => T, webDir).listen(0);
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+    try {
+      const page = await fetch(`${base}/?theme=dark`);
+      expect(page.headers.get('content-type')).toContain('text/html');
+      expect(await page.text()).toBe('<title>map</title>');
+      const script = await fetch(`${base}/assets/app-1234.js`);
+      expect(script.headers.get('cache-control')).toContain('immutable');
+      expect(await script.text()).toBe('run()');
+      expect(await (await fetch(`${base}/somewhere/else`)).text()).toBe('<title>map</title>');
+      expect(await (await fetch(`${base}/..%2f..%2fetc/passwd`)).text()).toBe('<title>map</title>');
+      expect((await fetch(`${base}/api/nope`)).status).toBe(404);
+    } finally {
+      server.close();
+    }
   });
 });
 

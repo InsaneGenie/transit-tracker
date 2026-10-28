@@ -1,0 +1,22 @@
+# Render Blueprint: the whole site (map and live data) as one free web service.
+# Render reads this file when you choose New > Blueprint and pick this repository.
+services:
+  - type: web
+    name: transit-tracker
+    runtime: node
+    plan: free
+    buildCommand: cd web && npm ci && npm run build && cd ../server && npm ci
+    # Node directly, not npm start, so no extra npm process takes up memory. The heap cap makes Node
+    # tidy up sooner instead of growing toward the 512 MB limit.
+    startCommand: cd server && node --max-old-space-size=256 --import tsx src/index.ts
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Free instances have 512 MB. Fewer malloc arenas keep Node's memory from creeping up.
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      # Render asks for this when the Blueprint is created. It enables MTA bus positions.
+      - key: MTA_BUSTIME_KEY
+        sync: false
