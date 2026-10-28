@@ -42,8 +42,16 @@ type Row = Record<string, string>;
 async function* rows(files: GtfsFiles, name: string): AsyncGenerator<Row> {
   const input = files(name);
   if (!input) return;
-  yield* input.pipe(parse({ columns: true, bom: true, skip_empty_lines: true, relax_column_count: true }));
+  let count = 0;
+  for await (const row of input.pipe(parse({ columns: true, bom: true, skip_empty_lines: true, relax_column_count: true }))) {
+    yield row;
+    // Let requests in now and then. Reading a schedule otherwise holds the server for seconds at a time,
+    // which on a small cloud instance is long enough for the host to decide the server has died.
+    if (++count % 2000 === 0) await breather();
+  }
 }
+
+const breather = () => new Promise((resolve) => setImmediate(resolve));
 
 /** GTFS times can run past 24:00 for trips that continue after midnight. */
 export function parseGtfsTime(value: string | undefined): number | undefined {
@@ -88,6 +96,7 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   for (const [id, pts] of shapePoints) {
     pts.sort((a, b) => a.seq - b.seq);
     shapes.set(id, new Polyline(pts.map(({ lat, lon }) => ({ lat, lon }))));
+    if (shapes.size % 100 === 0) await breather();
   }
 
   // Tally every consecutive pair of stops across all trips, per route and for any route.
