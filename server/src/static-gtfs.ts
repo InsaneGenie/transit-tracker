@@ -39,6 +39,8 @@ export interface StaticIndex {
    * (Times Sq has the 1 2 3, N Q R W, S and 7). Keyed by any stop id, platform or station.
    */
   stopRoutes: Map<string, string[]>;
+  /** The stations each route regularly calls at, as station ids. */
+  routeStations: Map<string, string[]>;
 }
 
 /** Opens a file inside a GTFS feed, or returns null when the feed doesn't have it. */
@@ -193,7 +195,7 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
     set.add(to);
   }
 
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, stopRoutes: routesByStop(stops, stationOf, calls, transfers) };
+  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...routesByStop(stops, stationOf, calls, transfers) };
 }
 
 /**
@@ -207,13 +209,18 @@ function routesByStop(
   stationOf: Map<string, string>,
   calls: Map<string, Map<string, number>>,
   transfers: Map<string, Set<string>>,
-): Map<string, string[]> {
+): Pick<StaticIndex, 'stopRoutes' | 'routeStations'> {
   const busiest = new Map<string, number>();
   for (const byRoute of calls.values()) {
     for (const [route, n] of byRoute) busiest.set(route, Math.max(busiest.get(route) ?? 0, n));
   }
   const regular = (station: string) =>
     [...(calls.get(station) ?? [])].filter(([route, n]) => n >= busiest.get(route)! * REGULAR_SHARE).map(([route]) => route);
+
+  const routeStations = new Map<string, string[]>();
+  for (const station of calls.keys()) {
+    for (const route of regular(station)) routeStations.set(route, [...(routeStations.get(route) ?? []), station]);
+  }
 
   const byStation = new Map<string, string[]>();
   for (const station of calls.keys()) {
@@ -225,7 +232,7 @@ function routesByStop(
     const routes = byStation.get(stationOf.get(id) ?? id);
     if (routes) out.set(id, routes);
   }
-  return out;
+  return { stopRoutes: out, routeStations };
 }
 
 /** Combines several schedules, such as one per borough, into one index. */
@@ -238,6 +245,7 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     tripShapes: new Map(),
     routeShapes: new Map(),
     stopRoutes: new Map(),
+    routeStations: new Map(),
   };
   for (const index of indexes) {
     for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {

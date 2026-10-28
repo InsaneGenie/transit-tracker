@@ -97,6 +97,12 @@ Y,X,2,180
     expect(index.stopRoutes.get('Y')?.sort()).toEqual(['1', '2', '7']);
   });
 
+  it('lists the stations each line calls at', async () => {
+    const index = await buildStaticIndex(stationGtfs);
+    expect(index.routeStations.get('2')).toEqual(['X']);
+    expect(index.routeStations.get('7')).toEqual(['Y']);
+  });
+
   it('leaves out lines that only stop now and then', async () => {
     const index = await buildStaticIndex(stationGtfs);
     expect(index.stopRoutes.get('ZN')).toBeUndefined();

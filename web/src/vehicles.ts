@@ -130,3 +130,15 @@ export function transferLines(keys: string[] | undefined, routes: Map<string, Ro
     .filter((r) => !(r.mode === 'subway' && r.name.endsWith('X') && names.has(r.name.slice(0, -1))))
     .sort(byName);
 }
+
+type Place = { stopId: string; lat?: number; lon?: number };
+
+/**
+ * Whether two stops are the same station. A line's station (127) and a train's platform (127N) have
+ * different ids but sit at the same spot, so stops about 30 m apart or closer count as one.
+ */
+export function sameStation(a: Place, b: Place): boolean {
+  if (a.stopId === b.stopId) return true;
+  if (a.lat === undefined || a.lon === undefined || b.lat === undefined || b.lon === undefined) return false;
+  return Math.abs(a.lat - b.lat) < 0.0003 && Math.abs(a.lon - b.lon) < 0.0004;
+}

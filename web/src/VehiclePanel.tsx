@@ -1,7 +1,8 @@
 import type { CSSProperties, Ref } from 'react';
 import type { RouteInfo, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
-import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName, transferLines } from './vehicles';
+import type { Station } from './MapView';
+import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -10,6 +11,12 @@ interface Props {
   /** Every line by key, to show transfers with their colors. */
   routes: Map<string, RouteInfo>;
   following: boolean;
+  /** The station picked on the map or in this list, highlighted here. */
+  station: Station | null;
+  /** Lines you can transfer to at that station, as route keys. */
+  stationTransfers: string[];
+  showTransfers: boolean;
+  onShowTransfers: (show: boolean) => void;
   onFollow: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
@@ -38,7 +45,19 @@ function Transfers({ lines }: { lines: RouteInfo[] }) {
   );
 }
 
-export function VehiclePanel({ detail, routes, following, onFollow, onStop, onClose, ref }: Props) {
+export function VehiclePanel({
+  detail,
+  routes,
+  following,
+  station,
+  stationTransfers,
+  showTransfers,
+  onShowTransfers,
+  onFollow,
+  onStop,
+  onClose,
+  ref,
+}: Props) {
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
   const name = displayName(vehicle.routeName ?? vehicle.routeId ?? '?');
@@ -76,20 +95,50 @@ export function VehiclePanel({ detail, routes, following, onFollow, onStop, onCl
         </button>
       </div>
 
+      {station && (
+        <section className="station-card" aria-label="Picked station">
+          <div className="station-card-text">
+            <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
+            {stationTransfers.length > 0 ? (
+              <Transfers lines={transferLines(stationTransfers, routes)} />
+            ) : (
+              <span className="muted small">No transfers here</span>
+            )}
+          </div>
+          {stationTransfers.length > 0 && (
+            <button
+              className="chip follow"
+              aria-pressed={showTransfers}
+              onClick={() => onShowTransfers(!showTransfers)}
+            >
+              {showTransfers ? 'Hide transfer lines' : 'Show transfer lines'}
+            </button>
+          )}
+        </section>
+      )}
+
       {upcoming.length > 0 ? (
         <ol className="stops">
-          {upcoming.slice(0, MAX_STOPS).map((s) => (
-            <li key={s.stopId}>
-              <button className="stop" disabled={s.lat === undefined || s.lon === undefined} onClick={() => onStop(s)}>
-                <span className="stop-dot" />
-                <span className="stop-text">
-                  <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
-                  <Transfers lines={transferLines(s.transfers, routes)} />
-                </span>
-                <span className="eta">{formatEta(s.time)}</span>
-              </button>
-            </li>
-          ))}
+          {upcoming.slice(0, MAX_STOPS).map((s) => {
+            const chosen = station !== null && sameStation(s, station);
+            return (
+              <li key={s.stopId}>
+                <button
+                  className={`stop${chosen ? ' stop-chosen' : ''}`}
+                  aria-current={chosen ? 'location' : undefined}
+                  disabled={s.lat === undefined || s.lon === undefined}
+                  onClick={() => onStop(s)}
+                >
+                  <span className="stop-dot" />
+                  <span className="stop-text">
+                    <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                    <Transfers lines={transferLines(s.transfers, routes)} />
+                  </span>
+                  <span className="eta">{formatEta(s.time)}</span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <p className="muted small">No upcoming stops reported for this vehicle.</p>

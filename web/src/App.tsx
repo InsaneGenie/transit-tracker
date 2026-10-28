@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchRouteLines, fetchRoutes, fetchVehicleDetail, type Mode, type RouteInfo, type RouteLine, type VehicleDetail } from './api';
 import { Legend } from './Legend';
-import { MapView, SELECTED_POLL_MS, type MapInfo } from './MapView';
+import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
-import { MODE_LABELS } from './vehicles';
+import { MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
-const DRAW_ROUTES_KEY = 'transit-tracker:draw-routes';
 
 /** The line filter is remembered between visits, when the browser allows it. */
 function savedLines(): string[] {
@@ -17,14 +16,6 @@ function savedLines(): string[] {
     return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
   } catch {
     return [];
-  }
-}
-
-function savedDrawRoutes(): boolean {
-  try {
-    return localStorage.getItem(DRAW_ROUTES_KEY) === 'true';
-  } catch {
-    return false;
   }
 }
 
@@ -39,16 +30,17 @@ function save(key: string, value: string) {
 export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>(savedLines);
-  const [drawRoutes, setDrawRoutes] = useState(savedDrawRoutes);
-  const [routeLines, setRouteLines] = useState<RouteLine[]>([]);
+  const [routeLine, setRouteLine] = useState<RouteLine | null>(null);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [info, setInfo] = useState<MapInfo>({ count: 0 });
-  // A stop to bring to the middle of the map; `at` makes tapping the same stop twice work.
-  const [focus, setFocus] = useState<{ lon: number; lat: number; at: number } | null>(null);
+  // The station picked from the stop list or the map, shown and brought to the middle of the map.
+  const [station, setStation] = useState<Station | null>(null);
+  const [showTransfers, setShowTransfers] = useState(false);
+  const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
   const panelRef = useRef<HTMLElement>(null);
   const routesByKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
@@ -63,19 +55,19 @@ export function App() {
   }, [theme]);
 
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
-  useEffect(() => save(DRAW_ROUTES_KEY, String(drawRoutes)), [drawRoutes]);
 
-  // The whole route of each chosen line, when asked for. Retry while the server may still be starting.
+  // The whole route of the tapped vehicle's line, with its stations. Retry while the server may still be starting.
+  const selectedLine = detail ? routeKey(detail.vehicle) : null;
   useEffect(() => {
-    setRouteLines([]);
-    if (!drawRoutes || !lines.length) return;
+    setRouteLine(null);
+    if (!selectedLine) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      fetchRouteLines(lines, controller.signal)
+      fetchRouteLines([selectedLine], controller.signal)
         .then((r) => {
-          setRouteLines(r.lines);
-          if (r.lines.length < lines.length) timer = setTimeout(load, 15_000);
+          setRouteLine(r.lines[0] ?? null);
+          if (!r.lines.length) timer = setTimeout(load, 15_000);
         })
         .catch((err: Error) => {
           if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
@@ -85,7 +77,39 @@ export function App() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [drawRoutes, lines]);
+  }, [selectedLine]);
+
+  // A picked station belongs to the vehicle it was picked for.
+  useEffect(() => {
+    setStation(null);
+    setShowTransfers(false);
+  }, [selectedId]);
+
+  // The lines you can change to at the picked station, without express twins (7X beside the 7).
+  const stationTransfers = useMemo(
+    () => transferLines(station?.transfers, routesByKey).map((r) => r.key),
+    [station, routesByKey],
+  );
+
+  // Their whole routes, when asked for.
+  useEffect(() => {
+    setTransferRoutes([]);
+    if (!showTransfers || !stationTransfers.length) return;
+    const controller = new AbortController();
+    fetchRouteLines(stationTransfers, controller.signal)
+      .then((r) => setTransferRoutes(r.lines))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [showTransfers, stationTransfers]);
+
+  // Stations tapped on the map arrive without their transfers; the line or the stop list knows them.
+  const pickStation = (stop: Omit<Station, 'at' | 'transfers'>) => {
+    const known = [...(routeLine?.stops ?? []), ...(detail?.upcoming ?? [])].find(
+      (s) => s.transfers && sameStation(s, stop),
+    );
+    setFollowing(false);
+    setStation({ ...stop, transfers: known?.transfers, at: Date.now() });
+  };
 
   // The legend's list of lines. Retry until the server is up, since it may still be starting.
   useEffect(() => {
@@ -144,8 +168,10 @@ export function App() {
         theme={theme}
         modes={modes}
         lines={lines}
-        routeLines={routeLines}
-        focus={focus}
+        routeLine={routeLine}
+        transferLines={transferRoutes}
+        station={station}
+        onStation={pickStation}
         selectedId={selectedId}
         detail={detail}
         following={following}
@@ -188,8 +214,6 @@ export function App() {
           modes={modes}
           chosen={lines}
           onChange={setLines}
-          drawRoutes={drawRoutes}
-          onDrawRoutesChange={setDrawRoutes}
           onClose={() => setLegendOpen(false)}
         />
       )}
@@ -205,10 +229,11 @@ export function App() {
           routes={routesByKey}
           following={following}
           onFollow={() => setFollowing((f) => !f)}
-          onStop={(stop) => {
-            setFollowing(false);
-            setFocus({ lon: stop.lon!, lat: stop.lat!, at: Date.now() });
-          }}
+          station={station}
+          stationTransfers={stationTransfers}
+          showTransfers={showTransfers}
+          onShowTransfers={setShowTransfers}
+          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
           onClose={() => select(null)}
         />
       )}

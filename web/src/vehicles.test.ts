@@ -5,6 +5,7 @@ import {
   formatEta,
   interpolate,
   legendGroups,
+  sameStation,
   transferLines,
   textColorFor,
   tidyStopName,
@@ -142,5 +143,15 @@ describe('transferLines', () => {
       'N',
     ]);
     expect(transferLines(undefined, routes)).toEqual([]);
+  });
+});
+
+describe('sameStation', () => {
+  it("matches a line's station to a train's platform at the same spot", () => {
+    const station = { stopId: '127', lat: 40.75529, lon: -73.987495 };
+    expect(sameStation({ stopId: '127N', lat: 40.75529, lon: -73.987495 }, station)).toBe(true);
+    expect(sameStation({ stopId: '128N', lat: 40.759901, lon: -73.984139 }, station)).toBe(false);
+    expect(sameStation({ stopId: '127' }, station)).toBe(true);
+    expect(sameStation({ stopId: 'X' }, station)).toBe(false);
   });
 });

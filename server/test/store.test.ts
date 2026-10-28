@@ -208,6 +208,7 @@ describe('API', () => {
     expect(lines[0]).toMatchObject({ key: 'test-train:1', mode: 'subway', color: 'EE352E' });
     expect(lines[0].paths[0]).toHaveLength(5);
     expect(lines[0].paths[0][0]).toEqual([expect.any(Number), expect.any(Number)]);
+    expect(lines[0].stops.map((st: { name: string }) => st.name)).toEqual(['Alpha', 'Bravo', 'Charlie']);
     const tooMany = Array.from({ length: 61 }, (_, i) => `test-train:${i}`).join(',');
     expect((await fetch(`${base}/api/route-lines?keys=${tooMany}`)).status).toBe(400);
     const { routes } = await (await fetch(`${base}/api/routes`)).json();
