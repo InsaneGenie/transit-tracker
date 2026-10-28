@@ -38,6 +38,18 @@ npm run dev
 
 Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map follows the vehicle you tap until you drag it. **Lines** opens a legend of every line color, where you can tap lines to show only those. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
 
+## Putting it online
+
+The site runs free on [Render](https://render.com) as one service: the server serves both the map and the live data, so there is one address and nothing to wire together. `render.yaml` describes it.
+
+1. Sign up at https://dashboard.render.com/register with **GitHub**, and allow Render to see this repository.
+2. Click **New** > **Blueprint**, pick `transit-tracker`, and enter your MTA Bus Time key when it asks for `MTA_BUSTIME_KEY`.
+3. Click **Deploy Blueprint**. The first build takes about five minutes. The site is then at the `onrender.com` address shown on the service's page.
+
+Every push to `main` redeploys it. A free Render service goes to sleep after 15 minutes with no visitors and takes about a minute to wake up and load the schedules. To keep it awake, add a free monitor at [UptimeRobot](https://uptimerobot.com) that opens `https://<your address>/api/health` every 5 minutes. Render's free hours cover one service running all month.
+
+The free plan has 512 MB of memory; the server uses about 250 MB with every New York feed loaded.
+
 ## Where the positions come from
 
 | Feed | Source | Position |

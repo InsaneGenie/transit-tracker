@@ -1,5 +1,41 @@
-import { createServer, type Server } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { createServer, type Server, type ServerResponse } from 'node:http';
+import path from 'node:path';
 import type { Bbox, VehicleStore } from './store.js';
+
+/** The built map (`npm run build` in web/), served alongside the API so the whole site is one service. */
+const WEB_DIR = path.resolve(import.meta.dirname, '../../web/dist');
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+async function sendFile(res: ServerResponse, webDir: string, pathname: string): Promise<void> {
+  const index = path.join(webDir, 'index.html');
+  const requested = path.join(webDir, pathname);
+  // Paths that aren't a file get the map page, so links like /?theme=dark work.
+  let file = requested.startsWith(webDir + path.sep) ? requested : index;
+  let data = await readFile(file).catch(() => null);
+  if (!data && file !== index) data = await readFile((file = index)).catch(() => null);
+  if (!data) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('The map is not built yet. Run npm run build in web/.');
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': CONTENT_TYPES[path.extname(file)] ?? 'application/octet-stream',
+    // Vite puts a hash in every file name under assets/, so those never change.
+    'cache-control': file.startsWith(path.join(webDir, 'assets') + path.sep) ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
+  res.end(data);
+}
 
 function parseBbox(value: string | null): Bbox | null | 'invalid' {
   if (!value) return null;
@@ -8,7 +44,7 @@ function parseBbox(value: string | null): Bbox | null | 'invalid' {
   return parts as Bbox;
 }
 
-export function createApiServer(store: VehicleStore, now = () => Date.now() / 1000): Server {
+export function createApiServer(store: VehicleStore, now = () => Date.now() / 1000, webDir = WEB_DIR): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const send = (status: number, body: unknown) => {
@@ -20,7 +56,7 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       res.end(JSON.stringify(body));
     };
 
-    if (req.method !== 'GET') return send(405, { error: 'GET only' });
+    if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { error: 'GET only' });
 
     if (url.pathname === '/api/vehicles') {
       const bbox = parseBbox(url.searchParams.get('bbox'));
@@ -40,6 +76,8 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
 
     if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
 
-    send(404, { error: 'not found' });
+    if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
+
+    sendFile(res, webDir, url.pathname).catch(() => send(500, { error: 'could not read the map files' }));
   });
 }

@@ -22,28 +22,46 @@ export function bearingDegrees(a: LatLon, b: LatLon): number {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-/** A line with precomputed cumulative distances so points can be found by distance along it. */
+/**
+ * A line with precomputed cumulative distances so points can be found by distance along it. Coordinates
+ * are kept in flat number arrays because the schedules hold close to a million shape points.
+ */
 export class Polyline {
-  readonly points: LatLon[];
-  readonly cumulative: number[];
+  /** lat, lon, lat, lon, ... */
+  private readonly coords: Float64Array;
+  private readonly cumulative: Float64Array;
 
   constructor(points: LatLon[]) {
-    this.points = points;
-    this.cumulative = [0];
-    for (let i = 1; i < points.length; i++) {
-      this.cumulative.push(this.cumulative[i - 1] + distanceMeters(points[i - 1], points[i]));
-    }
+    this.coords = new Float64Array(points.length * 2);
+    this.cumulative = new Float64Array(points.length);
+    points.forEach((p, i) => {
+      this.coords[i * 2] = p.lat;
+      this.coords[i * 2 + 1] = p.lon;
+      if (i > 0) this.cumulative[i] = this.cumulative[i - 1] + distanceMeters(points[i - 1], p);
+    });
+  }
+
+  get size(): number {
+    return this.cumulative.length;
+  }
+
+  point(i: number): LatLon {
+    return { lat: this.coords[i * 2], lon: this.coords[i * 2 + 1] };
+  }
+
+  get points(): LatLon[] {
+    return Array.from({ length: this.size }, (_, i) => this.point(i));
   }
 
   get length(): number {
-    return this.cumulative[this.cumulative.length - 1];
+    return this.cumulative[this.size - 1];
   }
 
   nearestIndex(p: LatLon): number {
     let best = 0;
     let bestDist = Infinity;
-    for (let i = 0; i < this.points.length; i++) {
-      const d = distanceMeters(this.points[i], p);
+    for (let i = 0; i < this.size; i++) {
+      const d = distanceMeters(this.point(i), p);
       if (d < bestDist) {
         bestDist = d;
         best = i;
@@ -56,19 +74,21 @@ export class Polyline {
   slice(from: LatLon, to: LatLon): Polyline {
     const i = this.nearestIndex(from);
     const j = this.nearestIndex(to);
-    const pts = i <= j ? this.points.slice(i, j + 1) : this.points.slice(j, i + 1).reverse();
+    const pts = [];
+    if (i <= j) for (let k = i; k <= j; k++) pts.push(this.point(k));
+    else for (let k = i; k >= j; k--) pts.push(this.point(k));
     return new Polyline([from, ...pts, to]);
   }
 
   /** Position and heading at a fraction (0..1) of the way along the line. */
   at(fraction: number): LatLon & { bearing: number } {
-    const n = this.points.length;
-    if (n === 1) return { ...this.points[0], bearing: 0 };
+    const n = this.size;
+    if (n === 1) return { ...this.point(0), bearing: 0 };
     const target = Math.min(1, Math.max(0, fraction)) * this.length;
     let i = 1;
     while (i < n - 1 && this.cumulative[i] < target) i++;
-    const a = this.points[i - 1];
-    const b = this.points[i];
+    const a = this.point(i - 1);
+    const b = this.point(i);
     const segLen = this.cumulative[i] - this.cumulative[i - 1];
     const t = segLen > 0 ? (target - this.cumulative[i - 1]) / segLen : 0;
     return {
