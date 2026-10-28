@@ -6,7 +6,7 @@ A live map of buses and trains across New York State, for commuters. New Jersey 
 
 1. **Live data** (done): collect real-time feeds and serve every vehicle's position from one API.
 2. **The map** (done): moving dots for every vehicle, more detail when zoomed in, tap a dot for its route and next stops.
-3. **Launch**: public website, then an iPhone/Android app.
+3. **Launch**: public website (done), then the iPhone app in [`mobile/`](mobile/README.md).
 
 ## Running the server
 
@@ -49,6 +49,10 @@ The site runs free on [Render](https://render.com) as one service: the server se
 Every push to `main` redeploys it. A free Render service goes to sleep after 15 minutes with no visitors and takes about a minute to wake up and load the schedules. To keep it awake, add a free monitor at [UptimeRobot](https://uptimerobot.com) that opens `https://<your address>/api/health` every 5 minutes. Render's free hours cover one service running all month.
 
 The free plan has 512 MB of memory; the server uses about 250 MB with every New York feed loaded.
+
+## The iPhone app
+
+`mobile/` is the iPhone app, built with Expo and using the same server. [mobile/README.md](mobile/README.md) has every step from trying it on your phone for free to submitting it to the App Store, all from Windows.
 
 ## Where the positions come from
 
