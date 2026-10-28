@@ -38,6 +38,7 @@ const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
+const STATION_LABEL_HEIGHT = 20;
 /** How often the tapped vehicle is refreshed. */
 const SELECTED_POLL_MS = 3000;
 const NEW_YORK: Region = { latitude: 40.73, longitude: -73.97, latitudeDelta: 0.08, longitudeDelta: 0.06 };
@@ -385,21 +386,33 @@ function TransitMap() {
                   <View style={[styles.stopDot, { borderColor: pathColor, backgroundColor: c.card }]} />
                 </Marker>
               ))}
+          {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
+              marker's view on its coordinate using the size it had when first drawn, and one view holding
+              text could be drawn before the text was laid out, which put the ring off the station. */}
           {panelOpen && station && (
             <Marker
-              key={`station-${station.stopId}-${dark ? 'd' : 'l'}`}
+              key={`station-ring-${station.stopId}-${dark ? 'd' : 'l'}`}
               coordinate={{ latitude: station.lat, longitude: station.lon }}
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={false}
               zIndex={3}
             >
-              <View style={styles.stationPin}>
-                <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
-                {station.name && (
-                  <Text style={[styles.stationLabel, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
-                    {tidyStopName(station.name)}
-                  </Text>
-                )}
+              <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
+            </Marker>
+          )}
+          {panelOpen && station?.name && (
+            <Marker
+              key={`station-name-${station.stopId}-${dark ? 'd' : 'l'}`}
+              coordinate={{ latitude: station.lat, longitude: station.lon }}
+              // Below the ring: half the ring, a small gap and half the label.
+              centerOffset={{ x: 0, y: 14 + 4 + STATION_LABEL_HEIGHT / 2 }}
+              tracksViewChanges={false}
+              zIndex={3}
+            >
+              <View style={styles.stationLabel}>
+                <Text style={[styles.stationLabelText, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
+                  {tidyStopName(station.name)}
+                </Text>
               </View>
             </Marker>
           )}
@@ -576,8 +589,15 @@ const styles = StyleSheet.create({
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   panelWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-  // The ring sits on the station and the name hangs below it, so the pin is centered on the ring.
-  stationPin: { width: 160, height: 76, alignItems: 'center', paddingTop: 24 },
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
-  stationLabel: { marginTop: 4, fontSize: 12, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  // A fixed-size box, so the marker's size is known before the text is laid out.
+  stationLabel: { width: 180, height: STATION_LABEL_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  stationLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
 });
