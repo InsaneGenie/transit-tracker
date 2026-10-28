@@ -25,6 +25,8 @@ export interface UpcomingStop {
   lat?: number;
   lon?: number;
   time?: number;
+  /** Other lines that call here, as `RouteInfo` keys. */
+  transfers?: string[];
 }
 
 export interface VehicleDetail {
@@ -44,6 +46,14 @@ export interface RouteInfo {
   name: string;
   longName?: string;
   color?: string;
+}
+
+/** Mirrors `RouteLine` in server/src/store.ts. */
+export interface RouteLine {
+  key: string;
+  mode: Mode;
+  color?: string;
+  paths: [number, number][][];
 }
 
 const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -66,4 +76,8 @@ export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<Ve
 
 export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[] }> {
   return get('/api/routes', signal);
+}
+
+export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
+  return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
 }

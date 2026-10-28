@@ -9,7 +9,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, type RefObject } from 'react';
-import { fetchVehicles, type Bounds, type Mode, type Vehicle, type VehicleDetail } from './api';
+import { fetchVehicles, type Bounds, type Mode, type RouteLine, type Vehicle, type VehicleDetail } from './api';
 import type { Theme } from './theme';
 import { colorFor, interpolate, routeKey, toFeatureCollection } from './vehicles';
 
@@ -45,6 +45,10 @@ interface Props {
   modes: Mode[];
   /** Line keys to show; empty shows every line. */
   lines: string[];
+  /** Whole routes to draw under the vehicles. */
+  routeLines: RouteLine[];
+  /** A place to bring to the middle of the map, such as a stop tapped in the vehicle panel. */
+  focus: { lon: number; lat: number; at: number } | null;
   selectedId: string | null;
   detail: VehicleDetail | null;
   following: boolean;
@@ -81,6 +85,17 @@ function vehicleFilter(modes: Mode[], lines: string[], selectedId: string | null
   if (lines.length) parts.push(['in', ['get', 'routeKey'], ['literal', lines]]);
   if (selectedId) parts.push(['!=', ['get', 'id'], selectedId]);
   return ['all', ...parts];
+}
+
+function routeLinesData(lines: RouteLine[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: lines.map((l) => ({
+      type: 'Feature',
+      geometry: { type: 'MultiLineString', coordinates: l.paths },
+      properties: { color: colorFor({ routeColor: l.color, mode: l.mode }) },
+    })),
+  };
 }
 
 function selectionData(detail: VehicleDetail | null): {
@@ -169,6 +184,7 @@ function addVehicleLayers(
 
 interface LayerState {
   vehicles: GeoJSON.FeatureCollection;
+  routes: GeoJSON.FeatureCollection;
   selected: GeoJSON.FeatureCollection;
   modes: Mode[];
   lines: string[];
@@ -186,9 +202,25 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   // Points don't need detailed tiles, so tile only up to zoom 12 and let MapLibre overzoom from there.
   map.addSource('vehicles', { type: 'geojson', data: state.vehicles, maxzoom: 12, buffer: 32 });
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
+  map.addSource('route-lines', { type: 'geojson', data: state.routes });
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
 
+  // Chosen lines' whole routes, thinner and fainter than the tapped vehicle's path ahead.
+  map.addLayer({
+    id: 'route-lines-casing',
+    type: 'line',
+    source: 'route-lines',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': outline, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 15, 8], 'line-opacity': 0.8 },
+  });
+  map.addLayer({
+    id: 'route-lines',
+    type: 'line',
+    source: 'route-lines',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 5], 'line-opacity': 0.85 },
+  });
   map.addLayer({
     id: 'selected-path',
     type: 'line',
@@ -237,7 +269,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLines, focus, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -246,6 +278,7 @@ export function MapView(props: Props) {
   const state = useRef<LayerState & { theme: Theme; following: boolean; latest: Vehicle[]; easeUntil: number }>({
     theme,
     vehicles: EMPTY,
+    routes: routeLinesData(routeLines),
     selected: EMPTY,
     modes,
     lines,
@@ -374,16 +407,21 @@ export function MapView(props: Props) {
     const clickable = ['vehicle-dots', 'vehicle-labels', 'vehicle-arrows', 'selected-dots'];
     map.on('click', (e) => {
       const pad = 8;
-      const hit = map.queryRenderedFeatures(
-        [
-          [e.point.x - pad, e.point.y - pad],
-          [e.point.x + pad, e.point.y + pad],
-        ],
-        { layers: clickable },
-      )[0];
+      const box: [[number, number], [number, number]] = [
+        [e.point.x - pad, e.point.y - pad],
+        [e.point.x + pad, e.point.y + pad],
+      ];
+      const hit = map.queryRenderedFeatures(box, { layers: clickable })[0];
+      // A stop of the tapped vehicle, unless a vehicle sits on top of it: bring it to the middle.
+      const stop = hit ? undefined : map.queryRenderedFeatures(box, { layers: ['selected-stops'] })[0];
+      if (stop?.geometry.type === 'Point') {
+        const [lon, lat] = stop.geometry.coordinates;
+        map.easeTo({ center: [lon, lat], offset: uncoveredOffset(map, callbacks.current.panelRef.current), duration: 500 });
+        return;
+      }
       callbacks.current.onSelect(hit ? String(hit.properties.id) : null);
     });
-    for (const layer of clickable) {
+    for (const layer of [...clickable, 'selected-stops']) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
@@ -440,6 +478,22 @@ export function MapView(props: Props) {
     map.setFilter('vehicle-labels', filter);
     map.setFilter('vehicle-arrows', ['all', ['get', 'hasBearing'], filter]);
   }, [modes, lines, selectedId]);
+
+  useEffect(() => {
+    state.current.routes = routeLinesData(routeLines);
+    (mapRef.current?.getSource('route-lines') as GeoJSONSource | undefined)?.setData(state.current.routes);
+  }, [routeLines]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focus) return;
+    map.easeTo({
+      center: [focus.lon, focus.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      offset: uncoveredOffset(map, props.panelRef.current),
+      duration: 600,
+    });
+  }, [focus]);
 
   // Start the tapped vehicle where its dot was, then glide toward each newer position.
   useEffect(() => {

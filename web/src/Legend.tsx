@@ -3,14 +3,15 @@ import type { Mode, RouteInfo } from './api';
 import { CloseButton } from './CloseButton';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from './vehicles';
 
-const MAX_BUSES = 60;
-
 interface Props {
   routes: RouteInfo[];
   modes: Mode[];
   /** Line keys shown; empty means every line. */
   chosen: string[];
   onChange: (chosen: string[]) => void;
+  /** Whether the chosen lines' routes are drawn on the map. */
+  drawRoutes: boolean;
+  onDrawRoutesChange: (draw: boolean) => void;
   onClose: () => void;
 }
 
@@ -32,21 +33,21 @@ function LineButton({ route, on, onToggle }: { route: RouteInfo; on: boolean; on
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
+export function Legend({ routes, modes, chosen, onChange, drawRoutes, onDrawRoutesChange, onClose }: Props) {
   const [busSearch, setBusSearch] = useState('');
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const isOn = (r: RouteInfo) => chosenSet.size === 0 || chosenSet.has(r.key);
   const toggle = (r: RouteInfo) =>
     onChange(chosenSet.has(r.key) ? chosen.filter((k) => k !== r.key) : [...chosen, r.key]);
 
-  const buses = useMemo(() => {
+  // Every bus route, by borough; typing narrows the lists down.
+  const busGroups = useMemo(() => {
     const q = busSearch.trim().toLowerCase();
-    const all = legendGroups(routes, 'bus')[0]?.routes ?? [];
-    const matches = q
-      ? all.filter((r) => r.name.toLowerCase().startsWith(q) || r.longName?.toLowerCase().includes(q))
-      : all.filter((r) => chosenSet.has(r.key));
-    return matches.slice(0, MAX_BUSES);
-  }, [routes, busSearch, chosenSet]);
+    const matches = (r: RouteInfo) => r.name.toLowerCase().startsWith(q) || r.longName?.toLowerCase().includes(q);
+    return legendGroups(routes, 'bus')
+      .map((g) => ({ ...g, routes: q ? g.routes.filter(matches) : g.routes }))
+      .filter((g) => g.routes.length);
+  }, [routes, busSearch]);
 
   return (
     <aside className="legend" aria-label="Lines">
@@ -63,6 +64,12 @@ export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
       <p className="muted small legend-hint">
         {chosen.length ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.` : 'Tap lines to show only those.'}
       </p>
+      {chosen.length > 0 && (
+        <label className="draw-toggle">
+          <input type="checkbox" checked={drawRoutes} onChange={(e) => onDrawRoutesChange(e.target.checked)} />
+          Draw their routes on the map
+        </label>
+      )}
 
       <div className="legend-body">
         {routes.length === 0 && <p className="muted small">Line list loads once the server is running.</p>}
@@ -103,15 +110,23 @@ export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
             <input
               className="search"
               type="search"
-              placeholder="Find a bus route, e.g. M15"
+              placeholder="Filter bus routes, e.g. M15"
               value={busSearch}
               onChange={(e) => setBusSearch(e.target.value)}
             />
-            <div className="line-row">
-              {buses.map((r) => (
-                <LineButton key={r.key} route={r} on={isOn(r)} onToggle={() => toggle(r)} />
-              ))}
-            </div>
+            {busGroups.length === 0 && routes.some((r) => r.mode === 'bus') && (
+              <p className="muted small">No bus route matches.</p>
+            )}
+            {busGroups.map((g) => (
+              <div className="bus-group" key={g.title}>
+                <h4>{g.title}</h4>
+                <div className="line-row">
+                  {g.routes.map((r) => (
+                    <LineButton key={r.key} route={r} on={isOn(r)} onToggle={() => toggle(r)} />
+                  ))}
+                </div>
+              </div>
+            ))}
           </section>
         )}
       </div>

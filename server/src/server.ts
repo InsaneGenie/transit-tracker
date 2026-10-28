@@ -39,6 +39,9 @@ async function sendFile(res: ServerResponse, webDir: string, pathname: string): 
   res.end(data);
 }
 
+/** Enough for any filter someone would set by hand, while keeping one request from asking for every line. */
+const MAX_ROUTE_LINES = 60;
+
 function parseBbox(value: string | null): Bbox | null | 'invalid' {
   if (!value) return null;
   const parts = value.split(',').map(Number);
@@ -75,6 +78,12 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
     }
 
     if (url.pathname === '/api/routes') return send(200, { routes: store.routes() });
+
+    if (url.pathname === '/api/route-lines') {
+      const keys = (url.searchParams.get('keys') ?? '').split(',').filter(Boolean);
+      if (keys.length > MAX_ROUTE_LINES) return send(400, { error: `at most ${MAX_ROUTE_LINES} lines at once` });
+      return send(200, { lines: store.routeLines(keys) });
+    }
 
     if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
 
