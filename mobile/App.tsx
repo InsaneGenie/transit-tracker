@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colorFor, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { colorFor, displayName, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchArrivals,
   fetchRouteLines,
@@ -30,6 +30,7 @@ import {
   type Vehicle,
   type VehicleDetail,
 } from './src/api';
+import { LinePanel } from './src/LinePanel';
 import { LinesSheet } from './src/LinesSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { MODE_DOT, palette } from './src/theme';
@@ -46,6 +47,35 @@ const SELECTED_POLL_MS = 3000;
 const NEW_YORK: Region = { latitude: 40.73, longitude: -73.97, latitudeDelta: 0.08, longitudeDelta: 0.06 };
 
 type Status = 'connecting' | 'live' | 'error' | 'zoomedOut';
+
+/** A line opened from a station's transfers. `back` is the vehicle and station it was opened from. */
+type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null } };
+
+/** A line's whole route with its stations. Retries while the server may still be starting. */
+function useRouteLine(key: string | null, active: boolean): RouteLine | null {
+  const [line, setLine] = useState<RouteLine | null>(null);
+  useEffect(() => {
+    setLine(null);
+    if (!key || !active) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRouteLines([key], controller.signal)
+        .then((r) => {
+          setLine(r.lines[0] ?? null);
+          if (!r.lines.length) timer = setTimeout(load, 15_000);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [key, active]);
+  return line;
+}
 
 /** Whether the app is on screen; nothing is fetched while it's in the background. */
 function useAppActive(): boolean {
@@ -67,7 +97,6 @@ function TransitMap() {
 
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>([]);
-  const [routeLine, setRouteLine] = useState<RouteLine | null>(null);
   const [station, setStation] = useState<Station | null>(null);
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
@@ -104,28 +133,12 @@ function TransitMap() {
   };
   const routesByKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
 
-  // The whole route of the tapped vehicle's line, with its stations. Retry while the server may still be starting.
+  // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
-  useEffect(() => {
-    setRouteLine(null);
-    if (!selectedLine || !active) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = () =>
-      fetchRouteLines([selectedLine], controller.signal)
-        .then((r) => {
-          setRouteLine(r.lines[0] ?? null);
-          if (!r.lines.length) timer = setTimeout(load, 15_000);
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
-        });
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [selectedLine, active]);
+  const routeLine = useRouteLine(selectedLine, active);
+  // A line opened from a station's transfers, and where Back returns to.
+  const [viewLine, setViewLine] = useState<ViewLine | null>(null);
+  const viewRoute = useRouteLine(viewLine?.key ?? null, active);
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
@@ -140,11 +153,12 @@ function TransitMap() {
   // Every vehicle of the line on its way to the picked station, both ways, kept fresh.
   useEffect(() => {
     setArrivals(null);
-    if (!station || !selectedLine || !active) return;
+    const line = selectedLine ?? viewLine?.key;
+    if (!station || !line || !active) return;
     const controller = new AbortController();
     const place = { lat: station.lat, lon: station.lon };
     const load = () =>
-      fetchArrivals(selectedLine, place, controller.signal)
+      fetchArrivals(line, place, controller.signal)
         .then((r) => setArrivals(r.directions))
         .catch(() => {});
     void load();
@@ -153,7 +167,7 @@ function TransitMap() {
       controller.abort();
       clearInterval(timer);
     };
-  }, [station?.lat, station?.lon, selectedLine, active]);
+  }, [station?.lat, station?.lon, selectedLine, viewLine?.key, active]);
 
   // The lines you can change to at the picked station, without express twins (7X beside the 7).
   const stationTransfers = useMemo(
@@ -289,21 +303,87 @@ function TransitMap() {
 
   // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
   const otherLines = useMemo(() => {
+    // A line opened on its own is shown alone.
+    if (viewLine && !detail) return [];
     const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
-  }, [filterRoutes, transferRoutes]);
+  }, [filterRoutes, transferRoutes, viewLine, detail]);
 
   // Pick a station from the stop list or the map and bring it to the middle. Stations on the line and in
   // the stop list have different ids for the same place (127 and 127N), so look its transfers up by place.
   const pickStation = (stop: UpcomingStop) => {
     if (stop.lat === undefined || stop.lon === undefined) return;
-    const known = [...(stop.transfers ? [stop] : []), ...(routeLine?.stops ?? []), ...(detail?.upcoming ?? [])].find(
-      (s) => s.transfers && sameStation(s, stop),
-    );
+    const known = [
+      ...(stop.transfers ? [stop] : []),
+      ...(routeLine?.stops ?? []),
+      ...(viewRoute?.stops ?? []),
+      ...(detail?.upcoming ?? []),
+    ].find((s) => s.transfers && sameStation(s, stop));
     setFollowing(false);
     setStation({ stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: known?.transfers });
     mapRef.current?.animateCamera({ center: { latitude: stop.lat, longitude: stop.lon } }, { duration: 600 });
   };
+
+  // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
+  const openLine = (key: string) => {
+    const back = detail
+      ? {
+          vehicleId: detail.vehicle.id,
+          label: `the ${displayName(detail.vehicle.routeName ?? detail.vehicle.routeId ?? '')} ${detail.vehicle.mode === 'bus' ? 'bus' : 'train'}`,
+          station,
+        }
+      : viewLine?.back;
+    setViewLine({ key, back });
+    setStation(null);
+    setShowTransfers(false);
+    select(null);
+  };
+
+  // Once the vehicle's panel is back, pick its station again and bring it into view beside the panel.
+  const [restoreStation, setRestoreStation] = useState<Station | null>(null);
+  const closeLine = () => {
+    const back = viewLine?.back;
+    setViewLine(null);
+    setStation(null);
+    if (back) {
+      select(back.vehicleId);
+      // Show the station it was opened from, not the vehicle.
+      setFollowing(false);
+      setRestoreStation(back.station);
+    }
+  };
+  useEffect(() => {
+    if (!restoreStation || !detail) return;
+    setStation(restoreStation);
+    setRestoreStation(null);
+    mapRef.current?.animateCamera(
+      { center: { latitude: restoreStation.lat, longitude: restoreStation.lon } },
+      { duration: 600 },
+    );
+  }, [detail, restoreStation]);
+
+  // Show the whole of a line opened on its own. Long lines don't fit on a phone at a zoom where vehicles
+  // show, so stay close enough to see them, centered on the line.
+  useEffect(() => {
+    const points = viewRoute?.paths.flat() ?? [];
+    if (!points.length) return;
+    const [west, south, east, north] = points.reduce(
+      (b, [lon, lat]) => [Math.min(b[0], lon), Math.min(b[1], lat), Math.max(b[2], lon), Math.max(b[3], lat)],
+      [Infinity, Infinity, -Infinity, -Infinity],
+    );
+    const maxLonDelta = (360 * width) / (512 * 2 ** (VEHICLE_MIN_ZOOM + 0.5));
+    // The part of the map above the line panel is roughly as tall as the screen is wide.
+    mapRef.current?.animateToRegion(
+      {
+        latitude: (south + north) / 2,
+        longitude: (west + east) / 2,
+        latitudeDelta: Math.min((north - south) * 1.2, maxLonDelta),
+        longitudeDelta: Math.min((east - west) * 1.2, maxLonDelta),
+      },
+      600,
+    );
+    // Only when a new line arrives, not when the screen turns.
+  }, [viewRoute]);
 
   const locate = async () => {
     setLocating(true);
@@ -324,19 +404,39 @@ function TransitMap() {
     }
   };
 
-  const shown = useMemo(() => {
-    const chosen = vehicles.filter(
-      (v) => v.id !== selectedId && modes.includes(v.mode) && (!lines.length || lines.includes(routeKey(v))),
-    );
-    return nearestToCenter(chosen, region);
-  }, [vehicles, modes, lines, selectedId, region]);
-  const inView = vehicles.filter((v) => modes.includes(v.mode) && (!lines.length || lines.includes(routeKey(v)))).length;
+  // A line opened on its own shows only its vehicles, even if its kind of vehicle is switched off.
+  const shownLines = viewLine ? [viewLine.key] : lines;
+  const shownModes = viewLine && viewRoute && !modes.includes(viewRoute.mode) ? [...modes, viewRoute.mode] : modes;
+  const isShown = (v: Vehicle) =>
+    shownModes.includes(v.mode) && (!shownLines.length || shownLines.includes(routeKey(v)));
+  const shown = useMemo(
+    () => nearestToCenter(vehicles.filter((v) => v.id !== selectedId && isShown(v)), region),
+    [vehicles, shownModes.join(), shownLines.join(), selectedId, region],
+  );
+  const inView = vehicles.filter(isShown).length;
   // The tapped vehicle comes from its own, more frequent updates.
   const selected = detail?.vehicle.id === selectedId ? detail.vehicle : vehicles.find((v) => v.id === selectedId);
 
   const labelled = zoom >= LABEL_MIN_ZOOM;
   const pathColor = detail ? colorFor(detail.vehicle) : undefined;
   const panelOpen = detail !== null && detail.vehicle.id === selectedId;
+  // The line panel shows when a line is open on its own and no vehicle is.
+  const lineOpen = !panelOpen && viewLine !== null;
+  const anyPanel = panelOpen || lineOpen;
+  // The line drawn boldest, with its stations: the vehicle's own, or the line open on its own.
+  const ownLine = panelOpen ? routeLine : lineOpen ? viewRoute : null;
+  const ownColor = panelOpen
+    ? pathColor
+    : ownLine
+      ? colorFor({ routeColor: ownLine.color, mode: ownLine.mode })
+      : undefined;
+  const stationDots = panelOpen
+    ? routeLine?.stops.length
+      ? routeLine.stops
+      : detail.upcoming
+    : lineOpen
+      ? (viewRoute?.stops ?? [])
+      : [];
 
   const statusText =
     status === 'zoomedOut'
@@ -369,20 +469,18 @@ function TransitMap() {
           showsPointsOfInterests={false}
           pitchEnabled={false}
           userInterfaceStyle={dark ? 'dark' : 'light'}
-          mapPadding={{ top: insets.top + 96, right: 0, bottom: panelOpen ? panelHeight : insets.bottom, left: 0 }}
+          mapPadding={{ top: insets.top + 96, right: 0, bottom: anyPanel ? panelHeight : insets.bottom, left: 0 }}
         >
           {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
-          {[
-            ...otherLines.filter((l) => !(panelOpen && l.key === routeLine?.key)),
-            ...(panelOpen && routeLine ? [routeLine] : []),
-          ].flatMap((line) => {
+          {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
+          {[...otherLines.filter((l) => l.key !== ownLine?.key), ...(ownLine ? [ownLine] : [])].flatMap((line) => {
             const color = colorFor({ routeColor: line.color, mode: line.mode });
-            const own = line === routeLine;
+            const own = line === ownLine;
             return line.paths.map((path, i) => (
               <Polyline
                 key={`route-${own ? 'own' : 'other'}-${line.key}-${i}`}
                 coordinates={path.map(([lon, lat]) => ({ latitude: lat, longitude: lon }))}
-                strokeColor={`${color}${own ? '80' : 'b3'}`}
+                strokeColor={`${color}${own ? (panelOpen ? '80' : 'e6') : 'b3'}`}
                 strokeWidth={own ? 4 : 3}
                 lineCap="round"
                 lineJoin="round"
@@ -399,24 +497,23 @@ function TransitMap() {
             />
           )}
           {/* Every station on the line (buses have none listed, so their next stops instead). */}
-          {panelOpen &&
-            (routeLine?.stops.length ? routeLine.stops : detail.upcoming)
-              .filter((s) => s.lat !== undefined && s.lon !== undefined)
-              .map((s) => (
-                <Marker
-                  key={`stop-${s.stopId}`}
-                  coordinate={{ latitude: s.lat!, longitude: s.lon! }}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges={false}
-                  onPress={() => pickStation(s)}
-                >
-                  <View style={[styles.stopDot, { borderColor: pathColor, backgroundColor: c.card }]} />
-                </Marker>
-              ))}
+          {stationDots
+            .filter((s) => s.lat !== undefined && s.lon !== undefined)
+            .map((s) => (
+              <Marker
+                key={`stop-${ownLine?.key ?? ''}-${s.stopId}`}
+                coordinate={{ latitude: s.lat!, longitude: s.lon! }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+                onPress={() => pickStation(s)}
+              >
+                <View style={[styles.stopDot, { borderColor: ownColor, backgroundColor: c.card }]} />
+              </Marker>
+            ))}
           {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
               marker's view on its coordinate using the size it had when first drawn, and one view holding
               text could be drawn before the text was laid out, which put the ring off the station. */}
-          {panelOpen && station && (
+          {anyPanel && station && (
             <Marker
               key={`station-ring-${station.stopId}-${dark ? 'd' : 'l'}`}
               coordinate={{ latitude: station.lat, longitude: station.lon }}
@@ -427,7 +524,7 @@ function TransitMap() {
               <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
             </Marker>
           )}
-          {panelOpen && station?.name && (
+          {anyPanel && station?.name && (
             <Marker
               key={`station-name-${station.stopId}-${dark ? 'd' : 'l'}`}
               coordinate={{ latitude: station.lat, longitude: station.lon }}
@@ -493,7 +590,7 @@ function TransitMap() {
         </View>
       </View>
 
-      {!panelOpen && (
+      {!anyPanel && (
         <View style={[styles.status, { bottom: insets.bottom + 16, backgroundColor: c.chip }]} pointerEvents="none">
           <View
             style={[
@@ -512,7 +609,7 @@ function TransitMap() {
         accessibilityLabel="Show my location"
         style={[
           styles.locate,
-          { backgroundColor: c.chip, bottom: (panelOpen ? panelHeight : insets.bottom) + 16 },
+          { backgroundColor: c.chip, bottom: (anyPanel ? panelHeight : insets.bottom) + 16 },
         ]}
       >
         <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
@@ -537,8 +634,39 @@ function TransitMap() {
               keepStation.current = true;
               select(id);
             }}
+            onLine={openLine}
             onStop={pickStation}
             onClose={() => select(null)}
+          />
+        </View>
+      )}
+
+      {lineOpen && viewLine && (
+        <View
+          style={[styles.panelWrap, { maxHeight: height * 0.5 }]}
+          onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)}
+          pointerEvents="box-none"
+        >
+          <LinePanel
+            info={routesByKey.get(viewLine.key)}
+            line={viewRoute}
+            routes={routesByKey}
+            station={station}
+            arrivals={arrivals}
+            backLabel={viewLine.back?.label}
+            dark={dark}
+            bottomInset={insets.bottom}
+            onBack={closeLine}
+            onStop={pickStation}
+            onArrival={(id) => {
+              keepStation.current = true;
+              select(id);
+            }}
+            onLine={openLine}
+            onClose={() => {
+              setViewLine(null);
+              setStation(null);
+            }}
           />
         </View>
       )}
