@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colorFor, MODE_LABELS, routeKey } from '../web/src/vehicles';
+import { colorFor, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchRouteLines,
   fetchRoutes,
@@ -23,6 +23,7 @@ import {
   type Mode,
   type RouteInfo,
   type RouteLine,
+  type Station,
   type UpcomingStop,
   type Vehicle,
   type VehicleDetail,
@@ -35,7 +36,6 @@ import { VehiclePanel } from './src/VehiclePanel';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
-const DRAW_ROUTES_KEY = 'transit-tracker:draw-routes';
 /** How often the tapped vehicle is refreshed. */
 const SELECTED_POLL_MS = 3000;
 const NEW_YORK: Region = { latitude: 40.73, longitude: -73.97, latitudeDelta: 0.08, longitudeDelta: 0.06 };
@@ -62,8 +62,10 @@ function TransitMap() {
 
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>([]);
-  const [drawRoutes, setDrawRoutes] = useState(false);
-  const [routeLines, setRouteLines] = useState<RouteLine[]>([]);
+  const [routeLine, setRouteLine] = useState<RouteLine | null>(null);
+  const [station, setStation] = useState<Station | null>(null);
+  const [showTransfers, setShowTransfers] = useState(false);
+  const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [linesOpen, setLinesOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
@@ -86,31 +88,25 @@ function TransitMap() {
         if (Array.isArray(parsed)) setLines(parsed.filter((k): k is string => typeof k === 'string'));
       })
       .catch(() => {});
-    AsyncStorage.getItem(DRAW_ROUTES_KEY)
-      .then((saved) => setDrawRoutes(saved === 'true'))
-      .catch(() => {});
   }, []);
   const changeLines = (next: string[]) => {
     setLines(next);
     AsyncStorage.setItem(LINES_KEY, JSON.stringify(next)).catch(() => {});
   };
-  const changeDrawRoutes = (draw: boolean) => {
-    setDrawRoutes(draw);
-    AsyncStorage.setItem(DRAW_ROUTES_KEY, String(draw)).catch(() => {});
-  };
   const routesByKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
 
-  // The whole route of each chosen line, when asked for. Retry while the server may still be starting.
+  // The whole route of the tapped vehicle's line, with its stations. Retry while the server may still be starting.
+  const selectedLine = detail ? routeKey(detail.vehicle) : null;
   useEffect(() => {
-    setRouteLines([]);
-    if (!drawRoutes || !lines.length || !active) return;
+    setRouteLine(null);
+    if (!selectedLine || !active) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      fetchRouteLines(lines, controller.signal)
+      fetchRouteLines([selectedLine], controller.signal)
         .then((r) => {
-          setRouteLines(r.lines);
-          if (r.lines.length < lines.length) timer = setTimeout(load, 15_000);
+          setRouteLine(r.lines[0] ?? null);
+          if (!r.lines.length) timer = setTimeout(load, 15_000);
         })
         .catch(() => {
           if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
@@ -120,7 +116,30 @@ function TransitMap() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [drawRoutes, lines, active]);
+  }, [selectedLine, active]);
+
+  // A picked station belongs to the vehicle it was picked for.
+  useEffect(() => {
+    setStation(null);
+    setShowTransfers(false);
+  }, [selectedId]);
+
+  // The lines you can change to at the picked station, without express twins (7X beside the 7).
+  const stationTransfers = useMemo(
+    () => transferLines(station?.transfers, routesByKey).map((r) => r.key),
+    [station, routesByKey],
+  );
+
+  // Their whole routes, when asked for.
+  useEffect(() => {
+    setTransferRoutes([]);
+    if (!showTransfers || !stationTransfers.length) return;
+    const controller = new AbortController();
+    fetchRouteLines(stationTransfers, controller.signal)
+      .then((r) => setTransferRoutes(r.lines))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [showTransfers, stationTransfers]);
 
   // Already allowed to use the location from an earlier launch: show the blue dot straight away.
   useEffect(() => {
@@ -214,10 +233,15 @@ function TransitMap() {
     );
   }, [detail, following, selectedId]);
 
-  // Bring a tapped stop to the middle of the map.
-  const focusStop = (stop: UpcomingStop) => {
+  // Pick a station from the stop list or the map and bring it to the middle. Stations on the line and in
+  // the stop list have different ids for the same place (127 and 127N), so look its transfers up by place.
+  const pickStation = (stop: UpcomingStop) => {
     if (stop.lat === undefined || stop.lon === undefined) return;
+    const known = [...(stop.transfers ? [stop] : []), ...(routeLine?.stops ?? []), ...(detail?.upcoming ?? [])].find(
+      (s) => s.transfers && sameStation(s, stop),
+    );
     setFollowing(false);
+    setStation({ stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: known?.transfers });
     mapRef.current?.animateCamera({ center: { latitude: stop.lat, longitude: stop.lon } }, { duration: 600 });
   };
 
@@ -287,14 +311,16 @@ function TransitMap() {
           userInterfaceStyle={dark ? 'dark' : 'light'}
           mapPadding={{ top: insets.top + 96, right: 0, bottom: panelOpen ? panelHeight : insets.bottom, left: 0 }}
         >
-          {routeLines.flatMap((line) => {
+          {/* Lines you can transfer to at the picked station, under the tapped vehicle's own line. */}
+          {[...transferRoutes, ...(panelOpen && routeLine ? [routeLine] : [])].flatMap((line) => {
             const color = colorFor({ routeColor: line.color, mode: line.mode });
+            const own = line === routeLine;
             return line.paths.map((path, i) => (
               <Polyline
-                key={`route-${line.key}-${i}`}
+                key={`route-${own ? 'own' : 'transfer'}-${line.key}-${i}`}
                 coordinates={path.map(([lon, lat]) => ({ latitude: lat, longitude: lon }))}
-                strokeColor={`${color}99`}
-                strokeWidth={3}
+                strokeColor={`${color}${own ? '80' : 'b3'}`}
+                strokeWidth={own ? 4 : 3}
                 lineCap="round"
                 lineJoin="round"
               />
@@ -309,8 +335,9 @@ function TransitMap() {
               lineJoin="round"
             />
           )}
-          {detail?.vehicle.id === selectedId &&
-            detail.upcoming
+          {/* Every station on the line (buses have none listed, so their next stops instead). */}
+          {panelOpen &&
+            (routeLine?.stops.length ? routeLine.stops : detail.upcoming)
               .filter((s) => s.lat !== undefined && s.lon !== undefined)
               .map((s) => (
                 <Marker
@@ -318,11 +345,29 @@ function TransitMap() {
                   coordinate={{ latitude: s.lat!, longitude: s.lon! }}
                   anchor={{ x: 0.5, y: 0.5 }}
                   tracksViewChanges={false}
-                  onPress={() => focusStop(s)}
+                  onPress={() => pickStation(s)}
                 >
                   <View style={[styles.stopDot, { borderColor: pathColor, backgroundColor: c.card }]} />
                 </Marker>
               ))}
+          {panelOpen && station && (
+            <Marker
+              key={`station-${station.stopId}-${dark ? 'd' : 'l'}`}
+              coordinate={{ latitude: station.lat, longitude: station.lon }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={3}
+            >
+              <View style={styles.stationPin}>
+                <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
+                {station.name && (
+                  <Text style={[styles.stationLabel, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
+                    {tidyStopName(station.name)}
+                  </Text>
+                )}
+              </View>
+            </Marker>
+          )}
           {shown.map((v) => (
             <VehicleMarker
               // Remount when the label appears or goes, since the marker's view isn't redrawn otherwise.
@@ -407,7 +452,11 @@ function TransitMap() {
             dark={dark}
             bottomInset={insets.bottom}
             onFollow={() => setFollowing((f) => !f)}
-            onStop={focusStop}
+            station={station}
+            stationTransfers={stationTransfers}
+            showTransfers={showTransfers}
+            onShowTransfers={setShowTransfers}
+            onStop={pickStation}
             onClose={() => select(null)}
           />
         </View>
@@ -420,8 +469,6 @@ function TransitMap() {
         chosen={lines}
         dark={dark}
         onChange={changeLines}
-        drawRoutes={drawRoutes}
-        onDrawRoutesChange={changeDrawRoutes}
         onClose={() => setLinesOpen(false)}
       />
     </View>
@@ -494,4 +541,8 @@ const styles = StyleSheet.create({
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   panelWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
+  // The ring sits on the station and the name hangs below it, so the pin is centered on the ring.
+  stationPin: { width: 160, height: 76, alignItems: 'center', paddingTop: 24 },
+  stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
+  stationLabel: { marginTop: 4, fontSize: 12, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
 });

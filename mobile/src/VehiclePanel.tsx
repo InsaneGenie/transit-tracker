@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
-import type { RouteInfo, UpcomingStop, VehicleDetail } from './api';
+import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
+import type { RouteInfo, Station, UpcomingStop, VehicleDetail } from './api';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
@@ -10,6 +10,12 @@ interface Props {
   /** Every line by key, to show transfers with their colors. */
   routes: Map<string, RouteInfo>;
   following: boolean;
+  /** The station picked on the map or in this list, highlighted here. */
+  station: Station | null;
+  /** Lines you can transfer to at that station, as route keys. */
+  stationTransfers: string[];
+  showTransfers: boolean;
+  onShowTransfers: (show: boolean) => void;
   dark: boolean;
   bottomInset: number;
   onFollow: () => void;
@@ -41,7 +47,20 @@ function Transfers({ lines, muted }: { lines: RouteInfo[]; muted: string }) {
 }
 
 /** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
-export function VehiclePanel({ detail, routes, following, dark, bottomInset, onFollow, onStop, onClose }: Props) {
+export function VehiclePanel({
+  detail,
+  routes,
+  following,
+  station,
+  stationTransfers,
+  showTransfers,
+  onShowTransfers,
+  dark,
+  bottomInset,
+  onFollow,
+  onStop,
+  onClose,
+}: Props) {
   const c = palette(dark);
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
@@ -86,26 +105,56 @@ export function VehiclePanel({ detail, routes, following, dark, bottomInset, onF
         </Pressable>
       </View>
 
+      {station && (
+        <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">
+          <View style={styles.stationText}>
+            <Text style={[styles.titleText, { color: c.text }]} numberOfLines={1}>
+              {station.name ? tidyStopName(station.name) : 'Station'}
+            </Text>
+            {stationTransfers.length > 0 ? (
+              <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} />
+            ) : (
+              <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
+            )}
+          </View>
+          {stationTransfers.length > 0 && (
+            <Pressable
+              onPress={() => onShowTransfers(!showTransfers)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: showTransfers }}
+              style={[styles.follow, { borderColor: c.border }, showTransfers && { backgroundColor: c.accent, borderColor: c.accent }]}
+            >
+              <Text style={[styles.followText, { color: showTransfers ? '#ffffff' : c.text }]}>
+                {showTransfers ? 'Hide transfers' : 'Show transfers'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {upcoming.length > 0 ? (
         <ScrollView style={styles.stops}>
-          {upcoming.slice(0, MAX_STOPS).map((s, i) => (
-            <Pressable
-              key={s.stopId}
-              style={({ pressed }) => [styles.stop, pressed && styles.pressed]}
-              disabled={s.lat === undefined || s.lon === undefined}
-              onPress={() => onStop(s)}
-              accessibilityRole="button"
-            >
-              <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
-              <View style={styles.stopText}>
-                <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
-                  {s.name ? tidyStopName(s.name) : s.stopId}
-                </Text>
-                <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
-              </View>
-              <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
-            </Pressable>
-          ))}
+          {upcoming.slice(0, MAX_STOPS).map((s, i) => {
+            const chosen = station !== null && sameStation(s, station);
+            return (
+              <Pressable
+                key={s.stopId}
+                style={({ pressed }) => [styles.stop, chosen && { backgroundColor: `${color}26` }, pressed && styles.pressed]}
+                disabled={s.lat === undefined || s.lon === undefined}
+                onPress={() => onStop(s)}
+                accessibilityRole="button"
+              >
+                <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
+                <View style={styles.stopText}>
+                  <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
+                    {s.name ? tidyStopName(s.name) : s.stopId}
+                  </Text>
+                  <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
+                </View>
+                <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       ) : (
         <Text style={[styles.muted, { color: c.muted }]}>No upcoming stops reported for this vehicle.</Text>
@@ -139,7 +188,18 @@ const styles = StyleSheet.create({
   follow: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 },
   followText: { fontSize: 14, fontWeight: '600' },
   stops: { flexGrow: 0, flexShrink: 1 },
-  stop: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, gap: 10 },
+  stop: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 6, marginHorizontal: -6, borderRadius: 8, gap: 10 },
+  stationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderLeftWidth: 4,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingLeft: 10,
+    marginBottom: 8,
+  },
+  stationText: { flex: 1, gap: 4 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
   pressed: { opacity: 0.5 },
   stopText: { flex: 1, gap: 3 },
