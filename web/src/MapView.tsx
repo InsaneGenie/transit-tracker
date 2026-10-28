@@ -59,6 +59,8 @@ interface Props {
   /** The picked station, marked on the map and brought to the middle. */
   station: Station | null;
   onStation: (station: Omit<Station, 'at'>) => void;
+  /** A station of one of `otherLines` was tapped. */
+  onLineStation: (line: string, station: Omit<Station, 'at' | 'transfers'>) => void;
   selectedId: string | null;
   detail: VehicleDetail | null;
   following: boolean;
@@ -126,6 +128,19 @@ function stopFeatures(stops: UpcomingStop[], color: string): GeoJSON.FeatureColl
         geometry: { type: 'Point', coordinates: [s.lon!, s.lat!] },
         properties: { color, stopId: s.stopId, name: s.name ? tidyStopName(s.name) : '' },
       })),
+  };
+}
+
+/** The stations of every picked line, each knowing which line it belongs to. */
+function otherStopsData(lines: RouteLine[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: lines.flatMap((l) =>
+      stopFeatures(l.stops, colorFor({ routeColor: l.color, mode: l.mode })).features.map((f) => ({
+        ...f,
+        properties: { ...f.properties, line: l.key },
+      })),
+    ),
   };
 }
 
@@ -233,6 +248,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
   const line = routeLineData(state.routeLine);
   map.addSource('other-lines', { type: 'geojson', data: linesData(state.otherLines) });
+  map.addSource('other-stops', { type: 'geojson', data: otherStopsData(state.otherLines) });
   map.addSource('route-lines', { type: 'geojson', data: line.path });
   map.addSource('route-stops', { type: 'geojson', data: line.stops });
   map.addSource('chosen-station', { type: 'geojson', data: stationData(state.station, stationColor(state)) });
@@ -246,6 +262,19 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     source: 'other-lines',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.5, 15, 4], 'line-opacity': 0.7 },
+  });
+  // Their stations, once zoomed in enough to tell them apart.
+  map.addLayer({
+    id: 'other-stops',
+    type: 'circle',
+    source: 'other-stops',
+    minzoom: 11,
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2, 15, 4],
+      'circle-color': outline,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 1.5,
+    },
   });
   // The tapped vehicle's whole line, thinner and fainter than its path ahead.
   map.addLayer({
@@ -530,9 +559,17 @@ export function MapView(props: Props) {
         callbacks.current.onStation({ stopId, name: name || undefined, lon, lat });
         return;
       }
+      // A station of a picked line: open that line at the station.
+      const other = hit ? undefined : map.queryRenderedFeatures(box, { layers: ['other-stops'] })[0];
+      if (other?.geometry.type === 'Point') {
+        const [lon, lat] = other.geometry.coordinates;
+        const { stopId, name, line } = other.properties as { stopId: string; name: string; line: string };
+        callbacks.current.onLineStation(line, { stopId, name: name || undefined, lon, lat });
+        return;
+      }
       callbacks.current.onSelect(hit ? String(hit.properties.id) : null);
     });
-    for (const layer of [...clickable, ...STATION_LAYERS]) {
+    for (const layer of [...clickable, ...STATION_LAYERS, 'other-stops']) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
@@ -631,6 +668,7 @@ export function MapView(props: Props) {
   useEffect(() => {
     state.current.otherLines = otherLines;
     (mapRef.current?.getSource('other-lines') as GeoJSONSource | undefined)?.setData(linesData(otherLines));
+    (mapRef.current?.getSource('other-stops') as GeoJSONSource | undefined)?.setData(otherStopsData(otherLines));
   }, [otherLines]);
 
   // Mark the picked station and bring it to the middle of the uncovered map.

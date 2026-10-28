@@ -48,8 +48,15 @@ const NEW_YORK: Region = { latitude: 40.73, longitude: -73.97, latitudeDelta: 0.
 
 type Status = 'connecting' | 'live' | 'error' | 'zoomedOut';
 
-/** A line opened from a station's transfers. `back` is the vehicle and station it was opened from. */
-type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null } };
+/**
+ * A line opened from a station's transfers or one of its stations on the map. `back` is the vehicle and
+ * station it was opened from; `atStation` keeps the map on the tapped station instead of the whole line.
+ */
+type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null }; atStation?: boolean };
+/** Picked lines' stations show from this zoom; further out they would crowd the map. */
+const OTHER_STOPS_MIN_ZOOM = 12;
+/** The most of their stations drawn at once, since every one is a native view. */
+const MAX_OTHER_STOPS = 200;
 
 /** A line's whole route with its stations. Retries while the server may still be starting. */
 function useRouteLine(key: string | null, active: boolean): RouteLine | null {
@@ -325,7 +332,7 @@ function TransitMap() {
   };
 
   // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
-  const openLine = (key: string) => {
+  const openLine = (key: string, at?: Station) => {
     const back = detail
       ? {
           vehicleId: detail.vehicle.id,
@@ -333,10 +340,20 @@ function TransitMap() {
           station,
         }
       : viewLine?.back;
-    setViewLine({ key, back });
-    setStation(null);
+    setViewLine({ key, back, atStation: Boolean(at) });
+    setStation(at ?? null);
     setShowTransfers(false);
+    // Closing the vehicle would otherwise drop the station just picked.
+    if (at && selectedId) keepStation.current = true;
     select(null);
+    if (at) mapRef.current?.animateCamera({ center: { latitude: at.lat, longitude: at.lon } }, { duration: 600 });
+  };
+
+  // A station of a picked line, tapped on the map, opens that line there.
+  const openLineStation = (key: string, stop: UpcomingStop) => {
+    if (stop.lat === undefined || stop.lon === undefined) return;
+    setFollowing(false);
+    openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
   };
 
   // Once the vehicle's panel is back, pick its station again and bring it into view beside the panel.
@@ -366,7 +383,7 @@ function TransitMap() {
   // show, so stay close enough to see them, centered on the line.
   useEffect(() => {
     const points = viewRoute?.paths.flat() ?? [];
-    if (!points.length) return;
+    if (!points.length || viewLine?.atStation) return;
     const [west, south, east, north] = points.reduce(
       (b, [lon, lat]) => [Math.min(b[0], lon), Math.min(b[1], lat), Math.max(b[2], lon), Math.max(b[3], lat)],
       [Infinity, Infinity, -Infinity, -Infinity],
@@ -437,6 +454,19 @@ function TransitMap() {
     : lineOpen
       ? (viewRoute?.stops ?? [])
       : [];
+  // The picked lines' stations in view, when zoomed in enough. The open line's own are drawn above.
+  const otherStops = useMemo(() => {
+    if (zoom < OTHER_STOPS_MIN_ZOOM) return [];
+    const [west, south, east, north] = boundsOf(region);
+    return otherLines
+      .filter((l) => l.key !== ownLine?.key)
+      .flatMap((line) =>
+        line.stops
+          .filter((s) => s.lat !== undefined && s.lon !== undefined && s.lon >= west && s.lon <= east && s.lat >= south && s.lat <= north)
+          .map((stop) => ({ line, stop })),
+      )
+      .slice(0, MAX_OTHER_STOPS);
+  }, [otherLines, ownLine?.key, region, zoom]);
 
   const statusText =
     status === 'zoomedOut'
@@ -496,6 +526,24 @@ function TransitMap() {
               lineJoin="round"
             />
           )}
+          {/* Stations of the picked lines: tapping one opens that line there. */}
+          {otherStops.map(({ line, stop }) => (
+            <Marker
+              key={`other-stop-${line.key}-${stop.stopId}-${dark ? 'd' : 'l'}`}
+              coordinate={{ latitude: stop.lat!, longitude: stop.lon! }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              onPress={() => openLineStation(line.key, stop)}
+            >
+              <View
+                style={[
+                  styles.stopDot,
+                  styles.otherStopDot,
+                  { borderColor: colorFor({ routeColor: line.color, mode: line.mode }), backgroundColor: c.card },
+                ]}
+              />
+            </Marker>
+          ))}
           {/* Every station on the line (buses have none listed, so their next stops instead). */}
           {stationDots
             .filter((s) => s.lat !== undefined && s.lon !== undefined)
@@ -634,7 +682,7 @@ function TransitMap() {
               keepStation.current = true;
               select(id);
             }}
-            onLine={openLine}
+            onLine={(key) => openLine(key)}
             onStop={pickStation}
             onClose={() => select(null)}
           />
@@ -662,7 +710,7 @@ function TransitMap() {
               keepStation.current = true;
               select(id);
             }}
-            onLine={openLine}
+            onLine={(key) => openLine(key)}
             onClose={() => {
               setViewLine(null);
               setStation(null);
@@ -750,6 +798,7 @@ const styles = StyleSheet.create({
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   panelWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
+  otherStopDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 2 },
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
   // A fixed-size box, so the marker's size is known before the text is laid out.
   stationLabel: { width: 180, height: STATION_LABEL_HEIGHT, alignItems: 'center', justifyContent: 'center' },
