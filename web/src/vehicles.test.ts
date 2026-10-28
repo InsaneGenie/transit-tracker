@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Vehicle } from './api';
 import {
   colorFor,
-  containsBounds,
   formatEta,
   interpolate,
-  padBounds,
   textColorFor,
+  tidyStopName,
   toFeatureCollection,
 } from './vehicles';
 
@@ -64,11 +63,10 @@ describe('formatEta', () => {
   });
 });
 
-describe('bounds', () => {
-  it('pads on every side and checks containment', () => {
-    const padded = padBounds([-74, 40, -73, 41], 0.5);
-    expect(padded).toEqual([-74.5, 39.5, -72.5, 41.5]);
-    expect(containsBounds(padded, [-74.2, 40.1, -73.1, 41.2])).toBe(true);
-    expect(containsBounds(padded, [-75, 40, -73, 41])).toBe(false);
+describe('tidyStopName', () => {
+  it('title-cases all-caps bus stop names and leaves others alone', () => {
+    expect(tidyStopName('WILLIS AV/E 138 ST')).toBe('Willis Av/E 138 St');
+    expect(tidyStopName('34 ST-HERALD SQ')).toBe('34 St-Herald Sq');
+    expect(tidyStopName('Times Sq-42 St')).toBe('Times Sq-42 St');
   });
 });

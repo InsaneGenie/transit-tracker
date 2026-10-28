@@ -11,7 +11,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef } from 'react';
 import { fetchVehicles, type Bounds, type Mode, type Vehicle, type VehicleDetail } from './api';
 import type { Theme } from './theme';
-import { colorFor, containsBounds, interpolate, padBounds, toFeatureCollection } from './vehicles';
+import { colorFor, interpolate, toFeatureCollection } from './vehicles';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
 setWorkerUrl(workerUrl);
@@ -216,7 +216,7 @@ export function MapView({ theme, modes, selectedId, detail, onSelect, onUpdate }
     let glideStart = 0;
     let lastFrame = 0;
     let frame = 0;
-    let fetched: Bounds | undefined;
+    let showing = false;
     let controller: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -241,7 +241,7 @@ export function MapView({ theme, modes, selectedId, detail, onSelect, onUpdate }
       controller?.abort();
       if (map.getZoom() < VEHICLE_MIN_ZOOM) {
         // Too far out to show vehicles: stop fetching until the user zooms in.
-        fetched = undefined;
+        showing = false;
         shown = new Map();
         target = [];
         cancelAnimationFrame(frame);
@@ -251,10 +251,10 @@ export function MapView({ theme, modes, selectedId, detail, onSelect, onUpdate }
         return;
       }
       controller = new AbortController();
-      const area = padBounds(boundsOf(map), 0.25);
       try {
-        const { vehicles } = await fetchVehicles(area, controller.signal);
-        fetched = area;
+        // Only what's on screen; anything off screen is left alone until it scrolls into view.
+        const { vehicles } = await fetchVehicles(boundsOf(map), controller.signal);
+        showing = true;
         // Glide from wherever the dots are drawn right now.
         const now = performance.now();
         shown = new Map(interpolate(shown, target, (now - glideStart) / GLIDE_MS).map((v) => [v.id, v]));
@@ -267,9 +267,7 @@ export function MapView({ theme, modes, selectedId, detail, onSelect, onUpdate }
           shown = new Map(vehicles.map((v) => [v.id, v]));
           setVehicles(vehicles);
         }
-        const [w, s, e, n] = boundsOf(map);
-        const inView = vehicles.filter((v) => v.lon >= w && v.lon <= e && v.lat >= s && v.lat <= n).length;
-        callbacks.current.onUpdate({ count: inView });
+        callbacks.current.onUpdate({ count: vehicles.length });
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
         callbacks.current.onUpdate({ count: target.length, error: "Can't reach the live data server" });
@@ -303,13 +301,11 @@ export function MapView({ theme, modes, selectedId, detail, onSelect, onUpdate }
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
 
-    // Fetch again only when the view leaves the area already loaded; otherwise the next poll catches up.
+    // Load the new view once the map settles.
     let moveTimer: ReturnType<typeof setTimeout> | undefined;
     map.on('moveend', () => {
       clearTimeout(moveTimer);
-      const zoomedOut = map.getZoom() < VEHICLE_MIN_ZOOM;
-      if (!zoomedOut && fetched && containsBounds(fetched, boundsOf(map))) return;
-      if (zoomedOut && !fetched) return;
+      if (map.getZoom() < VEHICLE_MIN_ZOOM && !showing) return;
       moveTimer = setTimeout(refresh, 250);
     });
 

@@ -59,6 +59,32 @@ interface FeedState {
   lastError?: string;
 }
 
+/** `MTA NYCT_M15` -> `M15`, so realtime ids match the schedule's. */
+const unprefix = <T extends string | undefined>(id: T): T => (id ? id.replace(/^[^_]*_/, '') : id) as T;
+
+function withoutAgencyPrefixes(snapshot: FeedSnapshot): FeedSnapshot {
+  return {
+    ...snapshot,
+    gps: snapshot.gps.map((g) => ({ ...g, tripId: unprefix(g.tripId), routeId: unprefix(g.routeId), stopId: unprefix(g.stopId) })),
+    trips: snapshot.trips.map((t) => ({
+      ...t,
+      tripId: unprefix(t.tripId),
+      routeId: unprefix(t.routeId),
+      statusStopId: unprefix(t.statusStopId),
+      stops: t.stops.map((s) => ({ ...s, stopId: unprefix(s.stopId) })),
+    })),
+  };
+}
+
+export type Bbox = [west: number, south: number, east: number, north: number];
+
+/** Margin around the requested area when deciding which trips are worth estimating, in degrees (~3 km). */
+const ESTIMATE_MARGIN = 0.03;
+
+function inside(b: Bbox, lat: number, lon: number, margin = 0): boolean {
+  return lon >= b[0] - margin && lat >= b[1] - margin && lon <= b[2] + margin && lat <= b[3] + margin;
+}
+
 export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 
 export class VehicleStore {
@@ -69,7 +95,8 @@ export class VehicleStore {
     configs: FeedConfig[],
     env: Record<string, string | undefined> = process.env,
     private fetcher: Fetcher = (url) => fetchFeed(url, AbortSignal.timeout(15_000)),
-    private loadIndex: (id: string, url: string) => Promise<StaticIndex> = loadStaticIndex,
+    private loadIndex: (config: FeedConfig) => Promise<StaticIndex> = (c) =>
+      loadStaticIndex(c.id, c.staticUrls!, c.staticDetail),
   ) {
     this.feeds = configs.map((config) => ({
       config,
@@ -83,9 +110,9 @@ export class VehicleStore {
 
   async loadStatic(): Promise<void> {
     await Promise.all(
-      this.feeds.filter((f) => this.enabled(f) && f.config.staticUrl).map(async (feed) => {
+      this.feeds.filter((f) => this.enabled(f) && f.config.staticUrls?.length).map(async (feed) => {
         try {
-          feed.index = await this.loadIndex(feed.config.id, feed.config.staticUrl!);
+          feed.index = await this.loadIndex(feed.config);
         } catch (err) {
           feed.lastError = `static GTFS: ${(err as Error).message}`;
         }
@@ -103,7 +130,10 @@ export class VehicleStore {
     const results = await Promise.allSettled(urls.map((u) => this.fetcher(u)));
     const ok = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
     const failed = results.flatMap((r) => (r.status === 'rejected' ? [String(r.reason?.message ?? r.reason)] : []));
-    if (ok.length) feed.snapshot = mergeSnapshots(ok);
+    if (ok.length) {
+      const merged = mergeSnapshots(ok);
+      feed.snapshot = feed.config.agencyPrefixedIds ? withoutAgencyPrefixes(merged) : merged;
+    }
     feed.lastError = failed.length ? failed.join('; ') : undefined;
   }
 
@@ -126,8 +156,11 @@ export class VehicleStore {
     this.timers = [];
   }
 
-  /** Every vehicle right now. Estimated positions move between polls because they are worked out per call. */
-  vehicles(now = Date.now() / 1000): Vehicle[] {
+  /**
+   * Every vehicle right now, or only those inside `bbox`. Estimated positions move between polls because
+   * they are worked out per call, and only trips heading to a stop near the area are worked out at all.
+   */
+  vehicles(now = Date.now() / 1000, bbox?: Bbox): Vehicle[] {
     const out: Vehicle[] = [];
     for (const { config, index, snapshot } of this.feeds) {
       if (!snapshot) continue;
@@ -135,6 +168,7 @@ export class VehicleStore {
       const route = (id?: string) => (id ? index?.routes.get(id) : undefined);
 
       for (const g of snapshot.gps) {
+        if (bbox && !inside(bbox, g.lat, g.lon)) continue;
         const r = route(g.routeId);
         out.push({
           ...base,
@@ -156,8 +190,13 @@ export class VehicleStore {
       const tracked = new Set(snapshot.gps.map((g) => g.tripId));
       for (const trip of snapshot.trips) {
         if (tracked.has(trip.tripId)) continue; // its GPS position is already listed
+        if (bbox) {
+          const next = trip.stops.find((s) => (s.departure ?? s.arrival ?? 0) > now);
+          const stop = next && index.stops.get(next.stopId);
+          if (!stop || !inside(bbox, stop.lat, stop.lon, ESTIMATE_MARGIN)) continue;
+        }
         const pos = estimatePosition(trip, now, index);
-        if (!pos) continue;
+        if (!pos || (bbox && !inside(bbox, pos.lat, pos.lon))) continue;
         const r = route(trip.routeId);
         out.push({
           ...base,
@@ -196,7 +235,13 @@ export class VehicleStore {
 
     const path: [number, number][] = [];
     const add = (track: Polyline) => path.push(...track.points.map((p): [number, number] => [p.lon, p.lat]));
-    if (index) {
+    const tripShapeId = trip && index?.tripShapes.get(trip.tripId);
+    const tripShape = tripShapeId ? index?.shapes.get(tripShapeId) : undefined;
+    const lastStop = [...upcoming].reverse().find((u) => u.lat !== undefined && u.lon !== undefined);
+    if (tripShape && lastStop) {
+      // The schedule knows this exact trip (true of buses), so follow its shape to the last stop.
+      add(tripShape.slice(vehicle, { lat: lastStop.lat!, lon: lastStop.lon! }));
+    } else if (index) {
       const segmentTo = (stopId: string) =>
         index.segments.get(`${vehicle.routeId}|${stopId}`) ?? index.segments.get(`*|${stopId}`);
       let from: string | undefined;

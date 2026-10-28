@@ -13,7 +13,7 @@ const train: FeedConfig = {
   agency: 'Test Transit',
   mode: 'subway',
   realtimeUrls: ['https://example.test/train'],
-  staticUrl: 'https://example.test/train.zip',
+  staticUrls: ['https://example.test/train.zip'],
   pollSeconds: 30,
 };
 const bus: FeedConfig = {
@@ -200,5 +200,74 @@ describe('API', () => {
     const one = await (await fetch(`${base}/api/vehicles/${encodeURIComponent('test-bus:MTA_1234')}`)).json();
     expect(one.vehicle.routeId).toBe('M15');
     expect((await fetch(`${base}/api/vehicles/missing`)).status).toBe(404);
+  });
+});
+
+describe('buses', () => {
+  const busFeedConfig: FeedConfig = {
+    id: 'test-bus2',
+    agency: 'Test Bus',
+    mode: 'bus',
+    realtimeUrls: ['https://example.test/vehiclePositions', 'https://example.test/tripUpdates'],
+    staticUrls: ['https://example.test/bus.zip'],
+    staticDetail: 'stops',
+    agencyPrefixedIds: true,
+    pollSeconds: 30,
+  };
+  // Bus Time prefixes ids with the agency; the schedule doesn't.
+  const positions = encodeFeed([
+    {
+      id: 'v',
+      vehicle: {
+        vehicle: { id: 'MTA NYCT_7582' },
+        trip: { tripId: 'MTA NYCT_t1', routeId: 'MTA NYCT_1' },
+        position: { latitude: 40.8, longitude: -73.945 },
+      },
+    },
+  ]);
+  const updates = encodeFeed([
+    {
+      id: 'u',
+      tripUpdate: {
+        trip: { tripId: 'MTA NYCT_t1', routeId: 'MTA NYCT_1' },
+        stopTimeUpdate: [
+          { stopId: 'MTA_B', arrival: { time: T + 120 } },
+          { stopId: 'MTA_C', arrival: { time: T + 300 } },
+        ],
+      },
+    },
+  ]);
+
+  it('shows next stops and the route ahead for a GPS bus', async () => {
+    const { buildStaticIndex } = await import('../src/static-gtfs.js');
+    const { files } = await import('./fixtures.js');
+    const busIndex = buildStaticIndex(files, 'stops');
+    const store = new VehicleStore(
+      [busFeedConfig],
+      {},
+      async (url) => snapshotFromFeed(decodeFeed(url.includes('vehiclePositions') ? positions : updates), T),
+      () => busIndex,
+    );
+    await store.loadStatic();
+    await store.pollAll();
+
+    const [bus] = store.vehicles(T);
+    expect(bus).toMatchObject({ id: 'test-bus2:MTA NYCT_7582', routeId: '1', routeName: '1', source: 'gps' });
+    const detail = store.detail(bus.id, T)!;
+    expect(detail.upcoming.map((u) => u.name)).toEqual(['Bravo', 'Charlie']);
+    // Follows the trip's shape around the dog-leg to the last stop.
+    expect(detail.path).toContainEqual([-73.94, 40.79]);
+    expect(detail.path.at(-1)).toEqual([-73.95, 40.78]);
+  });
+});
+
+describe('visible area', () => {
+  it('only works out positions for trips near the requested area', async () => {
+    const { store } = makeStore({ TEST_BUS_KEY: 'k' });
+    await store.loadStatic();
+    await store.pollAll();
+    // Far from the test line (near 40.79,-73.95) and the test bus: nothing returned.
+    expect(store.vehicles(T, [-74.3, 40.5, -74.2, 40.6])).toEqual([]);
+    expect(store.vehicles(T, [-73.96, 40.77, -73.94, 40.79]).map((v) => v.id)).toEqual(['test-train:tA']);
   });
 });

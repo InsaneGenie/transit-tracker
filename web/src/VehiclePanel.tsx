@@ -1,5 +1,5 @@
 import type { VehicleDetail } from './api';
-import { colorFor, formatEta, MODE_LABELS, textColorFor } from './vehicles';
+import { colorFor, formatEta, MODE_LABELS, textColorFor, tidyStopName } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -7,10 +7,11 @@ export function VehiclePanel({ detail, onClose }: { detail: VehicleDetail; onClo
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
   const name = (vehicle.routeName ?? vehicle.routeId ?? '?').replace(/^MTA\s*\w*_/, '');
-  const next = upcoming[0]?.name ?? vehicle.stopName;
+  const stopName = vehicle.stopName && tidyStopName(vehicle.stopName);
+  const next = upcoming[0]?.name ? tidyStopName(upcoming[0].name) : stopName;
   const where =
-    vehicle.status === 'STOPPED_AT' && vehicle.stopName
-      ? `At ${vehicle.stopName}`
+    vehicle.status === 'STOPPED_AT' && stopName
+      ? `At ${stopName}`
       : next
         ? `Next stop: ${next}`
         : undefined;
@@ -40,7 +41,7 @@ export function VehiclePanel({ detail, onClose }: { detail: VehicleDetail; onClo
           {upcoming.slice(0, MAX_STOPS).map((s) => (
             <li key={s.stopId}>
               <span className="stop-dot" style={{ borderColor: color }} />
-              <span className="stop-name">{s.name ?? s.stopId}</span>
+              <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
               <span className="eta">{formatEta(s.time)}</span>
             </li>
           ))}

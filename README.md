@@ -44,7 +44,7 @@ Then open http://localhost:5173. Dots are colored by line and appear once you zo
 | --- | --- | --- |
 | MTA subway | MTA GTFS-Realtime, no key needed | Estimated |
 | LIRR, Metro-North | MTA GTFS-Realtime, no key needed | GPS when the feed has it, otherwise estimated |
-| MTA buses | MTA Bus Time, free key in `MTA_BUSTIME_KEY` | GPS |
+| MTA buses | MTA Bus Time positions and arrival predictions, free key in `MTA_BUSTIME_KEY` | GPS |
 
 Subway trains don't report GPS. The server takes each train's predicted arrival at its next stop, works out when it left the stop before, and places it that far along the real track shape from the MTA schedule. Positions are recalculated on every request, so trains keep moving between feed updates. Each vehicle has `"source": "gps"` or `"source": "estimated"` so the map can show the difference.
 
