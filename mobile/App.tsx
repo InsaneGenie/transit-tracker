@@ -36,6 +36,9 @@ import { VehiclePanel } from './src/VehiclePanel';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+/** The server draws at most this many lines per request. */
+const MAX_DRAWN_LINES = 60;
+const STATION_LABEL_HEIGHT = 20;
 /** How often the tapped vehicle is refreshed. */
 const SELECTED_POLL_MS = 3000;
 const NEW_YORK: Region = { latitude: 40.73, longitude: -73.97, latitudeDelta: 0.08, longitudeDelta: 0.06 };
@@ -66,6 +69,7 @@ function TransitMap() {
   const [station, setStation] = useState<Station | null>(null);
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
+  const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [linesOpen, setLinesOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
@@ -233,6 +237,35 @@ function TransitMap() {
     );
   }, [detail, following, selectedId]);
 
+  // The lines picked in Lines are drawn as soon as they're picked.
+  useEffect(() => {
+    setFilterRoutes([]);
+    if (!lines.length || !active) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRouteLines(lines.slice(0, MAX_DRAWN_LINES), controller.signal)
+        .then((r) => {
+          setFilterRoutes(r.lines);
+          // Schedules can still be loading; ask again for the lines not found yet.
+          if (r.lines.length < Math.min(lines.length, MAX_DRAWN_LINES)) timer = setTimeout(load, 15_000);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [lines, active]);
+
+  // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
+  const otherLines = useMemo(() => {
+    const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
+    return [...byKey.values()];
+  }, [filterRoutes, transferRoutes]);
+
   // Pick a station from the stop list or the map and bring it to the middle. Stations on the line and in
   // the stop list have different ids for the same place (127 and 127N), so look its transfers up by place.
   const pickStation = (stop: UpcomingStop) => {
@@ -311,13 +344,16 @@ function TransitMap() {
           userInterfaceStyle={dark ? 'dark' : 'light'}
           mapPadding={{ top: insets.top + 96, right: 0, bottom: panelOpen ? panelHeight : insets.bottom, left: 0 }}
         >
-          {/* Lines you can transfer to at the picked station, under the tapped vehicle's own line. */}
-          {[...transferRoutes, ...(panelOpen && routeLine ? [routeLine] : [])].flatMap((line) => {
+          {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
+          {[
+            ...otherLines.filter((l) => !(panelOpen && l.key === routeLine?.key)),
+            ...(panelOpen && routeLine ? [routeLine] : []),
+          ].flatMap((line) => {
             const color = colorFor({ routeColor: line.color, mode: line.mode });
             const own = line === routeLine;
             return line.paths.map((path, i) => (
               <Polyline
-                key={`route-${own ? 'own' : 'transfer'}-${line.key}-${i}`}
+                key={`route-${own ? 'own' : 'other'}-${line.key}-${i}`}
                 coordinates={path.map(([lon, lat]) => ({ latitude: lat, longitude: lon }))}
                 strokeColor={`${color}${own ? '80' : 'b3'}`}
                 strokeWidth={own ? 4 : 3}
@@ -350,21 +386,33 @@ function TransitMap() {
                   <View style={[styles.stopDot, { borderColor: pathColor, backgroundColor: c.card }]} />
                 </Marker>
               ))}
+          {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
+              marker's view on its coordinate using the size it had when first drawn, and one view holding
+              text could be drawn before the text was laid out, which put the ring off the station. */}
           {panelOpen && station && (
             <Marker
-              key={`station-${station.stopId}-${dark ? 'd' : 'l'}`}
+              key={`station-ring-${station.stopId}-${dark ? 'd' : 'l'}`}
               coordinate={{ latitude: station.lat, longitude: station.lon }}
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={false}
               zIndex={3}
             >
-              <View style={styles.stationPin}>
-                <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
-                {station.name && (
-                  <Text style={[styles.stationLabel, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
-                    {tidyStopName(station.name)}
-                  </Text>
-                )}
+              <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
+            </Marker>
+          )}
+          {panelOpen && station?.name && (
+            <Marker
+              key={`station-name-${station.stopId}-${dark ? 'd' : 'l'}`}
+              coordinate={{ latitude: station.lat, longitude: station.lon }}
+              // Below the ring: half the ring, a small gap and half the label.
+              centerOffset={{ x: 0, y: 14 + 4 + STATION_LABEL_HEIGHT / 2 }}
+              tracksViewChanges={false}
+              zIndex={3}
+            >
+              <View style={styles.stationLabel}>
+                <Text style={[styles.stationLabelText, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
+                  {tidyStopName(station.name)}
+                </Text>
               </View>
             </Marker>
           )}
@@ -541,8 +589,15 @@ const styles = StyleSheet.create({
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   panelWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-  // The ring sits on the station and the name hangs below it, so the pin is centered on the ring.
-  stationPin: { width: 160, height: 76, alignItems: 'center', paddingTop: 24 },
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
-  stationLabel: { marginTop: 4, fontSize: 12, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  // A fixed-size box, so the marker's size is known before the text is laid out.
+  stationLabel: { width: 180, height: STATION_LABEL_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  stationLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
 });
