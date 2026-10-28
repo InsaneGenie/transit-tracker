@@ -29,6 +29,8 @@ interface Props {
   arrivals: ArrivalDirection[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** Tapping a transfer line at the station shows that whole line. */
+  onLine: (key: string) => void;
   dark: boolean;
   bottomInset: number;
   onFollow: () => void;
@@ -37,31 +39,61 @@ interface Props {
   onClose: () => void;
 }
 
-/** The other lines that call at a stop: subway bullets, or a color swatch and name for rail and buses. */
-function Transfers({ lines, muted }: { lines: RouteInfo[]; muted: string }) {
+/**
+ * The other lines that call at a stop: subway bullets, or a color swatch and name for rail and buses.
+ * With `onPick`, each one is a button that opens that line, drawn a little bigger to be easy to tap.
+ */
+export function Transfers({
+  lines,
+  muted,
+  onPick,
+}: {
+  lines: RouteInfo[];
+  muted: string;
+  onPick?: (key: string) => void;
+}) {
   if (!lines.length) return null;
   return (
-    <View style={styles.transfers} accessibilityLabel={`Transfer to ${lines.map((r) => r.name).join(', ')}`}>
+    <View
+      style={[styles.transfers, onPick && styles.transfersPick]}
+      accessibilityLabel={onPick ? undefined : `Transfer to ${lines.map((r) => r.name).join(', ')}`}
+    >
       {lines.map((r) => {
         const color = colorFor({ routeColor: r.color, mode: r.mode });
-        return r.mode === 'subway' ? (
-          <View key={r.key} style={[styles.bullet, { backgroundColor: color }]}>
-            <Text style={[styles.bulletText, { color: textColorFor(color) }]}>{r.name}</Text>
-          </View>
+        const badge =
+          r.mode === 'subway' ? (
+            <View style={[styles.bullet, { backgroundColor: color }, onPick && styles.bulletPick]}>
+              <Text style={[styles.bulletText, { color: textColorFor(color) }, onPick && styles.bulletTextPick]}>
+                {r.name}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.named}>
+              <View style={[styles.swatch, { backgroundColor: color }]} />
+              <Text style={[styles.namedText, { color: muted }]}>{r.name}</Text>
+            </View>
+          );
+        return onPick ? (
+          <Pressable
+            key={r.key}
+            onPress={() => onPick(r.key)}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Show the ${r.name} line`}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            {badge}
+          </Pressable>
         ) : (
-          <View key={r.key} style={styles.named}>
-            <View style={[styles.swatch, { backgroundColor: color }]} />
-            <Text style={[styles.namedText, { color: muted }]}>{r.name}</Text>
-          </View>
+          <View key={r.key}>{badge}</View>
         );
       })}
     </View>
   );
 }
 
-/** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
 /** The line's vehicles still heading to the picked station, by direction, soonest first. */
-function Arrivals({
+export function Arrivals({
   directions,
   selectedId,
   noun,
@@ -69,7 +101,8 @@ function Arrivals({
   onPick,
 }: {
   directions: ArrivalDirection[] | null;
-  selectedId: string;
+  /** The open vehicle, marked in the list. */
+  selectedId?: string;
   noun: string;
   dark: boolean;
   onPick: (vehicleId: string) => void;
@@ -120,6 +153,7 @@ function Arrivals({
   );
 }
 
+/** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
 export function VehiclePanel({
   detail,
   routes,
@@ -130,6 +164,7 @@ export function VehiclePanel({
   onShowTransfers,
   arrivals,
   onArrival,
+  onLine,
   dark,
   bottomInset,
   onFollow,
@@ -193,7 +228,7 @@ export function VehiclePanel({
                   {station.name ? tidyStopName(station.name) : 'Station'}
                 </Text>
                 {stationTransfers.length > 0 ? (
-                  <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} />
+                  <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} onPick={onLine} />
                 ) : (
                   <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
                 )}
@@ -328,6 +363,9 @@ const styles = StyleSheet.create({
   stopText: { flex: 1, gap: 3 },
   stopName: { fontSize: 14 },
   transfers: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  transfersPick: { gap: 8, marginTop: 2 },
+  bulletPick: { minWidth: 26, height: 26, borderRadius: 13 },
+  bulletTextPick: { fontSize: 13 },
   bullet: {
     minWidth: 18,
     height: 18,
@@ -342,3 +380,6 @@ const styles = StyleSheet.create({
   namedText: { fontSize: 12 },
   eta: { fontSize: 14, fontVariant: ['tabular-nums'] },
 });
+
+/** Shared with the line panel, which is laid out the same way. */
+export { styles as panelStyles };
