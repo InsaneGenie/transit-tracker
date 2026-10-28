@@ -1,4 +1,5 @@
-import { estimatePosition } from './estimate.js';
+import { estimatePosition, trackBetween } from './estimate.js';
+import { Polyline } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
 import { loadStaticIndex, type StaticIndex } from './static-gtfs.js';
@@ -20,6 +21,23 @@ export interface Vehicle {
   stopName?: string;
   /** "gps" when the vehicle reported its position, "estimated" when placed from predicted arrival times. */
   source: 'gps' | 'estimated';
+}
+
+export interface UpcomingStop {
+  stopId: string;
+  name?: string;
+  lat?: number;
+  lon?: number;
+  /** Unix seconds. */
+  time?: number;
+}
+
+export interface VehicleDetail {
+  vehicle: Vehicle;
+  routeLongName?: string;
+  upcoming: UpcomingStop[];
+  /** The rest of the trip as [lon, lat] pairs, from the vehicle onward. */
+  path: [number, number][];
 }
 
 export interface FeedStatus {
@@ -135,7 +153,9 @@ export class VehicleStore {
       }
 
       if (!index) continue;
+      const tracked = new Set(snapshot.gps.map((g) => g.tripId));
       for (const trip of snapshot.trips) {
+        if (tracked.has(trip.tripId)) continue; // its GPS position is already listed
         const pos = estimatePosition(trip, now, index);
         if (!pos) continue;
         const r = route(trip.routeId);
@@ -157,6 +177,45 @@ export class VehicleStore {
       }
     }
     return out;
+  }
+
+  /** One vehicle with its remaining stops and the track ahead of it, for when it is tapped on the map. */
+  detail(id: string, now = Date.now() / 1000): VehicleDetail | null {
+    const vehicle = this.vehicles(now).find((v) => v.id === id);
+    if (!vehicle) return null;
+    const feed = this.feeds.find((f) => f.config.id === vehicle.feed)!;
+    const index = feed.index;
+    const trip = vehicle.tripId ? feed.snapshot?.trips.find((t) => t.tripId === vehicle.tripId) : undefined;
+    const route = vehicle.routeId ? index?.routes.get(vehicle.routeId) : undefined;
+
+    const remaining = (trip?.stops ?? []).filter((s) => (s.departure ?? s.arrival ?? 0) > now);
+    const upcoming = remaining.map((s) => {
+      const stop = index?.stops.get(s.stopId);
+      return { stopId: s.stopId, name: stop?.name, lat: stop?.lat, lon: stop?.lon, time: s.arrival ?? s.departure };
+    });
+
+    const path: [number, number][] = [];
+    const add = (track: Polyline) => path.push(...track.points.map((p): [number, number] => [p.lon, p.lat]));
+    if (index) {
+      const segmentTo = (stopId: string) =>
+        index.segments.get(`${vehicle.routeId}|${stopId}`) ?? index.segments.get(`*|${stopId}`);
+      let from: string | undefined;
+      for (const s of remaining) {
+        const stop = index.stops.get(s.stopId);
+        if (!stop) continue;
+        const seg = segmentTo(s.stopId);
+        if (from) {
+          add(trackBetween(index, from, s.stopId, seg?.fromStopId === from ? seg.shapeId : undefined));
+        } else if (seg && index.stops.has(seg.fromStopId)) {
+          // First hop: the stretch of track from the vehicle to its next stop.
+          add(trackBetween(index, seg.fromStopId, s.stopId, seg.shapeId).slice(vehicle, stop));
+        } else {
+          add(new Polyline([vehicle, stop]));
+        }
+        from = s.stopId;
+      }
+    }
+    return { vehicle, routeLongName: route?.longName || undefined, upcoming, path };
   }
 
   status(): FeedStatus[] {

@@ -4,8 +4,8 @@ A live map of buses and trains across New York State, for commuters. New Jersey 
 
 ## Plan
 
-1. **Live data** (this step): collect real-time feeds and serve every vehicle's position from one API.
-2. **The map**: moving dots for every vehicle, more detail when zoomed in, tap a dot for its route and next stops.
+1. **Live data** (done): collect real-time feeds and serve every vehicle's position from one API.
+2. **The map** (done): moving dots for every vehicle, more detail when zoomed in, tap a dot for its route and next stops.
 3. **Trip search**: from/to directions using OpenTripPlanner.
 4. **Launch**: public website, then an iPhone/Android app.
 
@@ -26,6 +26,18 @@ The first start downloads the MTA schedules (about a minute). Then open:
 - http://localhost:3000/api/health: whether each feed is working.
 
 Run the tests with `npm test`.
+
+## Running the map
+
+With the server running in one window, open a second PowerShell window:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173. Dots are colored by line. Zoom in to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
 
 ## Where the positions come from
 

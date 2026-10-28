@@ -36,6 +36,7 @@ export interface TripState {
 export interface FeedSnapshot {
   fetchedAt: number;
   gps: GpsVehicle[];
+  /** Every trip with predictions, including ones whose vehicle also reported GPS. */
   trips: TripState[];
 }
 
@@ -105,9 +106,7 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
     if (trip) Object.assign(trip, { ...s, vehicleId: trip.vehicleId ?? s.vehicleId });
   }
 
-  // A trip with its own GPS fix doesn't need an estimate.
-  const tracked = new Set(gps.map((g) => g.tripId).filter(Boolean));
-  return { fetchedAt, gps, trips: [...trips.values()].filter((t) => !tracked.has(t.tripId)) };
+  return { fetchedAt, gps, trips: [...trips.values()] };
 }
 
 export function mergeSnapshots(snapshots: FeedSnapshot[]): FeedSnapshot {

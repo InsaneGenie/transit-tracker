@@ -15,7 +15,7 @@ const NOT_STARTED_SECONDS = 5 * 60;
 const tracks = new WeakMap<StaticIndex, Map<string, Polyline>>();
 
 /** The track between two stops, following the route's shape when there is one. Cached per index. */
-function trackBetween(index: StaticIndex, fromStopId: string, toStopId: string, shapeId?: string): Polyline {
+export function trackBetween(index: StaticIndex, fromStopId: string, toStopId: string, shapeId?: string): Polyline {
   let cache = tracks.get(index);
   if (!cache) tracks.set(index, (cache = new Map()));
   const key = `${shapeId ?? ''}|${fromStopId}|${toStopId}`;
