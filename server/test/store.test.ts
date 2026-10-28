@@ -200,6 +200,17 @@ describe('API', () => {
     const one = await (await fetch(`${base}/api/vehicles/${encodeURIComponent('test-bus:MTA_1234')}`)).json();
     expect(one.vehicle.routeId).toBe('M15');
     expect((await fetch(`${base}/api/vehicles/missing`)).status).toBe(404);
+    const { routes } = await (await fetch(`${base}/api/routes`)).json();
+    expect(routes).toContainEqual({
+      key: 'test-train:1',
+      feed: 'test-train',
+      agency: 'Test Transit',
+      mode: 'subway',
+      id: '1',
+      name: '1',
+      longName: 'Test Local',
+      color: 'EE352E',
+    });
   });
 });
 

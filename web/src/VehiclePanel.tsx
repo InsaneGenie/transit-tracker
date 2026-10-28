@@ -1,12 +1,19 @@
 import type { VehicleDetail } from './api';
-import { colorFor, formatEta, MODE_LABELS, textColorFor, tidyStopName } from './vehicles';
+import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName } from './vehicles';
 
 const MAX_STOPS = 12;
 
-export function VehiclePanel({ detail, onClose }: { detail: VehicleDetail; onClose: () => void }) {
+interface Props {
+  detail: VehicleDetail;
+  following: boolean;
+  onFollow: () => void;
+  onClose: () => void;
+}
+
+export function VehiclePanel({ detail, following, onFollow, onClose }: Props) {
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
-  const name = (vehicle.routeName ?? vehicle.routeId ?? '?').replace(/^MTA\s*\w*_/, '');
+  const name = displayName(vehicle.routeName ?? vehicle.routeId ?? '?');
   const stopName = vehicle.stopName && tidyStopName(vehicle.stopName);
   const next = upcoming[0]?.name ? tidyStopName(upcoming[0].name) : stopName;
   const where =
@@ -32,9 +39,14 @@ export function VehiclePanel({ detail, onClose }: { detail: VehicleDetail; onClo
       </header>
 
       {where && <p className="where">{where}</p>}
-      <p className="muted small">
-        {vehicle.source === 'gps' ? 'Live GPS position' : 'Position estimated from arrival times'}
-      </p>
+      <div className="panel-meta">
+        <p className="muted small">
+          {vehicle.source === 'gps' ? 'Live GPS position' : 'Position estimated from arrival times'}
+        </p>
+        <button className={`chip follow${following ? ' chip-active' : ''}`} aria-pressed={following} onClick={onFollow}>
+          {following ? 'Following' : 'Follow'}
+        </button>
+      </div>
 
       {upcoming.length > 0 ? (
         <ol className="stops">

@@ -40,6 +40,19 @@ export interface VehicleDetail {
   path: [number, number][];
 }
 
+/** A line on the legend. */
+export interface RouteInfo {
+  /** `${feed}:${routeId}`, unique across agencies. */
+  key: string;
+  feed: string;
+  agency: string;
+  mode: Mode;
+  id: string;
+  name: string;
+  longName?: string;
+  color?: string;
+}
+
 export interface FeedStatus {
   id: string;
   agency: string;
@@ -261,6 +274,22 @@ export class VehicleStore {
       }
     }
     return { vehicle, routeLongName: route?.longName || undefined, upcoming, path };
+  }
+
+  /** Every line in the loaded schedules, for the legend and line filter. */
+  routes(): RouteInfo[] {
+    return this.feeds.flatMap(({ config, index }) =>
+      [...(index?.routes ?? [])].map(([id, r]) => ({
+        key: `${config.id}:${id}`,
+        feed: config.id,
+        agency: config.agency,
+        mode: config.mode,
+        id,
+        name: r.shortName || r.longName || id,
+        longName: r.longName || undefined,
+        color: r.color,
+      })),
+    );
   }
 
   status(): FeedStatus[] {

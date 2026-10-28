@@ -115,6 +115,7 @@ body,
 
 .panel {
   position: absolute;
+  z-index: 2;
   top: 72px;
   left: 12px;
   max-height: calc(100% - 120px);
@@ -214,6 +215,158 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+.chip-lines {
+  color: var(--ink);
+}
+
+.chip-active,
+.chip-lines.chip-active {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: transparent;
+}
+
+.panel-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-meta .small {
+  margin: 0;
+}
+
+.follow {
+  flex: none;
+}
+
+.legend {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 56px;
+  width: 300px;
+  max-height: calc(100% - 72px);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend-header strong {
+  flex: 1;
+}
+
+.legend-body {
+  overflow-y: auto;
+}
+
+.legend h3 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.line-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.line-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.line-off {
+  opacity: 0.3;
+}
+
+.line-badge {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 13px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.line-list .line-badge {
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+}
+
+.legend-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.search {
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
 /* Phones: the panel becomes a sheet along the bottom. */
 @media (max-width: 640px) {
   .panel {
@@ -223,6 +376,16 @@ body,
     bottom: 0;
     width: auto;
     max-height: 50%;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .legend {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 60%;
     border-radius: 16px 16px 0 0;
   }
 }

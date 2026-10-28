@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Vehicle } from './api';
+import type { RouteInfo, Vehicle } from './api';
 import {
   colorFor,
   formatEta,
   interpolate,
+  legendGroups,
   textColorFor,
   tidyStopName,
   toFeatureCollection,
@@ -36,7 +37,7 @@ describe('toFeatureCollection', () => {
   it('turns vehicles into map points with display properties', () => {
     const fc = toFeatureCollection([v({ routeName: 'MTA NYCT_M15', bearing: 90 })]);
     expect(fc.features[0].geometry.coordinates).toEqual([-73.9, 40.7]);
-    expect(fc.features[0].properties).toMatchObject({ label: 'M15', bearing: 90, hasBearing: true, estimated: true });
+    expect(fc.features[0].properties).toMatchObject({ routeKey: 'mta-subway:', label: 'M15', bearing: 90, hasBearing: true, estimated: true });
   });
 });
 
@@ -68,5 +69,41 @@ describe('tidyStopName', () => {
     expect(tidyStopName('WILLIS AV/E 138 ST')).toBe('Willis Av/E 138 St');
     expect(tidyStopName('34 ST-HERALD SQ')).toBe('34 St-Herald Sq');
     expect(tidyStopName('Times Sq-42 St')).toBe('Times Sq-42 St');
+  });
+});
+
+describe('legendGroups', () => {
+  const r = (over: Partial<RouteInfo>): RouteInfo => ({
+    key: `f:${over.id}`,
+    feed: 'f',
+    agency: 'MTA New York City Transit',
+    mode: 'subway',
+    id: '?',
+    name: over.id ?? '?',
+    ...over,
+  });
+
+  it('groups subway lines that share a color, in natural order', () => {
+    const groups = legendGroups(
+      [r({ id: '3', color: 'EE352E' }), r({ id: 'A', color: '0039A6' }), r({ id: '1', color: 'ee352e' }), r({ id: '2', color: 'EE352E' })],
+      'subway',
+    );
+    expect(groups.map((g) => [g.color, g.routes.map((x) => x.name)])).toEqual([
+      ['#EE352E', ['1', '2', '3']],
+      ['#0039A6', ['A']],
+    ]);
+  });
+
+  it('groups rail lines by railroad and lists buses in number order', () => {
+    const rail = legendGroups(
+      [
+        r({ id: 'b', mode: 'rail', agency: 'Metro-North Railroad', name: 'Hudson' }),
+        r({ id: 'a', mode: 'rail', agency: 'Long Island Rail Road', name: 'Babylon Branch' }),
+      ],
+      'rail',
+    );
+    expect(rail.map((g) => g.title)).toEqual(['Long Island Rail Road', 'Metro-North Railroad']);
+    const bus = legendGroups([r({ id: 'M15', mode: 'bus' }), r({ id: 'M2', mode: 'bus' })], 'bus');
+    expect(bus[0].routes.map((x) => x.name)).toEqual(['M2', 'M15']);
   });
 });
