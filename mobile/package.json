@@ -1,0 +1,28 @@
+{
+  "name": "transit-tracker-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~58.0.20",
+    "expo-location": "~58.0.19",
+    "expo-status-bar": "~58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-maps": "1.29.11",
+    "react-native-safe-area-context": "~5.10.1"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "private": true,
+  "description": "NY Transit Live for iPhone",
+  "license": "UNLICENSED"
+}
