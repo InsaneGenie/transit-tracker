@@ -49,6 +49,8 @@ export interface RouteLine {
   color?: string;
   /** Each path as [lon, lat] pairs. */
   paths: [number, number][][];
+  /** The stations it calls at, when the schedule says (subway and rail; bus schedules are read without stop times). */
+  stops: UpcomingStop[];
 }
 
 /** A line on the legend. */
@@ -259,17 +261,13 @@ export class VehicleStore {
     const remaining = (trip?.stops ?? []).filter((s) => (s.departure ?? s.arrival ?? 0) > now);
     const upcoming = remaining.map((s) => {
       const stop = index?.stops.get(s.stopId);
-      const transfers = index?.stopRoutes
-        .get(s.stopId)
-        ?.filter((r) => r !== vehicle.routeId)
-        .map((r) => `${feed.config.id}:${r}`);
       return {
         stopId: s.stopId,
         name: stop?.name,
         lat: stop?.lat,
         lon: stop?.lon,
         time: s.arrival ?? s.departure,
-        transfers: transfers?.length ? transfers : undefined,
+        transfers: index && this.transferKeys(feed, index, s.stopId, vehicle.routeId),
       };
     });
 
@@ -350,7 +348,22 @@ export class VehicleStore {
       points.forEach((p) => drawn.add(cell(p)));
       paths.push(points.map((p): [number, number] => [round(p.lon), round(p.lat)]));
     }
-    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths };
+    const stops = (index.routeStations.get(routeId) ?? []).flatMap((id) => {
+      const stop = index.stops.get(id);
+      if (!stop) return [];
+      const transfers = this.transferKeys(feed, index, id, routeId);
+      return [{ stopId: id, name: stop.name, lat: stop.lat, lon: stop.lon, ...(transfers && { transfers }) }];
+    });
+    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops };
+  }
+
+  /** Other lines that call at a stop, as legend keys, or undefined when there are none. */
+  private transferKeys(feed: FeedState, index: StaticIndex, stopId: string, routeId?: string): string[] | undefined {
+    const keys = index.stopRoutes
+      .get(stopId)
+      ?.filter((r) => r !== routeId)
+      .map((r) => `${feed.config.id}:${r}`);
+    return keys?.length ? keys : undefined;
   }
 
   status(): FeedStatus[] {

@@ -9,9 +9,6 @@ interface Props {
   /** Line keys shown; empty means every line. */
   chosen: string[];
   onChange: (chosen: string[]) => void;
-  /** Whether the chosen lines' routes are drawn on the map. */
-  drawRoutes: boolean;
-  onDrawRoutesChange: (draw: boolean) => void;
   onClose: () => void;
 }
 
@@ -33,7 +30,7 @@ function LineButton({ route, on, onToggle }: { route: RouteInfo; on: boolean; on
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function Legend({ routes, modes, chosen, onChange, drawRoutes, onDrawRoutesChange, onClose }: Props) {
+export function Legend({ routes, modes, chosen, onChange, onClose }: Props) {
   const [busSearch, setBusSearch] = useState('');
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const isOn = (r: RouteInfo) => chosenSet.size === 0 || chosenSet.has(r.key);
@@ -64,12 +61,6 @@ export function Legend({ routes, modes, chosen, onChange, drawRoutes, onDrawRout
       <p className="muted small legend-hint">
         {chosen.length ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.` : 'Tap lines to show only those.'}
       </p>
-      {chosen.length > 0 && (
-        <label className="draw-toggle">
-          <input type="checkbox" checked={drawRoutes} onChange={(e) => onDrawRoutesChange(e.target.checked)} />
-          Draw their routes on the map
-        </label>
-      )}
 
       <div className="legend-body">
         {routes.length === 0 && <p className="muted small">Line list loads once the server is running.</p>}

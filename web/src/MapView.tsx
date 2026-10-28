@@ -9,9 +9,9 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, type RefObject } from 'react';
-import { fetchVehicles, type Bounds, type Mode, type RouteLine, type Vehicle, type VehicleDetail } from './api';
+import { fetchVehicles, type Bounds, type Mode, type RouteLine, type UpcomingStop, type Vehicle, type VehicleDetail } from './api';
 import type { Theme } from './theme';
-import { colorFor, interpolate, routeKey, toFeatureCollection } from './vehicles';
+import { colorFor, interpolate, routeKey, tidyStopName, toFeatureCollection } from './vehicles';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
 setWorkerUrl(workerUrl);
@@ -20,6 +20,8 @@ const STYLES: Record<Theme, string> = {
   light: import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/positron',
   dark: import.meta.env.VITE_MAP_STYLE_DARK || 'https://tiles.openfreemap.org/styles/dark',
 };
+/** Stations that can be tapped: those still ahead of the tapped vehicle first, then the rest of its line. */
+const STATION_LAYERS = ['selected-stops', 'route-stops'];
 /** Below this zoom (about the size of New York City on screen) vehicles are hidden and not fetched. */
 export const VEHICLE_MIN_ZOOM = 10;
 /** How often the tapped vehicle is refreshed; it glides across each interval so it never stops. */
@@ -40,15 +42,21 @@ function glideFrameMsFor(zoom: number): number {
 
 export type MapInfo = { count: number; error?: string; zoomedOut?: boolean };
 
+/** A station picked on the map or in the stop list; `at` makes picking the same one twice re-center it. */
+export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[]; at: number };
+
 interface Props {
   theme: Theme;
   modes: Mode[];
   /** Line keys to show; empty shows every line. */
   lines: string[];
-  /** Whole routes to draw under the vehicles. */
-  routeLines: RouteLine[];
-  /** A place to bring to the middle of the map, such as a stop tapped in the vehicle panel. */
-  focus: { lon: number; lat: number; at: number } | null;
+  /** The tapped vehicle's whole line, drawn under the vehicles with its stations. */
+  routeLine: RouteLine | null;
+  /** Routes of the lines you can transfer to at the picked station, when asked for. */
+  transferLines: RouteLine[];
+  /** The picked station, marked on the map and brought to the middle. */
+  station: Station | null;
+  onStation: (station: Omit<Station, 'at'>) => void;
   selectedId: string | null;
   detail: VehicleDetail | null;
   following: boolean;
@@ -87,7 +95,7 @@ function vehicleFilter(modes: Mode[], lines: string[], selectedId: string | null
   return ['all', ...parts];
 }
 
-function routeLinesData(lines: RouteLine[]): GeoJSON.FeatureCollection {
+function linesData(lines: RouteLine[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: lines.map((l) => ({
@@ -96,6 +104,32 @@ function routeLinesData(lines: RouteLine[]): GeoJSON.FeatureCollection {
       properties: { color: colorFor({ routeColor: l.color, mode: l.mode }) },
     })),
   };
+}
+
+function routeLineData(line: RouteLine | null): { path: GeoJSON.FeatureCollection; stops: GeoJSON.FeatureCollection } {
+  if (!line) return { path: EMPTY, stops: EMPTY };
+  return {
+    path: linesData([line]),
+    stops: stopFeatures(line.stops, colorFor({ routeColor: line.color, mode: line.mode })),
+  };
+}
+
+function stopFeatures(stops: UpcomingStop[], color: string): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: stops
+      .filter((s) => s.lat !== undefined && s.lon !== undefined)
+      .map((s) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [s.lon!, s.lat!] },
+        properties: { color, stopId: s.stopId, name: s.name ? tidyStopName(s.name) : '' },
+      })),
+  };
+}
+
+function stationData(station: Station | null, color: string): GeoJSON.FeatureCollection {
+  if (!station) return EMPTY;
+  return stopFeatures([station], color);
 }
 
 function selectionData(detail: VehicleDetail | null): {
@@ -114,16 +148,7 @@ function selectionData(detail: VehicleDetail | null): {
             ],
           }
         : EMPTY,
-    stops: {
-      type: 'FeatureCollection',
-      features: detail.upcoming
-        .filter((s) => s.lat !== undefined && s.lon !== undefined)
-        .map((s) => ({
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [s.lon!, s.lat!] },
-          properties: { color, name: s.name ?? '' },
-        })),
-    },
+    stops: stopFeatures(detail.upcoming, color),
   };
 }
 
@@ -184,7 +209,9 @@ function addVehicleLayers(
 
 interface LayerState {
   vehicles: GeoJSON.FeatureCollection;
-  routes: GeoJSON.FeatureCollection;
+  routeLine: RouteLine | null;
+  transferLines: RouteLine[];
+  station: Station | null;
   selected: GeoJSON.FeatureCollection;
   modes: Mode[];
   lines: string[];
@@ -202,11 +229,23 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   // Points don't need detailed tiles, so tile only up to zoom 12 and let MapLibre overzoom from there.
   map.addSource('vehicles', { type: 'geojson', data: state.vehicles, maxzoom: 12, buffer: 32 });
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
-  map.addSource('route-lines', { type: 'geojson', data: state.routes });
+  const line = routeLineData(state.routeLine);
+  map.addSource('transfer-lines', { type: 'geojson', data: linesData(state.transferLines) });
+  map.addSource('route-lines', { type: 'geojson', data: line.path });
+  map.addSource('route-stops', { type: 'geojson', data: line.stops });
+  map.addSource('chosen-station', { type: 'geojson', data: stationData(state.station, stationColor(state)) });
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
 
-  // Chosen lines' whole routes, thinner and fainter than the tapped vehicle's path ahead.
+  // Lines you can transfer to at the picked station, under the tapped vehicle's own line.
+  map.addLayer({
+    id: 'transfer-lines',
+    type: 'line',
+    source: 'transfer-lines',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.5, 15, 4], 'line-opacity': 0.7 },
+  });
+  // The tapped vehicle's whole line, thinner and fainter than its path ahead.
   map.addLayer({
     id: 'route-lines-casing',
     type: 'line',
@@ -219,7 +258,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     type: 'line',
     source: 'route-lines',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 5], 'line-opacity': 0.85 },
+    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 5], 'line-opacity': 0.5 },
   });
   map.addLayer({
     id: 'selected-path',
@@ -227,6 +266,20 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     source: 'selected-path',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': 0.75 },
+  });
+  // Every station on the line, behind the stops still ahead.
+  map.addLayer({
+    id: 'route-stops',
+    type: 'circle',
+    source: 'route-stops',
+    minzoom: 11,
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2.5, 15, 4],
+      'circle-color': outline,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 1.5,
+      'circle-stroke-opacity': 0.7,
+    },
   });
   map.addLayer({
     id: 'selected-stops',
@@ -254,6 +307,49 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       'circle-stroke-width': 2.5,
     },
   });
+  // The picked station: a filled stop inside a ring, with its name.
+  map.addLayer({
+    id: 'chosen-station',
+    type: 'circle',
+    source: 'chosen-station',
+    paint: {
+      'circle-radius': 7,
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': outline,
+      'circle-stroke-width': 3,
+    },
+  });
+  map.addLayer({
+    id: 'chosen-station-ring',
+    type: 'circle',
+    source: 'chosen-station',
+    paint: {
+      'circle-radius': 14,
+      'circle-color': 'transparent',
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 2.5,
+    },
+  });
+  map.addLayer({
+    id: 'chosen-station-name',
+    type: 'symbol',
+    source: 'chosen-station',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Bold'],
+      'text-size': 13,
+      'text-anchor': 'top',
+      'text-offset': [0, 1.4],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+    },
+    paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 2 },
+  });
+}
+
+/** The picked station takes the color of the line it was picked on. */
+function stationColor(state: Pick<LayerState, 'detail'>): string {
+  return state.detail ? colorFor(state.detail.vehicle) : '#111827';
 }
 
 /**
@@ -269,7 +365,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, routeLines, focus, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLine, transferLines, station, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -278,7 +374,9 @@ export function MapView(props: Props) {
   const state = useRef<LayerState & { theme: Theme; following: boolean; latest: Vehicle[]; easeUntil: number }>({
     theme,
     vehicles: EMPTY,
-    routes: routeLinesData(routeLines),
+    routeLine,
+    transferLines,
+    station,
     selected: EMPTY,
     modes,
     lines,
@@ -412,16 +510,17 @@ export function MapView(props: Props) {
         [e.point.x + pad, e.point.y + pad],
       ];
       const hit = map.queryRenderedFeatures(box, { layers: clickable })[0];
-      // A stop of the tapped vehicle, unless a vehicle sits on top of it: bring it to the middle.
-      const stop = hit ? undefined : map.queryRenderedFeatures(box, { layers: ['selected-stops'] })[0];
+      // A station on the tapped vehicle's line, unless a vehicle sits on top of it: pick it.
+      const stop = hit ? undefined : map.queryRenderedFeatures(box, { layers: STATION_LAYERS })[0];
       if (stop?.geometry.type === 'Point') {
         const [lon, lat] = stop.geometry.coordinates;
-        map.easeTo({ center: [lon, lat], offset: uncoveredOffset(map, callbacks.current.panelRef.current), duration: 500 });
+        const { stopId, name } = stop.properties as { stopId: string; name: string };
+        callbacks.current.onStation({ stopId, name: name || undefined, lon, lat });
         return;
       }
       callbacks.current.onSelect(hit ? String(hit.properties.id) : null);
     });
-    for (const layer of [...clickable, 'selected-stops']) {
+    for (const layer of [...clickable, ...STATION_LAYERS]) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
@@ -480,20 +579,30 @@ export function MapView(props: Props) {
   }, [modes, lines, selectedId]);
 
   useEffect(() => {
-    state.current.routes = routeLinesData(routeLines);
-    (mapRef.current?.getSource('route-lines') as GeoJSONSource | undefined)?.setData(state.current.routes);
-  }, [routeLines]);
+    state.current.routeLine = routeLine;
+    const line = routeLineData(routeLine);
+    (mapRef.current?.getSource('route-lines') as GeoJSONSource | undefined)?.setData(line.path);
+    (mapRef.current?.getSource('route-stops') as GeoJSONSource | undefined)?.setData(line.stops);
+  }, [routeLine]);
 
   useEffect(() => {
+    state.current.transferLines = transferLines;
+    (mapRef.current?.getSource('transfer-lines') as GeoJSONSource | undefined)?.setData(linesData(transferLines));
+  }, [transferLines]);
+
+  // Mark the picked station and bring it to the middle of the uncovered map.
+  useEffect(() => {
+    state.current.station = station;
     const map = mapRef.current;
-    if (!map || !focus) return;
+    (map?.getSource('chosen-station') as GeoJSONSource | undefined)?.setData(stationData(station, stationColor(state.current)));
+    if (!map || !station) return;
     map.easeTo({
-      center: [focus.lon, focus.lat],
+      center: [station.lon, station.lat],
       zoom: Math.max(map.getZoom(), 14),
       offset: uncoveredOffset(map, props.panelRef.current),
       duration: 600,
     });
-  }, [focus]);
+  }, [station]);
 
   // Start the tapped vehicle where its dot was, then glide toward each newer position.
   useEffect(() => {

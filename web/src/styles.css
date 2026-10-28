@@ -412,6 +412,29 @@ button {
   cursor: pointer;
 }
 
+.station-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.station-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stop-chosen .stop-name {
+  color: var(--route);
+  font-weight: 700;
+}
+
 .stop:hover:not(:disabled) .stop-name {
   text-decoration: underline;
 }
@@ -519,22 +542,6 @@ button {
 
 .legend-hint {
   margin: 2px 0 4px;
-}
-
-.draw-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.draw-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
 }
 
 .bus-group h4 {

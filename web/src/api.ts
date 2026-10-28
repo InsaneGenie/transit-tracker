@@ -54,6 +54,8 @@ export interface RouteLine {
   mode: Mode;
   color?: string;
   paths: [number, number][][];
+  /** Its stations, when the schedule says (subway and rail). */
+  stops: UpcomingStop[];
 }
 
 const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
