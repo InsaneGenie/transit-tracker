@@ -141,6 +141,32 @@ function inside(b: Bbox, lat: number, lon: number, margin = 0): boolean {
   return lon >= b[0] - margin && lat >= b[1] - margin && lon <= b[2] + margin && lat <= b[3] + margin;
 }
 
+/** A station counts as on a path when the path passes within this distance of it. */
+const ON_PATH_M = 150;
+
+/**
+ * Stations in the order a rider meets them: along the longest path first, then any branch that path
+ * misses, so a list of them reads like the line's map.
+ */
+function alongPaths<T extends { lat?: number; lon?: number }>(stops: T[], paths: [number, number][][]): T[] {
+  const place = (s: T): [number, number] => {
+    if (s.lat === undefined || s.lon === undefined) return [paths.length, 0];
+    let nearest: [number, number, number] = [paths.length, 0, Infinity];
+    for (let p = 0; p < paths.length; p++) {
+      paths[p].forEach(([lon, lat], i) => {
+        const d = distanceMeters({ lat, lon }, { lat: s.lat!, lon: s.lon! });
+        if (d < nearest[2]) nearest = [p, i, d];
+      });
+      // The first path that passes the station wins, so trunk stations stay on the main path.
+      if (nearest[2] <= ON_PATH_M) break;
+    }
+    return [nearest[0], nearest[1]];
+  };
+  const placed = stops.map((s) => ({ s, at: place(s) }));
+  placed.sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1]);
+  return placed.map((p) => p.s);
+}
+
 export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 
 export class VehicleStore {
@@ -378,7 +404,7 @@ export class VehicleStore {
       const transfers = this.transferKeys(feed, index, id, routeId);
       return [{ stopId: id, name: stop.name, lat: stop.lat, lon: stop.lon, ...(transfers && { transfers }) }];
     });
-    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops };
+    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops: alongPaths(stops, paths) };
   }
 
   /**

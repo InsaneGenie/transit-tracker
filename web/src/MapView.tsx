@@ -52,6 +52,8 @@ interface Props {
   lines: string[];
   /** The tapped vehicle's whole line, drawn under the vehicles with its stations. */
   routeLine: RouteLine | null;
+  /** A line opened on its own; the map zooms out to fit it when it arrives. */
+  focusLine: RouteLine | null;
   /** Routes drawn under the tapped vehicle's line: lines picked in the Lines tab and the picked station's transfers. */
   otherLines: RouteLine[];
   /** The picked station, marked on the map and brought to the middle. */
@@ -258,7 +260,11 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     type: 'line',
     source: 'route-lines',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 5], 'line-opacity': 0.5 },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 5],
+      'line-opacity': routeLineOpacity(state.detail),
+    },
   });
   map.addLayer({
     id: 'selected-path',
@@ -272,9 +278,9 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     id: 'route-stops',
     type: 'circle',
     source: 'route-stops',
-    minzoom: 11,
+    minzoom: 10,
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2.5, 15, 4],
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2, 11, 2.5, 15, 4],
       'circle-color': outline,
       'circle-stroke-color': ['get', 'color'],
       'circle-stroke-width': 1.5,
@@ -347,9 +353,15 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   });
 }
 
+/** A vehicle's line sits faintly behind its path ahead; a line shown on its own is drawn solid. */
+function routeLineOpacity(detail: VehicleDetail | null): number {
+  return detail ? 0.5 : 0.9;
+}
+
 /** The picked station takes the color of the line it was picked on. */
-function stationColor(state: Pick<LayerState, 'detail'>): string {
-  return state.detail ? colorFor(state.detail.vehicle) : '#111827';
+function stationColor(state: Pick<LayerState, 'detail' | 'routeLine'>): string {
+  if (state.detail) return colorFor(state.detail.vehicle);
+  return state.routeLine ? colorFor({ routeColor: state.routeLine.color, mode: state.routeLine.mode }) : '#111827';
 }
 
 /**
@@ -365,7 +377,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, routeLine, otherLines, station, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLine, focusLine, otherLines, station, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -585,6 +597,37 @@ export function MapView(props: Props) {
     (mapRef.current?.getSource('route-stops') as GeoJSONSource | undefined)?.setData(line.stops);
   }, [routeLine]);
 
+  // Show the whole of a line opened on its own, in the part of the map the panel doesn't cover.
+  useEffect(() => {
+    const map = mapRef.current;
+    const points = focusLine?.paths.flat() ?? [];
+    if (!map || !points.length) return;
+    const [west, south, east, north] = points.reduce(
+      (b, [lon, lat]) => [Math.min(b[0], lon), Math.min(b[1], lat), Math.max(b[2], lon), Math.max(b[3], lat)],
+      [Infinity, Infinity, -Infinity, -Infinity],
+    );
+    const c = map.getContainer().getBoundingClientRect();
+    const p = props.panelRef.current?.getBoundingClientRect();
+    const sheet = p && p.width >= c.width - 1;
+    const camera = map.cameraForBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      {
+        padding: {
+          top: 80,
+          right: 40,
+          bottom: sheet ? Math.max(40, c.bottom - p.top + 20) : 40,
+          left: p && !sheet ? Math.max(40, p.right - c.left + 20) : 40,
+        },
+        maxZoom: 14,
+      },
+    );
+    // Long lines don't fit on a phone at a zoom where vehicles show; stay close enough to see them.
+    if (camera) map.easeTo({ ...camera, zoom: Math.max(camera.zoom ?? VEHICLE_MIN_ZOOM, VEHICLE_MIN_ZOOM + 0.5), duration: 600 });
+  }, [focusLine]);
+
   useEffect(() => {
     state.current.otherLines = otherLines;
     (mapRef.current?.getSource('other-lines') as GeoJSONSource | undefined)?.setData(linesData(otherLines));
@@ -626,6 +669,7 @@ export function MapView(props: Props) {
       glide.current = { from: drawn, to: detail.vehicle, start: performance.now() };
     }
     if (!map?.getSource('selected-path')) return;
+    map.setPaintProperty('route-lines', 'line-opacity', routeLineOpacity(detail));
     const selection = selectionData(detail);
     (map.getSource('selected-path') as GeoJSONSource).setData(selection.path);
     (map.getSource('selected-stops') as GeoJSONSource).setData(selection.stops);

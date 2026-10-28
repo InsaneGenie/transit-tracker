@@ -559,6 +559,42 @@ button {
   font-weight: 700;
 }
 
+/* Tappable transfers in the station card: bigger, so a finger can hit one. */
+.transfers-pick {
+  gap: 4px;
+}
+
+.transfer-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.transfers-pick .transfer {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  font-size: 13px;
+}
+
+.transfers-pick .transfer-named {
+  height: auto;
+  padding: 4px 8px;
+  border-radius: 13px;
+  background: var(--surface-solid);
+  font-size: 13px;
+}
+
+.transfer-button:hover .transfer {
+  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4px var(--ink);
+}
+
 .transfer-named {
   display: inline-flex;
   gap: 4px;

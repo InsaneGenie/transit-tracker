@@ -1,4 +1,4 @@
-import type { CSSProperties, Ref } from 'react';
+import { Fragment, type CSSProperties, type Ref } from 'react';
 import type { ArrivalDirection, RouteInfo, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
@@ -21,6 +21,8 @@ interface Props {
   arrivals: ArrivalDirection[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** Tapping a transfer line at the station shows that whole line. */
+  onLine: (key: string) => void;
   onFollow: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
@@ -28,35 +30,48 @@ interface Props {
   ref?: Ref<HTMLElement>;
 }
 
-function Transfers({ lines }: { lines: RouteInfo[] }) {
+/** The lines you can change to. With `onPick`, each one is a button that opens that line. */
+export function Transfers({ lines, onPick }: { lines: RouteInfo[]; onPick?: (key: string) => void }) {
   if (!lines.length) return null;
   return (
-    <span className="transfers" aria-label={`Transfer to ${lines.map((r) => r.name).join(', ')}`}>
+    <span
+      className={`transfers${onPick ? ' transfers-pick' : ''}`}
+      aria-label={onPick ? undefined : `Transfer to ${lines.map((r) => r.name).join(', ')}`}
+    >
       {lines.map((r) => {
         const color = colorFor({ routeColor: r.color, mode: r.mode });
-        return r.mode === 'subway' ? (
-          <span key={r.key} className="transfer" style={{ background: color, color: textColorFor(color) }}>
-            {r.name}
-          </span>
+        const badge =
+          r.mode === 'subway' ? (
+            <span className="transfer" style={{ background: color, color: textColorFor(color) }}>
+              {r.name}
+            </span>
+          ) : (
+            <span className="transfer transfer-named">
+              <span className="swatch" style={{ background: color }} />
+              {r.name}
+            </span>
+          );
+        return onPick ? (
+          <button key={r.key} className="transfer-button" onClick={() => onPick(r.key)} aria-label={`Show the ${r.name} line`}>
+            {badge}
+          </button>
         ) : (
-          <span key={r.key} className="transfer transfer-named">
-            <span className="swatch" style={{ background: color }} />
-            {r.name}
-          </span>
+          <Fragment key={r.key}>{badge}</Fragment>
         );
       })}
     </span>
   );
 }
 
-function Arrivals({
+export function Arrivals({
   directions,
   selectedId,
   noun,
   onPick,
 }: {
   directions: ArrivalDirection[] | null;
-  selectedId: string;
+  /** The open vehicle, marked in the list. */
+  selectedId?: string;
   noun: string;
   onPick: (vehicleId: string) => void;
 }) {
@@ -111,6 +126,7 @@ export function VehiclePanel({
   onShowTransfers,
   arrivals,
   onArrival,
+  onLine,
   onFollow,
   onStop,
   onClose,
@@ -159,7 +175,7 @@ export function VehiclePanel({
             <div className="station-card-text">
               <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
               {stationTransfers.length > 0 ? (
-                <Transfers lines={transferLines(stationTransfers, routes)} />
+                <Transfers lines={transferLines(stationTransfers, routes)} onPick={onLine} />
               ) : (
                 <span className="muted small">No transfers here</span>
               )}
