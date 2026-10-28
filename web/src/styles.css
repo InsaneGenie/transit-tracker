@@ -1,25 +1,41 @@
 :root {
-  --ink: #111827;
-  --muted: #6b7280;
-  --surface: #ffffff;
-  --surface-soft: #f9fafb;
-  --line: #e5e7eb;
-  --shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  --ink: #0f172a;
+  --muted: #64748b;
+  --surface: rgb(255 255 255 / 0.92);
+  --surface-solid: #ffffff;
+  --surface-soft: #f1f5f9;
+  --hover: rgb(15 23 42 / 0.06);
+  --line: #e2e8f0;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.08), 0 8px 24px rgb(15 23 42 / 0.12);
+  --accent: #2563eb;
+  --live: #16a34a;
   --error-bg: #fee2e2;
   --error-ink: #991b1b;
+  --radius: 14px;
+  --subway: #475569;
+  --rail: #7c3aed;
+  --bus: #2563eb;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
 
 :root[data-theme='dark'] {
-  --ink: #f3f4f6;
-  --muted: #9ca3af;
-  --surface: #1f2937;
-  --surface-soft: #374151;
-  --line: #374151;
-  --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+  --ink: #f1f5f9;
+  --muted: #94a3b8;
+  --surface: rgb(22 27 37 / 0.9);
+  --surface-solid: #161b25;
+  --surface-soft: #232a37;
+  --hover: rgb(255 255 255 / 0.07);
+  --line: #2c3442;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.45);
+  --accent: #60a5fa;
+  --live: #4ade80;
   --error-bg: #7f1d1d;
   --error-ink: #fecaca;
+  --subway: #94a3b8;
+  --rail: #a78bfa;
+  --bus: #60a5fa;
   color-scheme: dark;
 }
 
@@ -45,6 +61,29 @@ body,
   inset: 0;
 }
 
+button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Floating cards over the map. */
+.toolbar,
+.status,
+.panel,
+.legend {
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+}
+
+/* Toolbar */
+
 .toolbar {
   position: absolute;
   top: 12px;
@@ -52,60 +91,135 @@ body,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 8px 12px;
+  gap: 8px 14px;
+  padding: 8px 8px 8px 14px;
   max-width: calc(100% - 72px);
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius);
 }
 
 .toolbar h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 25%, transparent);
 }
 
 .filters {
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .chip {
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--muted);
-  font: inherit;
+  background: var(--surface-solid);
+  color: var(--ink);
   font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+
+.chip:hover {
+  background: var(--surface-soft);
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mode);
+  box-shadow: inset 0 0 0 2px var(--mode);
+  transition: background-color 0.15s;
+}
+
+.chip-subway {
+  --mode: var(--subway);
+}
+.chip-rail {
+  --mode: var(--rail);
+}
+.chip-bus {
+  --mode: var(--bus);
 }
 
 .chip[aria-pressed='true'] {
-  color: #fff;
-  border-color: transparent;
+  border-color: color-mix(in srgb, var(--mode, var(--ink)) 45%, transparent);
+  background: color-mix(in srgb, var(--mode, var(--ink)) 12%, var(--surface-solid));
 }
 
-.chip-subway[aria-pressed='true'] {
-  background: #4b5563;
+/* A mode that's switched off: hollow dot, faded label. */
+.chip[aria-pressed='false'] {
+  color: var(--muted);
 }
-.chip-rail[aria-pressed='true'] {
-  background: #7c3aed;
+.chip[aria-pressed='false'] .chip-dot {
+  background: transparent;
 }
-.chip-bus[aria-pressed='true'] {
-  background: #2563eb;
+
+.chip-lines {
+  gap: 4px;
 }
+
+.chip-active,
+.chip-lines.chip-active,
+.chip.follow[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface-solid);
+}
+
+/* Vehicle count in the corner */
 
 .status {
   position: absolute;
   bottom: 12px;
   left: 12px;
-  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
   font-size: 12px;
-  background: var(--surface);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
   border-radius: 999px;
-  box-shadow: var(--shadow);
+}
+
+.status-live::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .status-error {
@@ -113,19 +227,54 @@ body,
   color: var(--error-ink);
 }
 
+/* Shared bits of the panel and legend */
+
+.close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.sheet-handle {
+  display: none;
+}
+
+/* Vehicle panel */
+
 .panel {
   position: absolute;
   z-index: 2;
-  top: 72px;
+  top: 68px;
   left: 12px;
   max-height: calc(100% - 120px);
   width: 340px;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  padding: 16px 16px 8px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -138,10 +287,11 @@ body,
 .badge {
   display: grid;
   place-items: center;
-  min-width: 40px;
-  height: 40px;
-  padding: 0 6px;
-  border-radius: 20px;
+  flex: none;
+  min-width: 42px;
+  height: 42px;
+  padding: 0 8px;
+  border-radius: 21px;
   font-weight: 700;
   font-size: 18px;
 }
@@ -151,79 +301,24 @@ body,
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  line-height: 1.3;
 }
 
 .panel-title strong {
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.close {
-  border: 0;
-  background: none;
-  font-size: 24px;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
+.panel-title .muted {
+  font-size: 13px;
 }
 
 .where {
-  margin: 14px 0 2px;
+  margin: 14px 0 4px;
+  font-size: 15px;
   font-weight: 600;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.small {
-  margin: 0 0 8px;
-  font-size: 12px;
-}
-
-.stops {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  overflow-y: auto;
-}
-
-.stops li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 14px;
-}
-
-.stop-dot {
-  width: 12px;
-  height: 12px;
-  border: 3px solid;
-  border-radius: 50%;
-  flex: none;
-}
-
-.stop-name {
-  flex: 1;
-}
-
-.eta {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.chip-lines {
-  color: var(--ink);
-}
-
-.chip-active,
-.chip-lines.chip-active {
-  background: var(--ink);
-  color: var(--surface);
-  border-color: transparent;
 }
 
 .panel-meta {
@@ -231,15 +326,107 @@ body,
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
 
 .panel-meta .small {
   margin: 0;
 }
 
+.source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.source-gps {
+  background: var(--live);
+}
+
 .follow {
   flex: none;
 }
+
+/* Upcoming stops, drawn as a line in the route's color. */
+.stops {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+}
+
+.stops li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.stops li::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--route);
+}
+
+.stops li:first-child::before {
+  top: 50%;
+}
+
+.stops li:last-child::before {
+  bottom: 50%;
+}
+
+.stops li:only-child::before {
+  display: none;
+}
+
+.stop-dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--route);
+  border-radius: 50%;
+  background: var(--surface-solid);
+  flex: none;
+}
+
+.stops li:first-child {
+  font-weight: 600;
+}
+
+.stops li:first-child .eta {
+  color: var(--ink);
+}
+
+.stop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eta {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legend */
 
 .legend {
   position: absolute;
@@ -250,10 +437,8 @@ body,
   max-height: calc(100% - 72px);
   display: flex;
   flex-direction: column;
-  padding: 14px 16px;
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  padding: 14px 16px 6px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -265,28 +450,40 @@ body,
 
 .legend-header strong {
   flex: 1;
+  font-size: 16px;
+}
+
+.legend-hint {
+  margin: 2px 0 4px;
 }
 
 .legend-body {
   overflow-y: auto;
+  padding-bottom: 10px;
 }
 
 .legend h3 {
-  margin: 14px 0 6px;
-  font-size: 12px;
+  margin: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
 
 .link {
   border: 0;
   background: none;
-  padding: 0;
-  font: inherit;
+  padding: 4px 6px;
+  border-radius: 6px;
   font-size: 13px;
-  color: #2563eb;
+  font-weight: 500;
+  color: var(--accent);
   cursor: pointer;
+}
+
+.link:hover {
+  background: var(--hover);
 }
 
 .line-rows {
@@ -304,22 +501,32 @@ body,
 .line-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 .line {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 2px;
   border: 0;
   border-radius: 999px;
   background: none;
   color: var(--ink);
-  font: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition:
+    opacity 0.15s,
+    transform 0.1s;
+}
+
+.line:hover .line-badge {
+  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4px var(--line);
+}
+
+.line:active {
+  transform: scale(0.94);
 }
 
 .line-off {
@@ -329,17 +536,33 @@ body,
 .line-badge {
   display: grid;
   place-items: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 5px;
-  border-radius: 13px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 14px;
   font-weight: 700;
   font-size: 12px;
 }
 
+/* Rail lines are a list of names with a colored dot. */
+.line-list .line {
+  padding: 6px 8px;
+  margin: 0 -8px;
+  width: calc(100% + 16px);
+  border-radius: 8px;
+}
+
+.line-list .line:hover {
+  background: var(--hover);
+}
+
+.line-list .line:hover .line-badge {
+  box-shadow: none;
+}
+
 .line-list .line-badge {
-  min-width: 14px;
-  height: 14px;
+  min-width: 12px;
+  height: 12px;
   padding: 0;
 }
 
@@ -357,42 +580,123 @@ body,
 
 .search {
   width: 100%;
-  margin: 2px 0 8px;
-  padding: 6px 10px;
+  margin: 2px 0 10px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface-soft);
   color: var(--ink);
   font: inherit;
   font-size: 14px;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
 }
 
-/* Phones: the panel becomes a sheet along the bottom. */
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-solid);
+}
+
+/* Phones: one compact toolbar row, and the panel and legend become sheets along the bottom. */
 @media (max-width: 640px) {
-  .panel {
-    top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    max-height: 50%;
-    border-radius: 16px 16px 0 0;
+  .toolbar {
+    top: 10px;
+    left: 10px;
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 6px 6px 6px 10px;
+    max-width: calc(100% - 64px);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Just the live dot; the name doesn't fit next to the filters. */
+  .toolbar h1 {
+    font-size: 0;
+    gap: 0;
+  }
+
+  .chip {
+    height: 32px;
+    padding: 0 11px;
+  }
+
+  .status {
+    left: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .panel,
   .legend {
     top: auto;
     left: 0;
     right: 0;
     bottom: 0;
     width: auto;
+    padding-top: 6px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    background: var(--surface-solid);
+  }
+
+  .panel {
+    max-height: 50%;
+  }
+
+  .legend {
     max-height: 60%;
-    border-radius: 16px 16px 0 0;
+  }
+
+  .sheet-handle {
+    display: block;
+    flex: none;
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 10px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+
+  .line-badge {
+    min-width: 34px;
+    height: 34px;
+    border-radius: 17px;
+    font-size: 13px;
   }
 }
 
-/* MapLibre's zoom and locate buttons in the dark theme. */
+@media (prefers-reduced-motion: reduce) {
+  .status-live::before {
+    animation: none;
+  }
+
+  .chip,
+  .line,
+  .search {
+    transition: none;
+  }
+}
+
+/* MapLibre's zoom and locate buttons, rounded to match the cards. */
+.maplibregl-ctrl-group:not(:empty) {
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
+}
+
 :root[data-theme='dark'] .maplibregl-ctrl-group {
-  background: var(--surface);
+  background: var(--surface-solid);
 }
 :root[data-theme='dark'] .maplibregl-ctrl-group button + button {
   border-top-color: var(--line);
@@ -401,7 +705,7 @@ body,
   filter: invert(1);
 }
 :root[data-theme='dark'] .maplibregl-ctrl-attrib {
-  background: rgb(31 41 55 / 0.8);
+  background: rgb(22 27 37 / 0.8);
   color: var(--muted);
 }
 :root[data-theme='dark'] .maplibregl-ctrl-attrib a {
