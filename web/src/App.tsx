@@ -30,8 +30,11 @@ function save(key: string, value: string) {
   }
 }
 
-/** A line opened from a station's transfers. `back` is the vehicle and station it was opened from. */
-type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null } };
+/**
+ * A line opened from a station's transfers or one of its stations on the map. `back` is the vehicle and
+ * station it was opened from; `atStation` keeps the map on the tapped station instead of the whole line.
+ */
+type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null }; atStation?: boolean };
 
 /** A line's whole route with its stations. Retries while the server may still be starting. */
 function useRouteLine(key: string | null): RouteLine | null {
@@ -212,7 +215,7 @@ export function App() {
   };
 
   // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
-  const openLine = (key: string) => {
+  const openLine = (key: string, at?: Station) => {
     const back = detail
       ? {
           vehicleId: detail.vehicle.id,
@@ -220,10 +223,18 @@ export function App() {
           station,
         }
       : viewLine?.back;
-    setViewLine({ key, back });
-    setStation(null);
+    setViewLine({ key, back, atStation: Boolean(at) });
+    setStation(at ?? null);
     setShowTransfers(false);
+    // Closing the vehicle would otherwise drop the station just picked.
+    if (at && selectedId) keepStation.current = true;
     select(null);
+  };
+
+  // A station of a picked line, tapped on the map, opens that line there.
+  const openLineStation = (key: string, stop: Omit<Station, 'at' | 'transfers'>) => {
+    const known = otherLines.find((l) => l.key === key)?.stops.find((s) => s.stopId === stop.stopId);
+    openLine(key, { ...stop, transfers: known?.transfers, at: Date.now() });
   };
 
   const closeLine = () => {
@@ -276,10 +287,11 @@ export function App() {
         modes={viewLine && viewRoute && !modes.includes(viewRoute.mode) ? [...modes, viewRoute.mode] : modes}
         lines={viewLine ? [viewLine.key] : lines}
         routeLine={detail ? routeLine : viewRoute}
-        focusLine={viewRoute}
+        focusLine={viewLine?.atStation ? null : viewRoute}
         otherLines={otherLines}
         station={station}
         onStation={pickStation}
+        onLineStation={openLineStation}
         selectedId={selectedId}
         detail={detail}
         following={following}
@@ -345,7 +357,7 @@ export function App() {
             keepStation.current = true;
             select(id);
           }}
-          onLine={openLine}
+          onLine={(key) => openLine(key)}
           onClose={() => {
             setViewLine(null);
             setStation(null);
@@ -369,7 +381,7 @@ export function App() {
             keepStation.current = true;
             select(id);
           }}
-          onLine={openLine}
+          onLine={(key) => openLine(key)}
           onShowTransfers={setShowTransfers}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
           onClose={() => select(null)}
