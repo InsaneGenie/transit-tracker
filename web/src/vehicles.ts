@@ -57,3 +57,10 @@ export function formatEta(time: number | undefined, now = Date.now() / 1000): st
 }
 
 export const MODE_LABELS: Record<Mode, string> = { subway: 'Subway', rail: 'Rail', bus: 'Bus' };
+
+
+/** Bus stop names come in capitals ("WILLIS AV/E 138 ST"); show them like the subway's ("Willis Av/E 138 St"). */
+export function tidyStopName(name: string): string {
+  if (name !== name.toUpperCase()) return name;
+  return name.toLowerCase().replace(/(^|[\s/&(-])([a-z])/g, (_, sep: string, c: string) => sep + c.toUpperCase());
+}

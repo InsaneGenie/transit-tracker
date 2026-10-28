@@ -30,6 +30,8 @@ export interface StaticIndex {
   /** Keyed by `${routeId}|${toStopId}`, with `*|${toStopId}` as a fallback for any route. */
   segments: Map<string, Segment>;
   shapes: Map<string, Polyline>;
+  /** Shape of each scheduled trip, for feeds whose realtime trip ids match the schedule's. */
+  tripShapes: Map<string, string>;
 }
 
 /** Opens a file inside a GTFS feed, or returns null when the feed doesn't have it. */
@@ -51,7 +53,7 @@ export function parseGtfsTime(value: string | undefined): number | undefined {
   return h * 3600 + m * 60 + s;
 }
 
-export async function buildStaticIndex(files: GtfsFiles): Promise<StaticIndex> {
+export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops' = 'full'): Promise<StaticIndex> {
   const stops = new Map<string, Stop>();
   for await (const r of rows(files, 'stops.txt')) {
     const lat = Number(r.stop_lat);
@@ -70,8 +72,10 @@ export async function buildStaticIndex(files: GtfsFiles): Promise<StaticIndex> {
   }
 
   const trips = new Map<string, { routeId: string; shapeId?: string }>();
+  const tripShapes = new Map<string, string>();
   for await (const r of rows(files, 'trips.txt')) {
     trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined });
+    if (r.shape_id) tripShapes.set(r.trip_id, r.shape_id);
   }
 
   const shapePoints = new Map<string, { seq: number; lat: number; lon: number }[]>();
@@ -117,7 +121,8 @@ export async function buildStaticIndex(files: GtfsFiles): Promise<StaticIndex> {
 
   let currentTrip: string | undefined;
   let buffer: StopTime[] = [];
-  for await (const r of rows(files, 'stop_times.txt')) {
+  const stopTimes = detail === 'full' ? rows(files, 'stop_times.txt') : [];
+  for await (const r of stopTimes) {
     if (r.trip_id !== currentTrip) {
       if (currentTrip) flushTrip(currentTrip, buffer);
       currentTrip = r.trip_id;
@@ -146,7 +151,25 @@ export async function buildStaticIndex(files: GtfsFiles): Promise<StaticIndex> {
     });
   }
 
-  return { stops, routes, segments, shapes };
+  return { stops, routes, segments, shapes, tripShapes };
+}
+
+/** Combines several schedules, such as one per borough, into one index. */
+export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
+  const merged: StaticIndex = {
+    stops: new Map(),
+    routes: new Map(),
+    segments: new Map(),
+    shapes: new Map(),
+    tripShapes: new Map(),
+  };
+  for (const index of indexes) {
+    for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {
+      const target = merged[key] as Map<string, unknown>;
+      for (const [k, v] of index[key] as Map<string, unknown>) if (!target.has(k)) target.set(k, v);
+    }
+  }
+  return merged;
 }
 
 export function zipFiles(zip: Buffer): GtfsFiles {
@@ -160,9 +183,19 @@ export function zipFiles(zip: Buffer): GtfsFiles {
 const CACHE_DIR = path.resolve(import.meta.dirname, '../data/cache');
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Downloads a static GTFS zip, reusing a copy from the last day when there is one. */
-export async function loadStaticIndex(feedId: string, url: string): Promise<StaticIndex> {
-  const file = path.join(CACHE_DIR, `${feedId}.zip`);
+/** Downloads a feed's static GTFS zips, reusing copies from the last day, and indexes them as one. */
+export async function loadStaticIndex(
+  feedId: string,
+  urls: string[],
+  detail: 'full' | 'stops' = 'full',
+): Promise<StaticIndex> {
+  const indexes = [];
+  for (const url of urls) indexes.push(await buildStaticIndex(zipFiles(await download(feedId, url)), detail));
+  return indexes.length === 1 ? indexes[0] : mergeIndexes(indexes);
+}
+
+async function download(feedId: string, url: string): Promise<Buffer> {
+  const file = path.join(CACHE_DIR, `${feedId}-${path.basename(new URL(url).pathname)}`);
   let zip: Buffer | undefined;
   try {
     if (Date.now() - (await stat(file)).mtimeMs < MAX_AGE_MS) zip = await readFile(file);
@@ -176,5 +209,5 @@ export async function loadStaticIndex(feedId: string, url: string): Promise<Stat
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(file, zip);
   }
-  return buildStaticIndex(zipFiles(zip));
+  return zip;
 }

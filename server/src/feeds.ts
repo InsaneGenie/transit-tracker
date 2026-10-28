@@ -6,8 +6,15 @@ export interface FeedConfig {
   mode: Mode;
   /** GTFS-Realtime protobuf URLs. Several URLs are merged into one feed. */
   realtimeUrls: string[];
-  /** Static GTFS zip, used for stop names, route colors and estimating positions. */
-  staticUrl?: string;
+  /** Static GTFS zips, used for stop names, route colors, track shapes and estimating positions. */
+  staticUrls?: string[];
+  /**
+   * "full" also learns travel times between stops, which estimating positions needs. "stops" skips that
+   * (it means reading every scheduled stop time) for feeds whose vehicles all report GPS.
+   */
+  staticDetail?: 'full' | 'stops';
+  /** Realtime ids carry an agency prefix the schedule lacks, like `MTA NYCT_M15` for route `M15`. */
+  agencyPrefixedIds?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -28,7 +35,7 @@ export const FEEDS: FeedConfig[] = [
     agency: 'MTA New York City Transit',
     mode: 'subway',
     realtimeUrls: subwayGroups.map((g) => `${MTA_RT}nyct%2F${g}`),
-    staticUrl: `${MTA_STATIC}gtfs_subway.zip`,
+    staticUrls: [`${MTA_STATIC}gtfs_subway.zip`],
     pollSeconds: 20,
   },
   {
@@ -36,7 +43,7 @@ export const FEEDS: FeedConfig[] = [
     agency: 'Long Island Rail Road',
     mode: 'rail',
     realtimeUrls: [`${MTA_RT}lirr%2Fgtfs-lirr`],
-    staticUrl: `${MTA_STATIC}gtfslirr.zip`,
+    staticUrls: [`${MTA_STATIC}gtfslirr.zip`],
     pollSeconds: 30,
   },
   {
@@ -44,14 +51,18 @@ export const FEEDS: FeedConfig[] = [
     agency: 'Metro-North Railroad',
     mode: 'rail',
     realtimeUrls: [`${MTA_RT}mnr%2Fgtfs-mnr`],
-    staticUrl: `${MTA_STATIC}gtfsmnr.zip`,
+    staticUrls: [`${MTA_STATIC}gtfsmnr.zip`],
     pollSeconds: 30,
   },
   {
     id: 'mta-bus',
     agency: 'MTA Bus',
     mode: 'bus',
-    realtimeUrls: ['https://gtfsrt.prod.obanyc.com/vehiclePositions'],
+    // Positions, plus trip updates for each bus's upcoming stops and arrival times.
+    realtimeUrls: ['https://gtfsrt.prod.obanyc.com/vehiclePositions', 'https://gtfsrt.prod.obanyc.com/tripUpdates'],
+    staticUrls: ['gtfs_bx', 'gtfs_b', 'gtfs_m', 'gtfs_q', 'gtfs_si', 'gtfs_busco'].map((z) => `${MTA_STATIC}${z}.zip`),
+    staticDetail: 'stops',
+    agencyPrefixedIds: true,
     apiKeyEnv: 'MTA_BUSTIME_KEY',
     pollSeconds: 30,
   },

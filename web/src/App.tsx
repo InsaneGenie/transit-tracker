@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchVehicleDetail, type Mode, type VehicleDetail } from './api';
-import { MapView } from './MapView';
+import { MapView, type MapInfo } from './MapView';
+import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
 import { MODE_LABELS } from './vehicles';
 
@@ -11,7 +12,17 @@ export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
-  const [info, setInfo] = useState<{ count: number; error?: string }>({ count: 0 });
+  const [info, setInfo] = useState<MapInfo>({ count: 0 });
+  const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
+
+  // Follow sunrise and sunset.
+  useEffect(() => {
+    const timer = setInterval(() => setTheme(themeFor(new Date())), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   // Keep the open vehicle's stops and arrival times fresh.
   useEffect(() => {
@@ -38,7 +49,7 @@ export function App() {
 
   return (
     <div className="app">
-      <MapView modes={modes} selectedId={selectedId} detail={detail} onSelect={setSelectedId} onUpdate={setInfo} />
+      <MapView theme={theme} modes={modes} selectedId={selectedId} detail={detail} onSelect={setSelectedId} onUpdate={setInfo} />
 
       <div className="toolbar">
         <h1>NY Transit Live</h1>
@@ -57,7 +68,7 @@ export function App() {
       </div>
 
       <div className={`status${info.error ? ' status-error' : ''}`}>
-        {info.error ?? `${info.count.toLocaleString()} vehicles in view`}
+        {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
       </div>
 
       {detail && <VehiclePanel detail={detail} onClose={() => setSelectedId(null)} />}

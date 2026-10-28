@@ -1,7 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import type { VehicleStore } from './store.js';
-
-type Bbox = [west: number, south: number, east: number, north: number];
+import type { Bbox, VehicleStore } from './store.js';
 
 function parseBbox(value: string | null): Bbox | null | 'invalid' {
   if (!value) return null;
@@ -28,11 +26,7 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       const bbox = parseBbox(url.searchParams.get('bbox'));
       if (bbox === 'invalid') return send(400, { error: 'bbox must be west,south,east,north' });
       const modes = url.searchParams.get('mode')?.split(',');
-      const vehicles = store.vehicles(now()).filter(
-        (v) =>
-          (!bbox || (v.lon >= bbox[0] && v.lat >= bbox[1] && v.lon <= bbox[2] && v.lat <= bbox[3])) &&
-          (!modes || modes.includes(v.mode)),
-      );
+      const vehicles = store.vehicles(now(), bbox ?? undefined).filter((v) => !modes || modes.includes(v.mode));
       return send(200, { updatedAt: new Date().toISOString(), count: vehicles.length, vehicles });
     }
 

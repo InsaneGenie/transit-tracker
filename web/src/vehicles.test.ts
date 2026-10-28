@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Vehicle } from './api';
-import { colorFor, formatEta, interpolate, textColorFor, toFeatureCollection } from './vehicles';
+import {
+  colorFor,
+  formatEta,
+  interpolate,
+  textColorFor,
+  tidyStopName,
+  toFeatureCollection,
+} from './vehicles';
 
 const v = (over: Partial<Vehicle> = {}): Vehicle => ({
   id: 'mta-subway:1',
@@ -53,5 +60,13 @@ describe('formatEta', () => {
     expect(formatEta(1000 + 20, 1000)).toBe('Now');
     expect(formatEta(1000 + 5 * 60, 1000)).toBe('5 min');
     expect(formatEta(undefined)).toBe('');
+  });
+});
+
+describe('tidyStopName', () => {
+  it('title-cases all-caps bus stop names and leaves others alone', () => {
+    expect(tidyStopName('WILLIS AV/E 138 ST')).toBe('Willis Av/E 138 St');
+    expect(tidyStopName('34 ST-HERALD SQ')).toBe('34 St-Herald Sq');
+    expect(tidyStopName('Times Sq-42 St')).toBe('Times Sq-42 St');
   });
 });
