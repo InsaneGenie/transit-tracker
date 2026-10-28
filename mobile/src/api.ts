@@ -1,7 +1,7 @@
-import type { RouteInfo, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { RouteInfo, RouteLine, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { Mode, RouteInfo, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { Mode, RouteInfo, RouteLine, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** The live data server. The app uses the same one as the website. */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://transit-tracker-vbfs.onrender.com').replace(/\/$/, '');
@@ -37,4 +37,8 @@ export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<Ve
 
 export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[] }> {
   return get('/api/routes', signal);
+}
+
+export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
+  return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
 }
