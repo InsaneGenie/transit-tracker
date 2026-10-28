@@ -394,6 +394,32 @@ button {
   display: none;
 }
 
+.stop {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 38px;
+  margin: 0 -8px 0 0;
+  padding: 0 8px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stop:hover:not(:disabled) .stop-name {
+  text-decoration: underline;
+}
+
+.stop:disabled {
+  cursor: default;
+}
+
 .stop-dot {
   position: relative;
   width: 14px;
@@ -412,8 +438,46 @@ button {
   color: var(--ink);
 }
 
-.stop-name {
+.stop-text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 0;
+}
+
+.transfers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.transfer {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.transfer-named {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.transfer-named .swatch {
+  width: 8px;
+  height: 8px;
+}
+
+.stop-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -455,6 +519,32 @@ button {
 
 .legend-hint {
   margin: 2px 0 4px;
+}
+
+.draw-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.draw-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.bus-group h4 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bus-group:first-of-type h4 {
+  margin-top: 4px;
 }
 
 .legend-body {

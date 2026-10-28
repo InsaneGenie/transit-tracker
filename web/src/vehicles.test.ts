@@ -5,6 +5,7 @@ import {
   formatEta,
   interpolate,
   legendGroups,
+  transferLines,
   textColorFor,
   tidyStopName,
   toFeatureCollection,
@@ -105,5 +106,41 @@ describe('legendGroups', () => {
     expect(rail.map((g) => g.title)).toEqual(['Long Island Rail Road', 'Metro-North Railroad']);
     const bus = legendGroups([r({ id: 'M15', mode: 'bus' }), r({ id: 'M2', mode: 'bus' })], 'bus');
     expect(bus[0].routes.map((x) => x.name)).toEqual(['M2', 'M15']);
+  });
+
+  it('groups buses by borough, with express buses on their own', () => {
+    const names = ['QM2', 'Q58', 'Bx12', 'B44-SBS', 'BxM1', 'SIM1', 'S40', 'M15', 'X27', 'BEDLOOP', 'BX92'];
+    const groups = legendGroups(names.map((id) => r({ id, mode: 'bus' })), 'bus');
+    expect(groups.map((g) => [g.title, g.routes.map((x) => x.name)])).toEqual([
+      ['Bronx', ['Bx12', 'BX92']],
+      ['Brooklyn', ['B44-SBS']],
+      ['Manhattan', ['M15']],
+      ['Queens', ['Q58']],
+      ['Staten Island', ['S40']],
+      ['Express', ['BxM1', 'QM2', 'SIM1', 'X27']],
+      ['Shuttles and other', ['BEDLOOP']],
+    ]);
+  });
+});
+
+describe('transferLines', () => {
+  const route = (name: string, mode: RouteInfo['mode'] = 'subway'): RouteInfo => ({
+    key: `f:${name}`,
+    feed: 'f',
+    agency: 'MTA',
+    mode,
+    id: name,
+    name,
+  });
+
+  it('sorts the lines and drops express variants of lines already listed', () => {
+    const routes = new Map(['7', '7X', 'N', '1', 'FX'].map((n) => [`f:${n}`, route(n)]));
+    expect(transferLines(['f:N', 'f:7X', 'f:7', 'f:1', 'f:FX', 'f:missing'], routes).map((r) => r.name)).toEqual([
+      '1',
+      '7',
+      'FX',
+      'N',
+    ]);
+    expect(transferLines(undefined, routes)).toEqual([]);
   });
 });

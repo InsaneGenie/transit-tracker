@@ -1,19 +1,44 @@
 import type { CSSProperties, Ref } from 'react';
-import type { VehicleDetail } from './api';
+import type { RouteInfo, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
-import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName } from './vehicles';
+import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName, transferLines } from './vehicles';
 
 const MAX_STOPS = 12;
 
 interface Props {
   detail: VehicleDetail;
+  /** Every line by key, to show transfers with their colors. */
+  routes: Map<string, RouteInfo>;
   following: boolean;
   onFollow: () => void;
+  /** Tapping a stop in the list brings it into view. */
+  onStop: (stop: UpcomingStop) => void;
   onClose: () => void;
   ref?: Ref<HTMLElement>;
 }
 
-export function VehiclePanel({ detail, following, onFollow, onClose, ref }: Props) {
+function Transfers({ lines }: { lines: RouteInfo[] }) {
+  if (!lines.length) return null;
+  return (
+    <span className="transfers" aria-label={`Transfer to ${lines.map((r) => r.name).join(', ')}`}>
+      {lines.map((r) => {
+        const color = colorFor({ routeColor: r.color, mode: r.mode });
+        return r.mode === 'subway' ? (
+          <span key={r.key} className="transfer" style={{ background: color, color: textColorFor(color) }}>
+            {r.name}
+          </span>
+        ) : (
+          <span key={r.key} className="transfer transfer-named">
+            <span className="swatch" style={{ background: color }} />
+            {r.name}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+export function VehiclePanel({ detail, routes, following, onFollow, onStop, onClose, ref }: Props) {
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
   const name = displayName(vehicle.routeName ?? vehicle.routeId ?? '?');
@@ -55,9 +80,14 @@ export function VehiclePanel({ detail, following, onFollow, onClose, ref }: Prop
         <ol className="stops">
           {upcoming.slice(0, MAX_STOPS).map((s) => (
             <li key={s.stopId}>
-              <span className="stop-dot" />
-              <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
-              <span className="eta">{formatEta(s.time)}</span>
+              <button className="stop" disabled={s.lat === undefined || s.lon === undefined} onClick={() => onStop(s)}>
+                <span className="stop-dot" />
+                <span className="stop-text">
+                  <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                  <Transfers lines={transferLines(s.transfers, routes)} />
+                </span>
+                <span className="eta">{formatEta(s.time)}</span>
+              </button>
             </li>
           ))}
         </ol>

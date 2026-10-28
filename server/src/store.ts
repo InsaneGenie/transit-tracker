@@ -1,5 +1,5 @@
 import { estimatePosition, trackBetween } from './estimate.js';
-import { Polyline } from './geo.js';
+import { Polyline, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
 import { loadStaticIndex, type StaticIndex } from './static-gtfs.js';
@@ -30,6 +30,8 @@ export interface UpcomingStop {
   lon?: number;
   /** Unix seconds. */
   time?: number;
+  /** Other lines that call here, as legend keys (`${feed}:${routeId}`). */
+  transfers?: string[];
 }
 
 export interface VehicleDetail {
@@ -38,6 +40,15 @@ export interface VehicleDetail {
   upcoming: UpcomingStop[];
   /** The rest of the trip as [lon, lat] pairs, from the vehicle onward. */
   path: [number, number][];
+}
+
+/** A whole line drawn on the map: every path its trips follow. */
+export interface RouteLine {
+  key: string;
+  mode: Mode;
+  color?: string;
+  /** Each path as [lon, lat] pairs. */
+  paths: [number, number][][];
 }
 
 /** A line on the legend. */
@@ -91,6 +102,9 @@ function withoutAgencyPrefixes(snapshot: FeedSnapshot): FeedSnapshot {
     })),
   };
 }
+
+/** Five decimal places is about a meter, plenty for drawing. */
+const round = (n: number) => Math.round(n * 1e5) / 1e5;
 
 export type Bbox = [west: number, south: number, east: number, north: number];
 
@@ -245,7 +259,18 @@ export class VehicleStore {
     const remaining = (trip?.stops ?? []).filter((s) => (s.departure ?? s.arrival ?? 0) > now);
     const upcoming = remaining.map((s) => {
       const stop = index?.stops.get(s.stopId);
-      return { stopId: s.stopId, name: stop?.name, lat: stop?.lat, lon: stop?.lon, time: s.arrival ?? s.departure };
+      const transfers = index?.stopRoutes
+        .get(s.stopId)
+        ?.filter((r) => r !== vehicle.routeId)
+        .map((r) => `${feed.config.id}:${r}`);
+      return {
+        stopId: s.stopId,
+        name: stop?.name,
+        lat: stop?.lat,
+        lon: stop?.lon,
+        time: s.arrival ?? s.departure,
+        transfers: transfers?.length ? transfers : undefined,
+      };
     });
 
     const path: [number, number][] = [];
@@ -292,6 +317,40 @@ export class VehicleStore {
         color: r.color,
       })),
     );
+  }
+
+  /** The full path of each line, by legend key (`${feed}:${routeId}`). */
+  routeLines(keys: string[]): RouteLine[] {
+    return keys.flatMap((key) => {
+      // Only found lines are kept: a missing one may just be waiting for its schedule to load.
+      const line = this.lineCache.get(key) ?? this.buildRouteLine(key);
+      if (line) this.lineCache.set(key, line);
+      return line ? [line] : [];
+    });
+  }
+
+  private lineCache = new Map<string, RouteLine>();
+
+  private buildRouteLine(key: string): RouteLine | null {
+    const split = key.indexOf(':');
+    const routeId = key.slice(split + 1);
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    const index = feed?.index;
+    const shapes = [...(index?.routeShapes.get(routeId) ?? [])].flatMap((id) => index?.shapes.get(id) ?? []);
+    if (!feed || !index || !shapes.length) return null;
+    // A line has many shape variants (short runs, branches, night service) that mostly retrace each
+    // other. Longest first, skip any that adds almost nothing new, so the map gets a few paths, not dozens.
+    const drawn = new Set<string>();
+    const cell = (p: LatLon) => `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+    const paths: [number, number][][] = [];
+    for (const shape of shapes.sort((a, b) => b.size - a.size)) {
+      const points = shape.points;
+      const fresh = points.filter((p) => !drawn.has(cell(p))).length;
+      if (fresh < points.length * 0.05) continue;
+      points.forEach((p) => drawn.add(cell(p)));
+      paths.push(points.map((p): [number, number] => [round(p.lon), round(p.lat)]));
+    }
+    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths };
   }
 
   status(): FeedStatus[] {

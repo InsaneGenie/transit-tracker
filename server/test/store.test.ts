@@ -203,6 +203,13 @@ describe('API', () => {
     const one = await (await fetch(`${base}/api/vehicles/${encodeURIComponent('test-bus:MTA_1234')}`)).json();
     expect(one.vehicle.routeId).toBe('M15');
     expect((await fetch(`${base}/api/vehicles/missing`)).status).toBe(404);
+    const { lines } = await (await fetch(`${base}/api/route-lines?keys=test-train:1,test-train:nope`)).json();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ key: 'test-train:1', mode: 'subway', color: 'EE352E' });
+    expect(lines[0].paths[0]).toHaveLength(5);
+    expect(lines[0].paths[0][0]).toEqual([expect.any(Number), expect.any(Number)]);
+    const tooMany = Array.from({ length: 61 }, (_, i) => `test-train:${i}`).join(',');
+    expect((await fetch(`${base}/api/route-lines?keys=${tooMany}`)).status).toBe(400);
     const { routes } = await (await fetch(`${base}/api/routes`)).json();
     expect(routes).toContainEqual({
       key: 'test-train:1',

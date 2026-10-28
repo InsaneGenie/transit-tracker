@@ -79,22 +79,54 @@ export interface LegendGroup {
 
 const byName = (a: RouteInfo, b: RouteInfo) => a.name.localeCompare(b.name, undefined, { numeric: true });
 
+const BUS_GROUPS = ['Bronx', 'Brooklyn', 'Manhattan', 'Queens', 'Staten Island', 'Express', 'Shuttles and other'];
+
+/** Which list a bus route goes in, from its name: Bx12 is the Bronx, QM2 is an express bus, and so on. */
+export function busGroup(name: string): string {
+  const n = name.toUpperCase();
+  if (/^(BXM|BM|QM|SIM|X)\d/.test(n)) return 'Express';
+  if (/^BX\d/.test(n)) return 'Bronx';
+  if (/^B\d/.test(n)) return 'Brooklyn';
+  if (/^M\d/.test(n)) return 'Manhattan';
+  if (/^Q\d/.test(n)) return 'Queens';
+  if (/^S\d/.test(n)) return 'Staten Island';
+  return 'Shuttles and other';
+}
+
 /**
  * Lines arranged for the legend: subway lines grouped by their shared color (1 2 3 are all red),
- * rail lines by railroad, and buses in one list.
+ * rail lines by railroad, and buses by borough, with express buses on their own.
  */
 export function legendGroups(routes: RouteInfo[], mode: Mode): LegendGroup[] {
   const of = routes.filter((r) => r.mode === mode);
   const groups = new Map<string, RouteInfo[]>();
   for (const r of of) {
-    const key = mode === 'subway' ? (r.color ?? '').toUpperCase() : mode === 'rail' ? r.agency : '';
+    const key = mode === 'subway' ? (r.color ?? '').toUpperCase() : mode === 'rail' ? r.agency : busGroup(r.name);
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
   return [...groups.entries()]
     .map(([key, rs]) => ({
-      title: mode === 'rail' ? key : '',
+      title: mode === 'subway' ? '' : key,
       color: mode === 'subway' && key ? `#${key}` : undefined,
       routes: rs.sort(byName),
     }))
-    .sort((a, b) => (mode === 'rail' ? a.title.localeCompare(b.title) : byName(a.routes[0], b.routes[0])));
+    .sort((a, b) =>
+      mode === 'rail'
+        ? a.title.localeCompare(b.title)
+        : mode === 'bus'
+          ? BUS_GROUPS.indexOf(a.title) - BUS_GROUPS.indexOf(b.title)
+          : byName(a.routes[0], b.routes[0]),
+    );
+}
+
+/**
+ * The lines to show as transfers at a stop, in legend order. Express variants (7X, 6X) are left out
+ * when the regular line is there too, since they share its bullet.
+ */
+export function transferLines(keys: string[] | undefined, routes: Map<string, RouteInfo>): RouteInfo[] {
+  const found = (keys ?? []).flatMap((k) => routes.get(k) ?? []);
+  const names = new Set(found.map((r) => r.name));
+  return found
+    .filter((r) => !(r.mode === 'subway' && r.name.endsWith('X') && names.has(r.name.slice(0, -1))))
+    .sort(byName);
 }
