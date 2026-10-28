@@ -45,6 +45,8 @@ export interface FeedStatus {
   agency: string;
   enabled: boolean;
   staticLoaded: boolean;
+  /** Why the schedule failed to load, kept apart from feed errors so a later good poll doesn't hide it. */
+  staticError?: string;
   lastFetch?: string;
   lastError?: string;
   gpsVehicles: number;
@@ -57,6 +59,7 @@ interface FeedState {
   index?: StaticIndex;
   snapshot?: FeedSnapshot;
   lastError?: string;
+  staticError?: string;
 }
 
 /** `MTA NYCT_M15` -> `M15`, so realtime ids match the schedule's. */
@@ -114,7 +117,7 @@ export class VehicleStore {
         try {
           feed.index = await this.loadIndex(feed.config);
         } catch (err) {
-          feed.lastError = `static GTFS: ${(err as Error).message}`;
+          feed.staticError = (err as Error).message;
         }
       }),
     );
@@ -269,6 +272,7 @@ export class VehicleStore {
       agency: f.config.agency,
       enabled: this.enabled(f),
       staticLoaded: Boolean(f.index),
+      staticError: f.staticError,
       lastFetch: f.snapshot ? new Date(f.snapshot.fetchedAt * 1000).toISOString() : undefined,
       lastError: this.enabled(f) ? f.lastError : `set ${f.config.apiKeyEnv} to enable`,
       gpsVehicles: f.snapshot?.gps.length ?? 0,

@@ -13,5 +13,6 @@ console.log('Loading schedules (first run downloads them, which takes a minute).
 await store.loadStatic();
 store.start();
 for (const f of store.status()) {
-  console.log(`  ${f.id}: ${f.enabled ? (f.staticLoaded ? 'schedule loaded' : 'no schedule') : f.lastError}`);
+  const schedule = f.staticLoaded ? 'schedule loaded' : `schedule failed: ${f.staticError ?? 'not configured'}`;
+  console.log(`  ${f.id}: ${f.enabled ? schedule : f.lastError}`);
 }
