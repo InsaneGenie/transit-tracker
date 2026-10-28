@@ -36,6 +36,12 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       return send(200, { updatedAt: new Date().toISOString(), count: vehicles.length, vehicles });
     }
 
+    const detail = url.pathname.match(/^\/api\/vehicles\/(.+)$/);
+    if (detail) {
+      const found = store.detail(decodeURIComponent(detail[1]), now());
+      return found ? send(200, found) : send(404, { error: 'vehicle not found' });
+    }
+
     if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
 
     send(404, { error: 'not found' });

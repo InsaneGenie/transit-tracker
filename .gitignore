@@ -1,3 +1,5 @@
 node_modules/
 .env
 server/data/cache/
+web/dist/
+web/.env

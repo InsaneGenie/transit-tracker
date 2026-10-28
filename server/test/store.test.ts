@@ -121,6 +121,62 @@ describe('VehicleStore', () => {
   });
 });
 
+describe('VehicleStore.detail', () => {
+  it('lists the stops ahead and the track to them', async () => {
+    const store = new VehicleStore(
+      [train],
+      {},
+      async () =>
+        snapshotFromFeed(
+          decodeFeed(
+            encodeFeed([
+              {
+                id: '1',
+                tripUpdate: {
+                  trip: { tripId: 'tB', routeId: '1' },
+                  stopTimeUpdate: [
+                    { stopId: 'A', departure: { time: T - 200 } },
+                    { stopId: 'B', arrival: { time: T + 60 } },
+                    { stopId: 'C', arrival: { time: T + 240 } },
+                  ],
+                },
+              },
+            ]),
+          ),
+          T,
+        ),
+      () => indexPromise,
+    );
+    await store.loadStatic();
+    await store.pollAll();
+    const detail = store.detail('test-train:tB', T)!;
+    expect(detail.routeLongName).toBe('Test Local');
+    expect(detail.upcoming.map((u) => [u.name, u.time])).toEqual([
+      ['Bravo', T + 60],
+      ['Charlie', T + 240],
+    ]);
+    // Starts at the train, follows the dog-leg into Bravo, then on to Charlie.
+    expect(detail.path[0]).toEqual([detail.vehicle.lon, detail.vehicle.lat]);
+    expect(detail.path).toContainEqual([-73.94, 40.79]);
+    expect(detail.path.at(-1)).toEqual([-73.95, 40.78]);
+    expect(store.detail('nope', T)).toBeNull();
+  });
+
+  it('shows a vehicle once when it has both GPS and predictions', async () => {
+    const both = encodeFeed([
+      { id: 't', tripUpdate: { trip: { tripId: 'tC', routeId: '1' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: T + 30 } }] } },
+      { id: 'v', vehicle: { trip: { tripId: 'tC', routeId: '1' }, vehicle: { id: '7' }, position: { latitude: 40.785, longitude: -73.95 } } },
+    ]);
+    const store = new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(both), T), () => indexPromise);
+    await store.loadStatic();
+    await store.pollAll();
+    expect(store.vehicles(T)).toHaveLength(1);
+    const detail = store.detail('test-train:7', T)!;
+    expect(detail.vehicle.source).toBe('gps');
+    expect(detail.upcoming.map((u) => u.name)).toEqual(['Charlie']);
+  });
+});
+
 describe('API', () => {
   let close: (() => void) | undefined;
   afterEach(() => close?.());
@@ -141,5 +197,8 @@ describe('API', () => {
     expect(trains.count).toBe(1);
     expect((await fetch(`${base}/api/vehicles?bbox=nope`)).status).toBe(400);
     expect((await (await fetch(`${base}/api/health`)).json()).feeds).toHaveLength(2);
+    const one = await (await fetch(`${base}/api/vehicles/${encodeURIComponent('test-bus:MTA_1234')}`)).json();
+    expect(one.vehicle.routeId).toBe('M15');
+    expect((await fetch(`${base}/api/vehicles/missing`)).status).toBe(404);
   });
 });
