@@ -8,6 +8,8 @@ import { MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+/** The server draws at most this many lines per request. */
+const MAX_DRAWN_LINES = 60;
 
 /** The line filter is remembered between visits, when the browser allows it. */
 function savedLines(): string[] {
@@ -41,6 +43,7 @@ export function App() {
   const [station, setStation] = useState<Station | null>(null);
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
+  const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
   const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
   const panelRef = useRef<HTMLElement>(null);
   const routesByKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
@@ -101,6 +104,35 @@ export function App() {
       .catch(() => {});
     return () => controller.abort();
   }, [showTransfers, stationTransfers]);
+
+  // The lines picked in the Lines tab are drawn as soon as they're picked.
+  useEffect(() => {
+    setFilterRoutes([]);
+    if (!lines.length) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRouteLines(lines.slice(0, MAX_DRAWN_LINES), controller.signal)
+        .then((r) => {
+          setFilterRoutes(r.lines);
+          // Schedules can still be loading; ask again for the lines not found yet.
+          if (r.lines.length < Math.min(lines.length, MAX_DRAWN_LINES)) timer = setTimeout(load, 15_000);
+        })
+        .catch((err: Error) => {
+          if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [lines]);
+
+  // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
+  const otherLines = useMemo(() => {
+    const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
+    return [...byKey.values()];
+  }, [filterRoutes, transferRoutes]);
 
   // Stations tapped on the map arrive without their transfers; the line or the stop list knows them.
   const pickStation = (stop: Omit<Station, 'at' | 'transfers'>) => {
@@ -169,7 +201,7 @@ export function App() {
         modes={modes}
         lines={lines}
         routeLine={routeLine}
-        transferLines={transferRoutes}
+        otherLines={otherLines}
         station={station}
         onStation={pickStation}
         selectedId={selectedId}

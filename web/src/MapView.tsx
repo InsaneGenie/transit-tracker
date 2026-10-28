@@ -52,8 +52,8 @@ interface Props {
   lines: string[];
   /** The tapped vehicle's whole line, drawn under the vehicles with its stations. */
   routeLine: RouteLine | null;
-  /** Routes of the lines you can transfer to at the picked station, when asked for. */
-  transferLines: RouteLine[];
+  /** Routes drawn under the tapped vehicle's line: lines picked in the Lines tab and the picked station's transfers. */
+  otherLines: RouteLine[];
   /** The picked station, marked on the map and brought to the middle. */
   station: Station | null;
   onStation: (station: Omit<Station, 'at'>) => void;
@@ -210,7 +210,7 @@ function addVehicleLayers(
 interface LayerState {
   vehicles: GeoJSON.FeatureCollection;
   routeLine: RouteLine | null;
-  transferLines: RouteLine[];
+  otherLines: RouteLine[];
   station: Station | null;
   selected: GeoJSON.FeatureCollection;
   modes: Mode[];
@@ -230,18 +230,18 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('vehicles', { type: 'geojson', data: state.vehicles, maxzoom: 12, buffer: 32 });
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
   const line = routeLineData(state.routeLine);
-  map.addSource('transfer-lines', { type: 'geojson', data: linesData(state.transferLines) });
+  map.addSource('other-lines', { type: 'geojson', data: linesData(state.otherLines) });
   map.addSource('route-lines', { type: 'geojson', data: line.path });
   map.addSource('route-stops', { type: 'geojson', data: line.stops });
   map.addSource('chosen-station', { type: 'geojson', data: stationData(state.station, stationColor(state)) });
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
 
-  // Lines you can transfer to at the picked station, under the tapped vehicle's own line.
+  // Picked lines and the picked station's transfers, under the tapped vehicle's own line.
   map.addLayer({
-    id: 'transfer-lines',
+    id: 'other-lines',
     type: 'line',
-    source: 'transfer-lines',
+    source: 'other-lines',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.5, 15, 4], 'line-opacity': 0.7 },
   });
@@ -365,7 +365,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, routeLine, transferLines, station, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLine, otherLines, station, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -375,7 +375,7 @@ export function MapView(props: Props) {
     theme,
     vehicles: EMPTY,
     routeLine,
-    transferLines,
+    otherLines,
     station,
     selected: EMPTY,
     modes,
@@ -586,9 +586,9 @@ export function MapView(props: Props) {
   }, [routeLine]);
 
   useEffect(() => {
-    state.current.transferLines = transferLines;
-    (mapRef.current?.getSource('transfer-lines') as GeoJSONSource | undefined)?.setData(linesData(transferLines));
-  }, [transferLines]);
+    state.current.otherLines = otherLines;
+    (mapRef.current?.getSource('other-lines') as GeoJSONSource | undefined)?.setData(linesData(otherLines));
+  }, [otherLines]);
 
   // Mark the picked station and bring it to the middle of the uncovered map.
   useEffect(() => {
