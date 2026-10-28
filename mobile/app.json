@@ -21,7 +21,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "plugins": [
       [
@@ -30,6 +34,12 @@
           "locationWhenInUsePermission": "Your location is used to show where you are on the map, so you can see the buses and trains near you. It stays on your phone."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "189e500f-c9b9-454c-9455-1aedcc4addf4"
+      }
+    },
+    "owner": "crazygenie"
   }
 }
