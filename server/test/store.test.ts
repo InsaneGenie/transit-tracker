@@ -223,6 +223,7 @@ describe('the map page', () => {
     await mkdir(path.join(webDir, 'assets'));
     await writeFile(path.join(webDir, 'index.html'), '<title>map</title>');
     await writeFile(path.join(webDir, 'assets', 'app-1234.js'), 'run()');
+    await writeFile(path.join(webDir, 'assets', 'worker-1234.mjs'), 'work()');
     const { store } = makeStore({});
     const server = createApiServer(store, () => T, webDir).listen(0);
     const base = `http://localhost:${(server.address() as AddressInfo).port}`;
@@ -233,6 +234,8 @@ describe('the map page', () => {
       const script = await fetch(`${base}/assets/app-1234.js`);
       expect(script.headers.get('cache-control')).toContain('immutable');
       expect(await script.text()).toBe('run()');
+      const worker = await fetch(`${base}/assets/worker-1234.mjs`);
+      expect(worker.headers.get('content-type')).toBe('text/javascript');
       expect(await (await fetch(`${base}/somewhere/else`)).text()).toBe('<title>map</title>');
       expect(await (await fetch(`${base}/..%2f..%2fetc/passwd`)).text()).toBe('<title>map</title>');
       expect((await fetch(`${base}/api/nope`)).status).toBe(404);
