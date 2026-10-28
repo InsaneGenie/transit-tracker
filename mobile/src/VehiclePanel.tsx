@@ -1,21 +1,47 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName } from '../../web/src/vehicles';
-import type { VehicleDetail } from './api';
+import { colorFor, displayName, formatEta, MODE_LABELS, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
+import type { RouteInfo, UpcomingStop, VehicleDetail } from './api';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
 
 interface Props {
   detail: VehicleDetail;
+  /** Every line by key, to show transfers with their colors. */
+  routes: Map<string, RouteInfo>;
   following: boolean;
   dark: boolean;
   bottomInset: number;
   onFollow: () => void;
+  /** Tapping a stop in the list brings it into view. */
+  onStop: (stop: UpcomingStop) => void;
   onClose: () => void;
 }
 
+/** The other lines that call at a stop: subway bullets, or a color swatch and name for rail and buses. */
+function Transfers({ lines, muted }: { lines: RouteInfo[]; muted: string }) {
+  if (!lines.length) return null;
+  return (
+    <View style={styles.transfers} accessibilityLabel={`Transfer to ${lines.map((r) => r.name).join(', ')}`}>
+      {lines.map((r) => {
+        const color = colorFor({ routeColor: r.color, mode: r.mode });
+        return r.mode === 'subway' ? (
+          <View key={r.key} style={[styles.bullet, { backgroundColor: color }]}>
+            <Text style={[styles.bulletText, { color: textColorFor(color) }]}>{r.name}</Text>
+          </View>
+        ) : (
+          <View key={r.key} style={styles.named}>
+            <View style={[styles.swatch, { backgroundColor: color }]} />
+            <Text style={[styles.namedText, { color: muted }]}>{r.name}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
-export function VehiclePanel({ detail, following, dark, bottomInset, onFollow, onClose }: Props) {
+export function VehiclePanel({ detail, routes, following, dark, bottomInset, onFollow, onStop, onClose }: Props) {
   const c = palette(dark);
   const { vehicle, upcoming, routeLongName } = detail;
   const color = colorFor(vehicle);
@@ -63,13 +89,22 @@ export function VehiclePanel({ detail, following, dark, bottomInset, onFollow, o
       {upcoming.length > 0 ? (
         <ScrollView style={styles.stops}>
           {upcoming.slice(0, MAX_STOPS).map((s, i) => (
-            <View key={s.stopId} style={styles.stop}>
+            <Pressable
+              key={s.stopId}
+              style={({ pressed }) => [styles.stop, pressed && styles.pressed]}
+              disabled={s.lat === undefined || s.lon === undefined}
+              onPress={() => onStop(s)}
+              accessibilityRole="button"
+            >
               <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
-              <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
-                {s.name ? tidyStopName(s.name) : s.stopId}
-              </Text>
+              <View style={styles.stopText}>
+                <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
+                  {s.name ? tidyStopName(s.name) : s.stopId}
+                </Text>
+                <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
+              </View>
               <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       ) : (
@@ -106,6 +141,14 @@ const styles = StyleSheet.create({
   stops: { flexGrow: 0, flexShrink: 1 },
   stop: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, gap: 10 },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
-  stopName: { flex: 1, fontSize: 14 },
+  pressed: { opacity: 0.5 },
+  stopText: { flex: 1, gap: 3 },
+  stopName: { fontSize: 14 },
+  transfers: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  bullet: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
+  bulletText: { fontSize: 10, fontWeight: '800' },
+  named: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 4 },
+  swatch: { width: 8, height: 8, borderRadius: 4 },
+  namedText: { fontSize: 12 },
   eta: { fontSize: 14, fontVariant: ['tabular-nums'] },
 });

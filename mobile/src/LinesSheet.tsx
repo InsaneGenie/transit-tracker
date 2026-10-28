@@ -1,10 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from '../../web/src/vehicles';
 import type { Mode, RouteInfo } from './api';
 import { palette } from './theme';
-
-const MAX_BUSES = 60;
 
 interface Props {
   visible: boolean;
@@ -14,6 +12,9 @@ interface Props {
   chosen: string[];
   dark: boolean;
   onChange: (chosen: string[]) => void;
+  /** Whether the chosen lines' routes are drawn on the map. */
+  drawRoutes: boolean;
+  onDrawRoutesChange: (draw: boolean) => void;
   onClose: () => void;
 }
 
@@ -38,7 +39,7 @@ function LineButton({ route, on, dark, onToggle }: { route: RouteInfo; on: boole
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onClose }: Props) {
+export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, drawRoutes, onDrawRoutesChange, onClose }: Props) {
   const c = palette(dark);
   const [busSearch, setBusSearch] = useState('');
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
@@ -46,14 +47,14 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
   const toggle = (r: RouteInfo) =>
     onChange(chosenSet.has(r.key) ? chosen.filter((k) => k !== r.key) : [...chosen, r.key]);
 
-  const buses = useMemo(() => {
+  // Every bus route, by borough; typing narrows the lists down.
+  const busGroups = useMemo(() => {
     const q = busSearch.trim().toLowerCase();
-    const all = legendGroups(routes, 'bus')[0]?.routes ?? [];
-    const matches = q
-      ? all.filter((r) => r.name.toLowerCase().startsWith(q) || r.longName?.toLowerCase().includes(q))
-      : all.filter((r) => chosenSet.has(r.key));
-    return matches.slice(0, MAX_BUSES);
-  }, [routes, busSearch, chosenSet]);
+    const matches = (r: RouteInfo) => r.name.toLowerCase().startsWith(q) || r.longName?.toLowerCase().includes(q);
+    return legendGroups(routes, 'bus')
+      .map((g) => ({ ...g, routes: q ? g.routes.filter(matches) : g.routes }))
+      .filter((g) => g.routes.length);
+  }, [routes, busSearch]);
 
   const heading = (text: string) => <Text style={[styles.h3, { color: c.muted }]}>{text}</Text>;
 
@@ -76,6 +77,12 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
             ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.`
             : 'Tap lines to show only those.'}
         </Text>
+        {chosen.length > 0 && (
+          <View style={[styles.drawToggle, { borderColor: c.border }]}>
+            <Text style={[styles.drawText, { color: c.text }]}>Draw their routes on the map</Text>
+            <Switch value={drawRoutes} onValueChange={onDrawRoutesChange} />
+          </View>
+        )}
 
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
           {routes.length === 0 && <Text style={{ color: c.muted }}>The list of lines loads once the server answers.</Text>}
@@ -108,7 +115,7 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
               {heading(MODE_LABELS.bus)}
               <TextInput
                 style={[styles.search, { color: c.text, borderColor: c.border }]}
-                placeholder="Find a bus route, e.g. M15"
+                placeholder="Filter bus routes, e.g. M15"
                 placeholderTextColor={c.muted}
                 value={busSearch}
                 onChangeText={setBusSearch}
@@ -116,11 +123,19 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
                 autoCorrect={false}
                 clearButtonMode="while-editing"
               />
-              <View style={styles.row}>
-                {buses.map((r) => (
-                  <LineButton key={r.key} route={r} on={isOn(r)} dark={dark} onToggle={() => toggle(r)} />
-                ))}
-              </View>
+              {busGroups.length === 0 && routes.some((r) => r.mode === 'bus') && (
+                <Text style={{ color: c.muted }}>No bus route matches.</Text>
+              )}
+              {busGroups.map((g) => (
+                <View key={g.title}>
+                  <Text style={[styles.h4, { color: c.muted }]}>{g.title}</Text>
+                  <View style={styles.row}>
+                    {g.routes.map((r) => (
+                      <LineButton key={r.key} route={r} on={isOn(r)} dark={dark} onToggle={() => toggle(r)} />
+                    ))}
+                  </View>
+                </View>
+              ))}
             </View>
           )}
         </ScrollView>
@@ -138,6 +153,18 @@ const styles = StyleSheet.create({
   hint: { paddingHorizontal: 20, marginTop: 4, fontSize: 14 },
   body: { padding: 20, paddingBottom: 60, gap: 18 },
   h3: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  h4: { fontSize: 14, fontWeight: '600', marginTop: 6, marginBottom: 6 },
+  drawToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  drawText: { fontSize: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   line: { borderRadius: 20 },
   railLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
