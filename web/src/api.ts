@@ -34,6 +34,18 @@ export interface VehicleDetail {
   path: [number, number][];
 }
 
+/** Mirrors `RouteInfo` in server/src/store.ts. */
+export interface RouteInfo {
+  key: string;
+  feed: string;
+  agency: string;
+  mode: Mode;
+  id: string;
+  name: string;
+  longName?: string;
+  color?: string;
+}
+
 const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -50,4 +62,8 @@ export function fetchVehicles(bounds: Bounds, signal?: AbortSignal): Promise<{ v
 
 export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<VehicleDetail> {
   return get(`/api/vehicles/${encodeURIComponent(id)}`, signal);
+}
+
+export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[] }> {
+  return get('/api/routes', signal);
 }

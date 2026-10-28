@@ -1,4 +1,4 @@
-import type { Mode, Vehicle } from './api';
+import type { Mode, RouteInfo, Vehicle } from './api';
 
 const MODE_COLORS: Record<Mode, string> = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb' };
 
@@ -13,6 +13,11 @@ export function textColorFor(hex: string): string {
   return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? '#111111' : '#ffffff';
 }
 
+export const routeKey = (v: Pick<Vehicle, 'feed' | 'routeId'>) => `${v.feed}:${v.routeId ?? ''}`;
+
+/** Strips Bus Time's agency prefix ("MTA NYCT_M15") from names that arrive without a schedule match. */
+export const displayName = (name: string) => name.replace(/^MTA\s*\w*_/, '');
+
 export function toFeatureCollection(vehicles: Vehicle[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: 'FeatureCollection',
@@ -23,8 +28,9 @@ export function toFeatureCollection(vehicles: Vehicle[]): GeoJSON.FeatureCollect
         geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
         properties: {
           id: v.id,
+          routeKey: routeKey(v),
           mode: v.mode,
-          label: (v.routeName ?? v.routeId ?? '').replace(/^MTA\s*\w*_/, ''),
+          label: displayName(v.routeName ?? v.routeId ?? ''),
           color,
           textColor: textColorFor(color),
           bearing: v.bearing ?? 0,
@@ -63,4 +69,32 @@ export const MODE_LABELS: Record<Mode, string> = { subway: 'Subway', rail: 'Rail
 export function tidyStopName(name: string): string {
   if (name !== name.toUpperCase()) return name;
   return name.toLowerCase().replace(/(^|[\s/&(-])([a-z])/g, (_, sep: string, c: string) => sep + c.toUpperCase());
+}
+
+export interface LegendGroup {
+  title: string;
+  color?: string;
+  routes: RouteInfo[];
+}
+
+const byName = (a: RouteInfo, b: RouteInfo) => a.name.localeCompare(b.name, undefined, { numeric: true });
+
+/**
+ * Lines arranged for the legend: subway lines grouped by their shared color (1 2 3 are all red),
+ * rail lines by railroad, and buses in one list.
+ */
+export function legendGroups(routes: RouteInfo[], mode: Mode): LegendGroup[] {
+  const of = routes.filter((r) => r.mode === mode);
+  const groups = new Map<string, RouteInfo[]>();
+  for (const r of of) {
+    const key = mode === 'subway' ? (r.color ?? '').toUpperCase() : mode === 'rail' ? r.agency : '';
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  return [...groups.entries()]
+    .map(([key, rs]) => ({
+      title: mode === 'rail' ? key : '',
+      color: mode === 'subway' && key ? `#${key}` : undefined,
+      routes: rs.sort(byName),
+    }))
+    .sort((a, b) => (mode === 'rail' ? a.title.localeCompare(b.title) : byName(a.routes[0], b.routes[0])));
 }

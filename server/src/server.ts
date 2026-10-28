@@ -36,6 +36,8 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       return found ? send(200, found) : send(404, { error: 'vehicle not found' });
     }
 
+    if (url.pathname === '/api/routes') return send(200, { routes: store.routes() });
+
     if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
 
     send(404, { error: 'not found' });

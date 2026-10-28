@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
+Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map follows the vehicle you tap until you drag it. **Lines** opens a legend of every line color, where you can tap lines to show only those. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
 
 ## Where the positions come from
 
