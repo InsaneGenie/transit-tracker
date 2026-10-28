@@ -1,5 +1,5 @@
 import { estimatePosition, trackBetween } from './estimate.js';
-import { Polyline, type LatLon } from './geo.js';
+import { distanceMeters, Polyline, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
 import { loadStaticIndex, type StaticIndex } from './static-gtfs.js';
@@ -51,6 +51,24 @@ export interface RouteLine {
   paths: [number, number][][];
   /** The stations it calls at, when the schedule says (subway and rail; bus schedules are read without stop times). */
   stops: UpcomingStop[];
+}
+
+/** A vehicle on its way to a station, with where it is now. */
+export interface Arrival {
+  vehicle: Vehicle;
+  /** Unix seconds. */
+  time: number;
+  /** Stops it still makes before this one. */
+  stopsAway: number;
+  /** Where the trip ends. */
+  destination?: string;
+}
+
+/** The vehicles coming one way through a station, soonest first. */
+export interface ArrivalDirection {
+  /** Where they're headed; a line with branches has more than one. */
+  destinations: string[];
+  arrivals: Arrival[];
 }
 
 /** A line on the legend. */
@@ -112,6 +130,12 @@ export type Bbox = [west: number, south: number, east: number, north: number];
 
 /** Margin around the requested area when deciding which trips are worth estimating, in degrees (~3 km). */
 const ESTIMATE_MARGIN = 0.03;
+
+/**
+ * Stops this close to a picked station count as that station. That takes in a subway station's platforms
+ * and the bus stop across the street, but never the next stop along the line.
+ */
+const STATION_RADIUS_M = 150;
 
 function inside(b: Bbox, lat: number, lon: number, margin = 0): boolean {
   return lon >= b[0] - margin && lat >= b[1] - margin && lon <= b[2] + margin && lat <= b[3] + margin;
@@ -355,6 +379,68 @@ export class VehicleStore {
       return [{ stopId: id, name: stop.name, lat: stop.lat, lon: stop.lon, ...(transfers && { transfers }) }];
     });
     return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops };
+  }
+
+  /**
+   * Every vehicle of a line still on its way to a station, in both directions. Platforms or stops near
+   * `place` all count, so a station picked on either side gets both ways.
+   */
+  arrivals(key: string, place: LatLon, now = Date.now() / 1000): ArrivalDirection[] {
+    const split = key.indexOf(':');
+    const routeId = key.slice(split + 1);
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    const index = feed?.index;
+    if (!feed?.snapshot || !index) return [];
+    const byTrip = new Map(
+      this.vehicles(now)
+        .filter((v) => v.feed === feed.config.id && v.routeId === routeId && v.tripId)
+        .map((v) => [v.tripId!, v]),
+    );
+    const near = new Map<string, boolean>();
+    const isNear = (stopId: string) => {
+      let hit = near.get(stopId);
+      if (hit === undefined) {
+        const stop = index.stops.get(stopId);
+        near.set(stopId, (hit = Boolean(stop && distanceMeters(stop, place) <= STATION_RADIUS_M)));
+      }
+      return hit;
+    };
+
+    // The platform or stop each vehicle arrives at tells the two directions apart.
+    const byPlatform = new Map<string, Arrival[]>();
+    for (const trip of feed.snapshot.trips) {
+      if (trip.routeId !== routeId) continue;
+      const vehicle = byTrip.get(trip.tripId);
+      if (!vehicle) continue;
+      const ahead = trip.stops.filter((s) => (s.arrival ?? s.departure ?? 0) > now);
+      const at = ahead.findIndex((s) => isNear(s.stopId));
+      if (at < 0) continue;
+      const last = trip.stops.at(-1);
+      const arrival: Arrival = {
+        vehicle,
+        time: (ahead[at].arrival ?? ahead[at].departure)!,
+        stopsAway: at,
+        destination: last && index.stops.get(last.stopId)?.name,
+      };
+      const list = byPlatform.get(ahead[at].stopId);
+      if (list) list.push(arrival);
+      else byPlatform.set(ahead[at].stopId, [arrival]);
+    }
+
+    // A direction can use more than one stop here; ones whose trips end at the same place are merged.
+    const directions: ArrivalDirection[] = [];
+    for (const arrivals of byPlatform.values()) {
+      const destinations = [...new Set(arrivals.flatMap((a) => (a.destination ? [a.destination] : [])))];
+      const same = directions.find((d) => d.destinations.some((x) => destinations.includes(x)));
+      if (same) {
+        same.arrivals.push(...arrivals);
+        same.destinations = [...new Set([...same.destinations, ...destinations])];
+      } else {
+        directions.push({ destinations, arrivals });
+      }
+    }
+    for (const d of directions) d.arrivals.sort((a, b) => a.time - b.time);
+    return directions.sort((a, b) => a.arrivals[0].time - b.arrivals[0].time);
   }
 
   /** Other lines that call at a stop, as legend keys, or undefined when there are none. */

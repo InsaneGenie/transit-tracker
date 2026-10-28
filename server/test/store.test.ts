@@ -2,12 +2,14 @@ import type { AddressInfo } from 'node:net';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FeedConfig } from '../src/feeds.js';
 import { decodeFeed, snapshotFromFeed } from '../src/realtime.js';
 import { createApiServer } from '../src/server.js';
 import { VehicleStore } from '../src/store.js';
-import { encodeFeed, indexPromise } from './fixtures.js';
+import { buildStaticIndex, type GtfsFiles } from '../src/static-gtfs.js';
+import { encodeFeed, gtfs, indexPromise } from './fixtures.js';
 
 const T = 1_700_000_000;
 
@@ -177,6 +179,60 @@ describe('VehicleStore.detail', () => {
     const detail = store.detail('test-train:7', T)!;
     expect(detail.vehicle.source).toBe('gps');
     expect(detail.upcoming.map((u) => u.name)).toEqual(['Charlie']);
+  });
+});
+
+describe('VehicleStore.arrivals', () => {
+  it('lists the vehicles coming to a station both ways, soonest first', async () => {
+    const feed = encodeFeed([
+      {
+        id: 'south',
+        tripUpdate: {
+          trip: { tripId: 'tS', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'A', departure: { time: T - 30 } },
+            { stopId: 'B', arrival: { time: T + 120 } },
+            { stopId: 'C', arrival: { time: T + 300 } },
+          ],
+        },
+      },
+      {
+        id: 'north',
+        tripUpdate: {
+          trip: { tripId: 'tN', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'C', arrival: { time: T + 20 } },
+            { stopId: 'B2', arrival: { time: T + 200 } },
+            { stopId: 'A', arrival: { time: T + 400 } },
+          ],
+        },
+      },
+      { id: 'n', vehicle: { trip: { tripId: 'tN', routeId: '1' }, vehicle: { id: '9' }, position: { latitude: 40.775, longitude: -73.95 } } },
+      {
+        id: 'gone',
+        tripUpdate: {
+          trip: { tripId: 'tG', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'B', departure: { time: T - 60 } },
+            { stopId: 'C', arrival: { time: T + 100 } },
+          ],
+        },
+      },
+    ]);
+    // Bravo's northbound platform, beside the southbound one.
+    const withPlatform: GtfsFiles = (name) =>
+      name in gtfs ? Readable.from([name === 'stops.txt' ? `${gtfs[name]}B2,Bravo,40.7900,-73.9502\n` : gtfs[name]]) : null;
+    const index = buildStaticIndex(withPlatform);
+    const store = new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(feed), T), () => index);
+    await store.loadStatic();
+    await store.pollAll();
+    // A few meters off Bravo, as a tap on the map would be.
+    const directions = store.arrivals('test-train:1', { lat: 40.7901, lon: -73.9501 }, T);
+    expect(directions.map((d) => d.destinations)).toEqual([['Charlie'], ['Alpha']]);
+    expect(directions[0].arrivals.map((a) => [a.vehicle.id, a.time, a.stopsAway])).toEqual([['test-train:tS', T + 120, 0]]);
+    expect(directions[1].arrivals.map((a) => [a.vehicle.id, a.time, a.stopsAway])).toEqual([['test-train:9', T + 200, 1]]);
+    expect(store.arrivals('test-train:1', { lat: 40.5, lon: -73.5 }, T)).toEqual([]);
+    expect(store.arrivals('nope:1', { lat: 40.79, lon: -73.95 }, T)).toEqual([]);
   });
 });
 

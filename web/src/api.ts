@@ -58,6 +58,21 @@ export interface RouteLine {
   stops: UpcomingStop[];
 }
 
+/** Mirrors `Arrival` in server/src/store.ts. */
+export interface Arrival {
+  vehicle: Vehicle;
+  time: number;
+  /** Stops it still makes before the station. */
+  stopsAway: number;
+  destination?: string;
+}
+
+/** Mirrors `ArrivalDirection` in server/src/store.ts. */
+export interface ArrivalDirection {
+  destinations: string[];
+  arrivals: Arrival[];
+}
+
 const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -82,4 +97,12 @@ export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[]
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+export function fetchArrivals(
+  line: string,
+  place: { lat: number; lon: number },
+  signal?: AbortSignal,
+): Promise<{ directions: ArrivalDirection[] }> {
+  return get(`/api/arrivals?line=${encodeURIComponent(line)}&lat=${place.lat}&lon=${place.lon}`, signal);
 }

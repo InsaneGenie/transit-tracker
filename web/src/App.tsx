@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchRouteLines, fetchRoutes, fetchVehicleDetail, type Mode, type RouteInfo, type RouteLine, type VehicleDetail } from './api';
+import { fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type VehicleDetail } from './api';
 import { Legend } from './Legend';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { themeFor, type Theme } from './theme';
@@ -44,6 +44,9 @@ export function App() {
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
+  const [arrivals, setArrivals] = useState<ArrivalDirection[] | null>(null);
+  // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
+  const keepStation = useRef(false);
   const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
   const panelRef = useRef<HTMLElement>(null);
   const routesByKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
@@ -82,8 +85,12 @@ export function App() {
     };
   }, [selectedLine]);
 
-  // A picked station belongs to the vehicle it was picked for.
+  // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
+    if (keepStation.current) {
+      keepStation.current = false;
+      return;
+    }
     setStation(null);
     setShowTransfers(false);
   }, [selectedId]);
@@ -104,6 +111,23 @@ export function App() {
       .catch(() => {});
     return () => controller.abort();
   }, [showTransfers, stationTransfers]);
+
+  // Every vehicle of the line on its way to the picked station, both ways, kept fresh.
+  useEffect(() => {
+    setArrivals(null);
+    if (!station || !selectedLine) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchArrivals(selectedLine, station, controller.signal)
+        .then((r) => setArrivals(r.directions))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, SELECTED_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [station?.lat, station?.lon, selectedLine]);
 
   // The lines picked in the Lines tab are drawn as soon as they're picked.
   useEffect(() => {
@@ -264,6 +288,12 @@ export function App() {
           station={station}
           stationTransfers={stationTransfers}
           showTransfers={showTransfers}
+          arrivals={arrivals}
+          onArrival={(id) => {
+            if (id === selectedId) return;
+            keepStation.current = true;
+            select(id);
+          }}
           onShowTransfers={setShowTransfers}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
           onClose={() => select(null)}

@@ -85,6 +85,16 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       return send(200, { lines: store.routeLines(keys) });
     }
 
+    if (url.pathname === '/api/arrivals') {
+      const line = url.searchParams.get('line');
+      const lat = Number(url.searchParams.get('lat'));
+      const lon = Number(url.searchParams.get('lon'));
+      if (!line || !url.searchParams.get('lat') || !url.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return send(400, { error: 'line, lat and lon are required' });
+      }
+      return send(200, { directions: store.arrivals(line, { lat, lon }, now()) });
+    }
+
     if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
 
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
