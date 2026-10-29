@@ -30,6 +30,7 @@ import {
   type Vehicle,
   type VehicleDetail,
 } from './src/api';
+import { GuideSheet } from './src/GuideSheet';
 import { LinePanel } from './src/LinePanel';
 import { LinesSheet } from './src/LinesSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
@@ -39,6 +40,7 @@ import { VehiclePanel } from './src/VehiclePanel';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
@@ -119,6 +121,7 @@ function TransitMap() {
   const keepStation = useRef(false);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [linesOpen, setLinesOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
@@ -140,6 +143,18 @@ function TransitMap() {
       })
       .catch(() => {});
   }, []);
+  // The guide opens by itself on the first launch only.
+  useEffect(() => {
+    AsyncStorage.getItem(GUIDE_SEEN_KEY)
+      .then((seen) => {
+        if (seen === null) setGuideOpen(true);
+      })
+      .catch(() => {});
+  }, []);
+  const closeGuide = () => {
+    setGuideOpen(false);
+    AsyncStorage.setItem(GUIDE_SEEN_KEY, '1').catch(() => {});
+  };
   const changeLines = (next: string[]) => {
     setLines(next);
     AsyncStorage.setItem(LINES_KEY, JSON.stringify(next)).catch(() => {});
@@ -657,6 +672,14 @@ function TransitMap() {
               {lines.length ? `Lines (${lines.length})` : 'Lines'}
             </Text>
           </Pressable>
+          <Pressable
+            onPress={() => setGuideOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="How to use"
+            style={[styles.chip, styles.helpChip, { backgroundColor: c.chip }]}
+          >
+            <Text style={[styles.chipText, { color: c.text }]}>?</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -751,6 +774,8 @@ function TransitMap() {
         onChange={changeLines}
         onClose={() => setLinesOpen(false)}
       />
+
+      <GuideSheet visible={guideOpen} dark={dark} onClose={closeGuide} />
     </View>
   );
 }
@@ -791,6 +816,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
   },
   chipOff: { opacity: 0.45 },
+  helpChip: { minWidth: 34, justifyContent: 'center' },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
   chipText: { fontSize: 14, fontWeight: '600' },
   status: {
