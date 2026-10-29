@@ -102,9 +102,18 @@ interface FeedState {
   apiKey?: string;
   index?: StaticIndex;
   snapshot?: FeedSnapshot;
+  /** Each URL's last good snapshot and when it was fetched, in ms, by its place in `realtimeUrls`. */
+  parts?: ({ snapshot: FeedSnapshot; at: number } | undefined)[];
   lastError?: string;
   staticError?: string;
 }
+
+/**
+ * How long a URL's last good snapshot stands in when it fails. One of several URLs failing (one subway line
+ * group, or the bus positions beside the bus trip updates) would otherwise take its vehicles off the map
+ * until the next poll, so they blinked out and back in.
+ */
+const PART_MAX_AGE_MS = 120_000;
 
 /** `MTA NYCT_M15` -> `M15`, so realtime ids match the schedule's. */
 const unprefix = <T extends string | undefined>(id: T): T => (id ? id.replace(/^[^_]*_/, '') : id) as T;
@@ -209,8 +218,13 @@ export class VehicleStore {
       return url.toString();
     });
     const results = await Promise.allSettled(urls.map((u) => this.fetcher(u)));
-    const ok = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
     const failed = results.flatMap((r) => (r.status === 'rejected' ? [String(r.reason?.message ?? r.reason)] : []));
+    const at = Date.now();
+    const parts = results.map((r, i) =>
+      r.status === 'fulfilled' ? { snapshot: r.value, at } : feed.parts?.[i] && at - feed.parts[i].at <= PART_MAX_AGE_MS ? feed.parts[i] : undefined,
+    );
+    feed.parts = parts;
+    const ok = parts.flatMap((p) => (p ? [p.snapshot] : []));
     if (ok.length) {
       const merged = mergeSnapshots(ok);
       feed.snapshot = feed.config.agencyPrefixedIds ? withoutAgencyPrefixes(merged) : merged;
