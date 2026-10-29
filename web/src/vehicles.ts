@@ -79,7 +79,7 @@ export interface LegendGroup {
 
 const byName = (a: RouteInfo, b: RouteInfo) => a.name.localeCompare(b.name, undefined, { numeric: true });
 
-const BUS_GROUPS = ['Bronx', 'Brooklyn', 'Manhattan', 'Queens', 'Staten Island', 'Express', 'Shuttles and other'];
+export const BUS_GROUPS = ['Bronx', 'Brooklyn', 'Manhattan', 'Queens', 'Staten Island', 'Express', 'Shuttles and other'];
 
 /** Which list a bus route goes in, from its name: Bx12 is the Bronx, QM2 is an express bus, and so on. */
 export function busGroup(name: string): string {

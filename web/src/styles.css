@@ -1137,6 +1137,19 @@ button {
   font-weight: 700;
 }
 
+.boroughs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 6px;
+}
+
+.boroughs .chip[aria-selected='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface-solid);
+}
+
 .line-back {
   margin-left: -6px;
   font-size: 16px;

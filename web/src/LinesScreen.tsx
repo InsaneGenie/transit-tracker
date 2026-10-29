@@ -2,10 +2,20 @@ import { useMemo, useState } from 'react';
 import type { AlertSeverity, Mode, RouteInfo } from './api';
 import { CloseButton } from './CloseButton';
 import { LineBadge } from './LineBadge';
-import { lineStatus, vehicleCount } from './lines';
+import { boroughLabel, lineStatus, vehicleCount } from './lines';
 import { legendGroups, MODE_LABELS } from './vehicles';
 
 const BROWSE_MODES: Mode[] = ['subway', 'rail', 'bus'];
+const BOROUGH_KEY = 'transit-tracker:borough';
+
+/** The borough whose buses were last shown, when the browser allows remembering it. */
+function savedBorough(): string {
+  try {
+    return localStorage.getItem(BOROUGH_KEY) ?? 'Manhattan';
+  } catch {
+    return 'Manhattan';
+  }
+}
 
 interface Props {
   routes: RouteInfo[];
@@ -24,6 +34,18 @@ interface Props {
 export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, onOpen, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
+  // The bus list is long, so it shows one borough at a time.
+  const [saved, setBorough] = useState(savedBorough);
+  const pickBorough = (b: string) => {
+    setBorough(b);
+    try {
+      localStorage.setItem(BOROUGH_KEY, b);
+    } catch {
+      // Not remembered; the pick still applies.
+    }
+  };
+  const boroughs = useMemo(() => legendGroups(routes, 'bus').map((g) => g.title), [routes]);
+  const borough = boroughs.includes(saved) ? saved : (boroughs[0] ?? saved);
   const q = search.trim().toLowerCase();
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const byKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
@@ -38,9 +60,11 @@ export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, on
       );
     }
     const of = legendGroups(routes, mode);
-    // The subway is one list; rail lines go by railroad, buses by borough.
-    return mode === 'subway' ? [{ title: '', routes: of.flatMap((g) => g.routes) }] : of;
-  }, [q, routes, mode]);
+    // The subway is one list; rail lines go by railroad; buses show the picked borough's.
+    if (mode === 'subway') return [{ title: '', routes: of.flatMap((g) => g.routes) }];
+    if (mode === 'bus') return of.filter((g) => g.title === borough).map((g) => ({ ...g, title: '' }));
+    return of;
+  }, [q, routes, mode, borough]);
 
   const row = (r: RouteInfo, mine: boolean) => {
     const count = counts?.[r.key];
@@ -125,6 +149,15 @@ export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, on
                 </button>
               ))}
             </div>
+            {mode === 'bus' && (
+              <div className="boroughs" role="tablist" aria-label="Borough">
+                {boroughs.map((b) => (
+                  <button key={b} role="tab" className="chip" aria-selected={b === borough} onClick={() => pickBorough(b)}>
+                    {boroughLabel(b)}
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         )}
         {q && groups.length === 0 && <p className="muted lines-empty">No line matches.</p>}

@@ -27,3 +27,6 @@ export function towards(vehicles: LineVehicle[], heading: 1 | -1, stops: Upcomin
   const name = top ?? end?.name;
   return name && tidyStopName(name);
 }
+
+/** The short name of a bus list on the borough picker. */
+export const boroughLabel = (group: string) => (group === 'Shuttles and other' ? 'Other' : group);
