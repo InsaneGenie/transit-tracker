@@ -36,6 +36,16 @@ export interface VehicleDetail {
   path: [number, number][];
 }
 
+/** Mirrors `LineVehicle` in server/src/store.ts. */
+export interface LineVehicle {
+  vehicle: Vehicle;
+  /** Where it is in the line's `stops`: a whole number when at that station, halfway when between two. */
+  at: number;
+  /** 1 when it is heading toward the end of the line's `stops`, -1 toward the start. */
+  heading: 1 | -1;
+  destination?: string;
+}
+
 /** Mirrors `RouteInfo` in server/src/store.ts. */
 export interface RouteInfo {
   key: string;

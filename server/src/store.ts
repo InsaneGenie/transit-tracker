@@ -71,6 +71,17 @@ export interface ArrivalDirection {
   arrivals: Arrival[];
 }
 
+/** A vehicle placed along its line's stations, for the line's own page. */
+export interface LineVehicle {
+  vehicle: Vehicle;
+  /** Where it is in the line's `stops`: a whole number when at that station, halfway when between two. */
+  at: number;
+  /** 1 when it is heading toward the end of the line's `stops`, -1 toward the start. */
+  heading: 1 | -1;
+  /** Where the trip ends. */
+  destination?: string;
+}
+
 /** A line on the legend. */
 export interface RouteInfo {
   /** `${feed}:${routeId}`, unique across agencies. */
@@ -136,6 +147,15 @@ function withoutAgencyPrefixes(snapshot: FeedSnapshot): FeedSnapshot {
 const round = (n: number) => Math.round(n * 1e5) / 1e5;
 
 export type Bbox = [west: number, south: number, east: number, north: number];
+
+/** A vehicle's next stop this far from every station of its line can't be placed along it. */
+const ALONG_LINE_M = 400;
+
+/** A vehicle this close to its next station is at it. */
+const AT_STATION_M = 80;
+
+/** How long the count of vehicles on each line is reused, in seconds. */
+const COUNTS_MAX_AGE_S = 20;
 
 /** Margin around the requested area when deciding which trips are worth estimating, in degrees (~3 km). */
 const ESTIMATE_MARGIN = 0.03;
@@ -509,6 +529,78 @@ export class VehicleStore {
     }
     for (const d of directions) d.arrivals.sort((a, b) => a.time - b.time);
     return directions.sort((a, b) => a.arrivals[0].time - b.arrivals[0].time);
+  }
+
+  /**
+   * Every vehicle of a line placed along its list of stations, with the way it is going, so the line's
+   * page can show them moving down the line. Vehicles that can't be placed are left out.
+   */
+  lineVehicles(key: string, now = Date.now() / 1000): LineVehicle[] {
+    const split = key.indexOf(':');
+    const routeId = key.slice(split + 1);
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    const index = feed?.index;
+    const line = this.routeLines([key])[0];
+    if (!feed?.snapshot || !index || !line?.stops.length) return [];
+    const trips = new Map(feed.snapshot.trips.filter((t) => t.routeId === routeId).map((t) => [t.tripId, t]));
+
+    // The line's station nearest a stop: a platform (127N) or the bus stop across the street both count.
+    const placed = new Map<string, number>();
+    const placeOf = (stopId: string | undefined) => {
+      if (!stopId) return -1;
+      let at = placed.get(stopId);
+      if (at === undefined) {
+        at = -1;
+        const stop = index.stops.get(stopId);
+        let best = ALONG_LINE_M;
+        if (stop) {
+          line.stops.forEach((s, i) => {
+            if (s.lat === undefined || s.lon === undefined) return;
+            const d = distanceMeters(stop, { lat: s.lat, lon: s.lon });
+            if (d <= best) [best, at] = [d, i];
+          });
+        }
+        placed.set(stopId, at);
+      }
+      return at;
+    };
+
+    const out: LineVehicle[] = [];
+    for (const vehicle of this.vehicles(now)) {
+      if (vehicle.feed !== feed.config.id || vehicle.routeId !== routeId) continue;
+      const trip = vehicle.tripId ? trips.get(vehicle.tripId) : undefined;
+      const ahead = (trip?.stops ?? []).filter((s) => (s.arrival ?? s.departure ?? 0) > now);
+      const next = placeOf(vehicle.stopId ?? ahead[0]?.stopId);
+      if (next < 0) continue;
+      // The way it's going: toward whichever end its later stops are.
+      let later = -1;
+      for (let i = ahead.length - 1; i >= 0 && (later < 0 || later === next); i--) later = placeOf(ahead[i].stopId);
+      if (later < 0 || later === next) continue;
+      const heading = later > next ? 1 : -1;
+      const station = line.stops[next];
+      const there =
+        vehicle.status === 'STOPPED_AT' ||
+        (station.lat !== undefined && station.lon !== undefined && distanceMeters(vehicle, { lat: station.lat, lon: station.lon }) <= AT_STATION_M);
+      const at = there ? next : Math.min(Math.max(next - heading * 0.5, 0), line.stops.length - 1);
+      const last = trip?.stops.at(-1);
+      out.push({ vehicle, at, heading, destination: last && index.stops.get(last.stopId)?.name });
+    }
+    return out.sort((a, b) => a.at - b.at);
+  }
+
+  private counts?: { at: number; lines: Record<string, number> };
+
+  /** How many vehicles are out on each line right now, by legend key. */
+  lineCounts(now = Date.now() / 1000): Record<string, number> {
+    if (this.counts && Math.abs(now - this.counts.at) < COUNTS_MAX_AGE_S) return this.counts.lines;
+    const lines: Record<string, number> = {};
+    for (const v of this.vehicles(now)) {
+      if (!v.routeId) continue;
+      const key = `${v.feed}:${v.routeId}`;
+      lines[key] = (lines[key] ?? 0) + 1;
+    }
+    this.counts = { at: now, lines };
+    return lines;
   }
 
   /** Other lines that call at a stop, as legend keys, or undefined when there are none. */

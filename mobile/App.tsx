@@ -19,6 +19,7 @@ import {
   fetchAlerts,
   fetchAlertSummary,
   fetchArrivals,
+  fetchLineCounts,
   fetchRouteLines,
   fetchRoutes,
   fetchVehicleDetail,
@@ -26,6 +27,7 @@ import {
   NotFoundError,
   type AlertSeverity,
   type ArrivalDirection,
+  type LineVehicle,
   type Mode,
   type RouteInfo,
   type RouteLine,
@@ -36,12 +38,15 @@ import {
   type VehicleDetail,
 } from './src/api';
 import { GuideSheet } from './src/GuideSheet';
+import { LinePage } from './src/LinePage';
 import { LinePanel } from './src/LinePanel';
+import { LinesScreen } from './src/LinesScreen';
 import { LinesSheet } from './src/LinesSheet';
 import { ModeIcon } from './src/ModeIcon';
 import { PanelSheet } from './src/PanelSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { MODE_DOT, palette } from './src/theme';
+import { TAB_BAR_HEIGHT, TabBar, type Tab } from './src/TabBar';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { VehiclePanel } from './src/VehiclePanel';
 
@@ -165,6 +170,26 @@ function useAlertSummary(active: boolean): Record<string, AlertSeverity> {
   return summary;
 }
 
+/** How many vehicles are out on each line, kept fresh while asked for; null until loaded. */
+function useLineCounts(active: boolean): Record<string, number> | null {
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchLineCounts(controller.signal)
+        .then((r) => setCounts(r.lines))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [active]);
+  return counts;
+}
+
 /** Whether the app is on screen; nothing is fetched while it's in the background. */
 function useAppActive(): boolean {
   const [active, setActive] = useState(AppState.currentState === 'active');
@@ -193,7 +218,9 @@ function TransitMap() {
   // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
   const keepStation = useRef(false);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
-  const [linesOpen, setLinesOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('map');
+  // The line whose own page is open in the Lines tab.
+  const [linePage, setLinePage] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
@@ -263,7 +290,11 @@ function TransitMap() {
   // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
   const alertSummary = useAlertSummary(active);
   const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean), active);
-  const pickedAlerts = useLineAlerts(linesOpen ? lines : [], active);
+  // The Lines tab: how many vehicles each line has out, and the open line's route and alerts.
+  const onLines = tab === 'lines' && active;
+  const lineCounts = useLineCounts(onLines);
+  const pageRoute = useRouteLine(linePage, onLines);
+  const pageAlerts = useLineAlerts(linePage ? [linePage] : [], onLines);
   const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
@@ -372,7 +403,7 @@ function TransitMap() {
 
   const vehiclesRef = useRef(vehicles);
   vehiclesRef.current = vehicles;
-  const select = useCallback((id: string | null) => {
+  const select = useCallback((id: string | null, given?: Vehicle) => {
     setSelectedId(id);
     setFollowing(id !== null);
     if (id === null) {
@@ -380,7 +411,7 @@ function TransitMap() {
       return;
     }
     // Open the panel and move the map straight away with what the map already knows; its stops follow.
-    const known = vehiclesRef.current.find((v) => v.id === id);
+    const known = given ?? vehiclesRef.current.find((v) => v.id === id);
     setDetail((d) => (d?.vehicle.id === id || !known ? d : { vehicle: known, upcoming: [], path: [], loading: true }));
   }, []);
 
@@ -488,6 +519,29 @@ function TransitMap() {
     openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
   };
 
+  // From a line's page in the Lines tab: the line on the map, at one of its stations when one is given.
+  const showLineOnMap = (key: string, stop?: UpcomingStop) => {
+    setTab('map');
+    if (stop?.lat !== undefined && stop.lon !== undefined) {
+      setFollowing(false);
+      openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
+    } else {
+      openLine(key);
+    }
+  };
+
+  // A train or bus tapped on a line's page: close enough on the map to see it, and its card open.
+  const showVehicleOnMap = ({ vehicle }: LineVehicle) => {
+    setTab('map');
+    setViewLine(null);
+    setStation(null);
+    select(vehicle.id, vehicle);
+    mapRef.current?.animateToRegion(
+      { latitude: vehicle.lat, longitude: vehicle.lon, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+      600,
+    );
+  };
+
   const closeViewLine = () => {
     setViewLine(null);
     setStation(null);
@@ -584,8 +638,10 @@ function TransitMap() {
   const lineOpen = !panelOpen && viewLine !== null;
   const anyPanel = panelOpen || lineOpen;
   // A panel takes the bottom half of the screen, or nearly all of it when dragged up.
-  const halfPanel = height * 0.5;
-  const fullPanel = height - insets.top - 12;
+  // The map sits above the tab bar.
+  const mapHeight = height - TAB_BAR_HEIGHT - insets.bottom;
+  const halfPanel = mapHeight * 0.5;
+  const fullPanel = mapHeight - insets.top - 12;
   // The map keeps its padding at half, so dragging the panel up covers the map rather than moving it.
   const panelPad = Math.min(panelHeight, halfPanel);
   // The line drawn boldest, with its stations: the vehicle's own, or the line open on its own.
@@ -643,278 +699,306 @@ function TransitMap() {
   return (
     <View style={styles.fill}>
       <StatusBar style={dark ? 'light' : 'dark'} />
-      {/* Touching the map means the user wants to look elsewhere, so stop following. */}
-      <View style={styles.fill} onTouchStart={() => following && setFollowing(false)}>
-        <MapView
-          ref={mapRef}
-          style={styles.fill}
-          initialRegion={NEW_YORK}
-          onRegionChangeComplete={setRegion}
-          onPress={onMapPress}
-          showsUserLocation={showsUser}
-          showsCompass
-          showsPointsOfInterests={false}
-          pitchEnabled={false}
-          userInterfaceStyle={dark ? 'dark' : 'light'}
-          mapPadding={{ top: insets.top + 96, right: 0, bottom: anyPanel ? panelPad : insets.bottom, left: 0 }}
-        >
-          {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
-          {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
-          {[...otherLines.filter((l) => l.key !== ownLine?.key), ...(ownLine ? [ownLine] : [])].flatMap((line) => {
-            const color = colorFor({ routeColor: line.color, mode: line.mode });
-            const own = line === ownLine;
-            return line.paths.map((path, i) => (
+      <View style={styles.fill}>
+        {/* Touching the map means the user wants to look elsewhere, so stop following. */}
+        <View style={styles.fill} onTouchStart={() => following && setFollowing(false)}>
+          <MapView
+            ref={mapRef}
+            style={styles.fill}
+            initialRegion={NEW_YORK}
+            onRegionChangeComplete={setRegion}
+            onPress={onMapPress}
+            showsUserLocation={showsUser}
+            showsCompass
+            showsPointsOfInterests={false}
+            pitchEnabled={false}
+            userInterfaceStyle={dark ? 'dark' : 'light'}
+            mapPadding={{ top: insets.top + 96, right: 0, bottom: anyPanel ? panelPad : 0, left: 0 }}
+          >
+            {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
+            {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
+            {[...otherLines.filter((l) => l.key !== ownLine?.key), ...(ownLine ? [ownLine] : [])].flatMap((line) => {
+              const color = colorFor({ routeColor: line.color, mode: line.mode });
+              const own = line === ownLine;
+              return line.paths.map((path, i) => (
+                <Polyline
+                  key={`route-${own ? 'own' : 'other'}-${line.key}-${i}`}
+                  coordinates={latLngs(path)}
+                  strokeColor={`${color}${own ? (panelOpen ? '80' : 'e6') : 'b3'}`}
+                  strokeWidth={own ? 4 : 3}
+                  lineCap="round"
+                  lineJoin="round"
+                  tappable={own && panelOpen}
+                  onPress={own && panelOpen ? openOwnLine : undefined}
+                />
+              ));
+            })}
+            {detail && detail.vehicle.id === selectedId && detail.path.length > 1 && (
               <Polyline
-                key={`route-${own ? 'own' : 'other'}-${line.key}-${i}`}
-                coordinates={latLngs(path)}
-                strokeColor={`${color}${own ? (panelOpen ? '80' : 'e6') : 'b3'}`}
-                strokeWidth={own ? 4 : 3}
+                coordinates={latLngs(detail.path)}
+                strokeColor={pathColor}
+                strokeWidth={5}
                 lineCap="round"
                 lineJoin="round"
-                tappable={own && panelOpen}
-                onPress={own && panelOpen ? openOwnLine : undefined}
-              />
-            ));
-          })}
-          {detail && detail.vehicle.id === selectedId && detail.path.length > 1 && (
-            <Polyline
-              coordinates={latLngs(detail.path)}
-              strokeColor={pathColor}
-              strokeWidth={5}
-              lineCap="round"
-              lineJoin="round"
-              tappable
-              onPress={openOwnLine}
-            />
-          )}
-          {/* Stations of the picked lines: tapping one opens that line there. */}
-          {otherStops.map(({ line, stop }) => (
-            <StopMarker
-              key={`other-stop-${line.key}-${stop.stopId}-${dark ? 'd' : 'l'}`}
-              stop={stop}
-              lineKey={line.key}
-              color={colorFor({ routeColor: line.color, mode: line.mode })}
-              background={c.card}
-              small
-              onPress={onOtherStop}
-            />
-          ))}
-          {/* Every station on the line (buses have none listed, so their next stops instead). */}
-          {stationDots
-            .filter((s) => s.lat !== undefined && s.lon !== undefined)
-            .map((s) => (
-              <StopMarker
-                key={`stop-${ownLine?.key ?? ''}-${s.stopId}-${dark ? 'd' : 'l'}`}
-                stop={s}
-                lineKey={ownLine?.key ?? ''}
-                color={ownColor}
-                background={c.card}
-                onPress={onOwnStop}
-              />
-            ))}
-          {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
-              marker's view on its coordinate using the size it had when first drawn, and one view holding
-              text could be drawn before the text was laid out, which put the ring off the station. */}
-          {anyPanel && station && (
-            <Marker
-              key={`station-ring-${station.stopId}-${dark ? 'd' : 'l'}`}
-              coordinate={{ latitude: station.lat, longitude: station.lon }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-              zIndex={3}
-            >
-              <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
-            </Marker>
-          )}
-          {anyPanel && station?.name && (
-            <Marker
-              key={`station-name-${station.stopId}-${dark ? 'd' : 'l'}`}
-              coordinate={{ latitude: station.lat, longitude: station.lon }}
-              // Below the ring: half the ring, a small gap and half the label.
-              centerOffset={{ x: 0, y: 14 + 4 + STATION_LABEL_HEIGHT / 2 }}
-              tracksViewChanges={false}
-              zIndex={3}
-            >
-              <View style={styles.stationLabel}>
-                <Text style={[styles.stationLabelText, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
-                  {tidyStopName(station.name)}
-                </Text>
-              </View>
-            </Marker>
-          )}
-          {markers.map((v) => {
-            const isSelected = v.id === selectedId;
-            return (
-              <VehicleMarker
-                // Remount when the label appears or goes, since the marker's view isn't redrawn otherwise. The
-                // tapped vehicle keeps its marker when it already had a label, so it doesn't blink.
-                key={`${v.id}:${labelled || isSelected ? 'l' : 'd'}`}
-                vehicle={v}
-                labelled={labelled || isSelected}
-                selected={isSelected}
-                dark={dark}
-                onPress={select}
-              />
-            );
-          })}
-        </MapView>
-      </View>
-
-      <View style={[styles.toolbar, { top: insets.top + 8 }]} pointerEvents="box-none">
-        <View style={[styles.brand, { backgroundColor: c.chip }]}>
-          <View style={styles.brandDot} />
-          <Text style={[styles.brandText, { color: c.text }]}>NY Transit Live</Text>
-        </View>
-        <View style={styles.chips}>
-          {ALL_MODES.map((mode) => {
-            const on = modes.includes(mode);
-            return (
-              <Pressable
-                key={mode}
-                onPress={() => setModes((m) => (m.includes(mode) ? m.filter((x) => x !== mode) : [...m, mode]))}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                style={[styles.chip, { backgroundColor: c.chip }, !on && styles.chipOff]}
-              >
-                <ModeIcon mode={mode} size={16} color={MODE_DOT[mode]} ink="#ffffff" hollow={!on} />
-                <Text style={[styles.chipText, { color: c.text }]}>{MODE_LABELS[mode]}</Text>
-              </Pressable>
-            );
-          })}
-          <Pressable
-            onPress={() => setLinesOpen(true)}
-            accessibilityRole="button"
-            style={[styles.chip, { backgroundColor: lines.length ? c.accent : c.chip }]}
-          >
-            <Text style={[styles.chipText, { color: lines.length ? '#ffffff' : c.text }]}>
-              {lines.length ? `Lines (${lines.length})` : 'Lines'}
-            </Text>
-            {pickedTrouble && (
-              <View
-                style={[styles.chipAlert, { backgroundColor: SEVERITY_COLORS[pickedTrouble], borderColor: lines.length ? '#ffffff' : c.chip }]}
-                accessibilityLabel="Service alerts on your lines"
+                tappable
+                onPress={openOwnLine}
               />
             )}
-          </Pressable>
-          <Pressable
-            onPress={() => setGuideOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="How to use"
-            style={[styles.chip, styles.helpChip, { backgroundColor: c.chip }]}
-          >
-            <Text style={[styles.chipText, { color: c.text }]}>?</Text>
-          </Pressable>
+            {/* Stations of the picked lines: tapping one opens that line there. */}
+            {otherStops.map(({ line, stop }) => (
+              <StopMarker
+                key={`other-stop-${line.key}-${stop.stopId}-${dark ? 'd' : 'l'}`}
+                stop={stop}
+                lineKey={line.key}
+                color={colorFor({ routeColor: line.color, mode: line.mode })}
+                background={c.card}
+                small
+                onPress={onOtherStop}
+              />
+            ))}
+            {/* Every station on the line (buses have none listed, so their next stops instead). */}
+            {stationDots
+              .filter((s) => s.lat !== undefined && s.lon !== undefined)
+              .map((s) => (
+                <StopMarker
+                  key={`stop-${ownLine?.key ?? ''}-${s.stopId}-${dark ? 'd' : 'l'}`}
+                  stop={s}
+                  lineKey={ownLine?.key ?? ''}
+                  color={ownColor}
+                  background={c.card}
+                  onPress={onOwnStop}
+                />
+              ))}
+            {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
+                marker's view on its coordinate using the size it had when first drawn, and one view holding
+                text could be drawn before the text was laid out, which put the ring off the station. */}
+            {anyPanel && station && (
+              <Marker
+                key={`station-ring-${station.stopId}-${dark ? 'd' : 'l'}`}
+                coordinate={{ latitude: station.lat, longitude: station.lon }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+                zIndex={3}
+              >
+                <View style={[styles.stationRing, { borderColor: dark ? '#f9fafb' : '#111827' }]} />
+              </Marker>
+            )}
+            {anyPanel && station?.name && (
+              <Marker
+                key={`station-name-${station.stopId}-${dark ? 'd' : 'l'}`}
+                coordinate={{ latitude: station.lat, longitude: station.lon }}
+                // Below the ring: half the ring, a small gap and half the label.
+                centerOffset={{ x: 0, y: 14 + 4 + STATION_LABEL_HEIGHT / 2 }}
+                tracksViewChanges={false}
+                zIndex={3}
+              >
+                <View style={styles.stationLabel}>
+                  <Text style={[styles.stationLabelText, { color: c.text, backgroundColor: c.chip }]} numberOfLines={1}>
+                    {tidyStopName(station.name)}
+                  </Text>
+                </View>
+              </Marker>
+            )}
+            {markers.map((v) => {
+              const isSelected = v.id === selectedId;
+              return (
+                <VehicleMarker
+                  // Remount when the label appears or goes, since the marker's view isn't redrawn otherwise. The
+                  // tapped vehicle keeps its marker when it already had a label, so it doesn't blink.
+                  key={`${v.id}:${labelled || isSelected ? 'l' : 'd'}`}
+                  vehicle={v}
+                  labelled={labelled || isSelected}
+                  selected={isSelected}
+                  dark={dark}
+                  onPress={select}
+                />
+              );
+            })}
+          </MapView>
         </View>
+
+        <View style={[styles.toolbar, { top: insets.top + 8 }]} pointerEvents="box-none">
+          <View style={[styles.brand, { backgroundColor: c.chip }]}>
+            <View style={styles.brandDot} />
+            <Text style={[styles.brandText, { color: c.text }]}>NY Transit Live</Text>
+          </View>
+          <View style={styles.chips}>
+            {ALL_MODES.map((mode) => {
+              const on = modes.includes(mode);
+              return (
+                <Pressable
+                  key={mode}
+                  onPress={() => setModes((m) => (m.includes(mode) ? m.filter((x) => x !== mode) : [...m, mode]))}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.chip, { backgroundColor: c.chip }, !on && styles.chipOff]}
+                >
+                  <ModeIcon mode={mode} size={16} color={MODE_DOT[mode]} ink="#ffffff" hollow={!on} />
+                  <Text style={[styles.chipText, { color: c.text }]}>{MODE_LABELS[mode]}</Text>
+                </Pressable>
+              );
+            })}
+            {/* The map shows only your lines while there are any; this says so and leads to them. */}
+            {lines.length > 0 && (
+              <Pressable
+                onPress={() => setTab('lines')}
+                accessibilityRole="button"
+                accessibilityLabel={`Showing my ${lines.length} lines`}
+                style={[styles.chip, { backgroundColor: c.accent }]}
+              >
+                <Text style={[styles.chipText, { color: '#ffffff' }]}>My lines ({lines.length})</Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => setGuideOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="How to use"
+              style={[styles.chip, styles.helpChip, { backgroundColor: c.chip }]}
+            >
+              <Text style={[styles.chipText, { color: c.text }]}>?</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {!anyPanel && (
+          <View style={[styles.status, { bottom: 16, backgroundColor: c.chip }]} pointerEvents="none">
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: status === 'live' ? '#16a34a' : status === 'error' ? '#dc2626' : '#9ca3af' },
+              ]}
+            />
+            <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
+          </View>
+        )}
+
+        {!(anyPanel && panelHeight > halfPanel + 1) && (
+          <Pressable
+            onPress={locate}
+            disabled={locating}
+            accessibilityRole="button"
+            accessibilityLabel="Show my location"
+            style={[
+              styles.locate,
+              { backgroundColor: c.chip, bottom: (anyPanel ? panelPad : 0) + 16 },
+            ]}
+          >
+            <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
+          </Pressable>
+        )}
+
+        {panelOpen && (
+          <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={() => select(null)}>
+            {(sheet) => (
+              <VehiclePanel
+                sheet={sheet}
+                detail={detail}
+                loading={detail.loading}
+                routes={routesByKey}
+                following={following}
+                dark={dark}
+                bottomInset={0}
+                onFollow={() => setFollowing((f) => !f)}
+                onAllStations={openOwnLine}
+                station={station}
+                stationTransfers={stationTransfers}
+                showTransfers={showTransfers}
+                onShowTransfers={setShowTransfers}
+                arrivals={arrivals}
+                alerts={panelAlerts}
+                onArrival={(id) => {
+                  if (id === selectedId) return;
+                  keepStation.current = true;
+                  select(id);
+                }}
+                onLine={(key) => openLine(key)}
+                onStop={pickStation}
+                onClose={() => select(null)}
+              />
+            )}
+          </PanelSheet>
+        )}
+
+        {lineOpen && viewLine && (
+          <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closeViewLine}>
+            {(sheet) => (
+              <LinePanel
+                sheet={sheet}
+                info={routesByKey.get(viewLine.key)}
+                line={listedRoute}
+                routes={routesByKey}
+                station={station}
+                arrivals={arrivals}
+                alerts={panelAlerts}
+                backLabel={viewLine.back?.label}
+                dark={dark}
+                bottomInset={0}
+                onBack={closeLine}
+                onStop={pickStation}
+                onArrival={(id) => {
+                  keepStation.current = true;
+                  select(id);
+                }}
+                onLine={(key) => openLine(key)}
+                onClose={closeViewLine}
+              />
+            )}
+          </PanelSheet>
+        )}
+
+        {tab === 'lines' && (
+          <View style={StyleSheet.absoluteFill}>
+            {linePage ? (
+              <LinePage
+                key={linePage}
+                lineKey={linePage}
+                info={routesByKey.get(linePage)}
+                line={pageRoute}
+                routes={routesByKey}
+                alerts={pageAlerts}
+                count={lineCounts?.[linePage]}
+                starred={lines.includes(linePage)}
+                active={onLines}
+                dark={dark}
+                topInset={insets.top}
+                onBack={() => setLinePage(null)}
+                onStar={() => changeLines(lines.includes(linePage) ? lines.filter((k) => k !== linePage) : [...lines, linePage])}
+                onShowOnMap={() => showLineOnMap(linePage)}
+                onStation={(s) => showLineOnMap(linePage, s)}
+                onVehicle={showVehicleOnMap}
+              />
+            ) : (
+              <LinesScreen
+                routes={routes}
+                chosen={lines}
+                alertSummary={alertSummary}
+                counts={lineCounts}
+                dark={dark}
+                topInset={insets.top}
+                onChange={changeLines}
+                onOpen={setLinePage}
+              />
+            )}
+          </View>
+        )}
       </View>
 
-      {!anyPanel && (
-        <View style={[styles.status, { bottom: insets.bottom + 16, backgroundColor: c.chip }]} pointerEvents="none">
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: status === 'live' ? '#16a34a' : status === 'error' ? '#dc2626' : '#9ca3af' },
-            ]}
-          />
-          <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
-        </View>
-      )}
-
-      {!(anyPanel && panelHeight > halfPanel + 1) && (
-        <Pressable
-          onPress={locate}
-          disabled={locating}
-          accessibilityRole="button"
-          accessibilityLabel="Show my location"
-          style={[
-            styles.locate,
-            { backgroundColor: c.chip, bottom: (anyPanel ? panelPad : insets.bottom) + 16 },
-          ]}
-        >
-          <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
-        </Pressable>
-      )}
-
-      {panelOpen && (
-        <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={() => select(null)}>
-          {(sheet) => (
-            <VehiclePanel
-              sheet={sheet}
-              detail={detail}
-              loading={detail.loading}
-              routes={routesByKey}
-              following={following}
-              dark={dark}
-              bottomInset={insets.bottom}
-              onFollow={() => setFollowing((f) => !f)}
-              onAllStations={openOwnLine}
-              station={station}
-              stationTransfers={stationTransfers}
-              showTransfers={showTransfers}
-              onShowTransfers={setShowTransfers}
-              arrivals={arrivals}
-              alerts={panelAlerts}
-              onArrival={(id) => {
-                if (id === selectedId) return;
-                keepStation.current = true;
-                select(id);
-              }}
-              onLine={(key) => openLine(key)}
-              onStop={pickStation}
-              onClose={() => select(null)}
-            />
-          )}
-        </PanelSheet>
-      )}
-
-      {lineOpen && viewLine && (
-        <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closeViewLine}>
-          {(sheet) => (
-            <LinePanel
-              sheet={sheet}
-              info={routesByKey.get(viewLine.key)}
-              line={listedRoute}
-              routes={routesByKey}
-              station={station}
-              arrivals={arrivals}
-              alerts={panelAlerts}
-              backLabel={viewLine.back?.label}
-              dark={dark}
-              bottomInset={insets.bottom}
-              onBack={closeLine}
-              onStop={pickStation}
-              onArrival={(id) => {
-                keepStation.current = true;
-                select(id);
-              }}
-              onLine={(key) => openLine(key)}
-              onClose={closeViewLine}
-            />
-          )}
-        </PanelSheet>
-      )}
-
-      <LinesSheet
-        visible={linesOpen}
-        routes={routes}
-        modes={modes}
-        chosen={lines}
-        alertSummary={alertSummary}
-        alerts={pickedAlerts}
-        routesByKey={routesByKey}
+      <TabBar
+        tab={tab}
+        alertColor={pickedTrouble && SEVERITY_COLORS[pickedTrouble]}
         dark={dark}
-        onChange={changeLines}
-        onClose={() => setLinesOpen(false)}
+        bottomInset={insets.bottom}
+        onTab={(t) => {
+          // Tapping Lines again goes back to the list.
+          if (t === 'lines' && tab === 'lines') setLinePage(null);
+          setTab(t);
+        }}
       />
 
       <LinesSheet
-        survey
         visible={surveyOpen}
         routes={routes}
-        modes={ALL_MODES}
         chosen={lines}
-        alertSummary={alertSummary}
-        alerts={null}
-        routesByKey={routesByKey}
         dark={dark}
         onChange={changeLines}
         onClose={closeSurvey}
@@ -963,7 +1047,6 @@ const styles = StyleSheet.create({
   chipOff: { opacity: 0.45 },
   helpChip: { minWidth: 34, justifyContent: 'center' },
   chipText: { fontSize: 14, fontWeight: '600' },
-  chipAlert: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5 },
   status: {
     position: 'absolute',
     alignSelf: 'center',
