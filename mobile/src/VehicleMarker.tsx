@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 import { colorFor, displayName, textColorFor } from '../../web/src/vehicles';
@@ -19,13 +19,22 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, se
   const ink = textColorFor(color);
   const label = displayName(vehicle.routeName ?? vehicle.routeId ?? '');
   const border = selected ? (dark ? '#f9fafb' : '#111827') : dark ? '#111827' : '#ffffff';
+  // The map draws a marker from a snapshot of its view. Taken before the mode picture has loaded, the
+  // snapshot keeps an empty gap where the picture belongs, so the view is followed until it has loaded.
+  const [drawn, setDrawn] = useState(false);
+  const onGlyphLoad = () => setDrawn(true);
+  useEffect(() => {
+    // Stop following it after a while even if the picture never reports in.
+    const timer = setTimeout(() => setDrawn(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <Marker
       identifier={vehicle.id}
       coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }}
       anchor={{ x: 0.5, y: 0.5 }}
-      // Redrawing a marker's view is the expensive part; ours only changes when its props do.
-      tracksViewChanges={false}
+      // Redrawing a marker's view is the expensive part; once its picture is in, ours only changes when its props do.
+      tracksViewChanges={!drawn}
       zIndex={selected ? 2 : 1}
       onPress={() => onPress(vehicle.id)}
       accessibilityLabel={`${label} ${vehicle.mode}`}
@@ -39,7 +48,7 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, se
             selected && styles.selected,
           ]}
         >
-          <Image source={GLYPHS[vehicle.mode]} style={[styles.tagGlyph, { tintColor: ink }]} />
+          <Image source={GLYPHS[vehicle.mode]} style={[styles.tagGlyph, { tintColor: ink }]} onLoad={onGlyphLoad} />
           {!!label && (
             <Text style={[styles.label, { color: ink }]} numberOfLines={1}>
               {label}
@@ -48,7 +57,14 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, se
         </View>
       ) : (
         <View style={[selected && styles.selectedIcon, vehicle.source === 'estimated' && styles.estimated]}>
-          <ModeIcon mode={vehicle.mode} size={20} color={color} ink={ink} border={{ color: border, width: selected ? 2.5 : 1.5 }} />
+          <ModeIcon
+            mode={vehicle.mode}
+            size={20}
+            color={color}
+            ink={ink}
+            border={{ color: border, width: selected ? 2.5 : 1.5 }}
+            onLoad={onGlyphLoad}
+          />
         </View>
       )}
     </Marker>
