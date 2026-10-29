@@ -629,15 +629,16 @@ function TransitMap() {
   };
 
   // A line opened on its own shows only its vehicles, even if its kind of vehicle is switched off.
-  const shownLines = viewLine ? [viewLine.key] : lines;
+  // Your lines with their route switched on; a line switched off hides its vehicles too.
+  const shownLines = viewLine ? [viewLine.key] : lines.length ? lines.filter((k) => !hiddenRoutes.includes(k)) : null;
   const shownModes = viewLine && viewRoute && !modes.includes(viewRoute.mode) ? [...modes, viewRoute.mode] : modes;
   const isShown = (v: Vehicle) =>
-    shownModes.includes(v.mode) && (!shownLines.length || shownLines.includes(routeKey(v)));
+    shownModes.includes(v.mode) && (!shownLines || shownLines.includes(routeKey(v)));
   // Kept in a fixed order: Apple Maps takes a dot off the map and puts it back whenever it moves in the
   // list, and the server lists vehicles in a different order each time, which made dots blink.
   const shown = useMemo(
     () => nearestToCenter(vehicles.filter((v) => v.id !== selectedId && isShown(v)), region).sort(byId),
-    [vehicles, shownModes.join(), shownLines.join(), selectedId, region],
+    [vehicles, shownModes.join(), shownLines?.join() ?? null, selectedId, region],
   );
   const inView = vehicles.filter(isShown).length;
   // The tapped vehicle comes from its own, more frequent updates.

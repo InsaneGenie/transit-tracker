@@ -52,7 +52,8 @@ interface Props {
   theme: Theme;
   modes: Mode[];
   /** Line keys to show; empty shows every line. */
-  lines: string[];
+  /** The lines whose vehicles show; null shows every line. */
+  lines: string[] | null;
   /** The tapped vehicle's whole line, drawn under the vehicles with its stations. */
   routeLine: RouteLine | null;
   /** A line opened on its own; the map zooms out to fit it when it arrives. */
@@ -134,9 +135,9 @@ function boundsOf(map: MapLibreMap): Bounds {
 }
 
 /** Which dots the main layers draw: the chosen modes and lines, minus the tapped vehicle (drawn on its own). */
-function vehicleFilter(modes: Mode[], lines: string[], selectedId: string | null): ExpressionSpecification {
+function vehicleFilter(modes: Mode[], lines: string[] | null, selectedId: string | null): ExpressionSpecification {
   const parts: ExpressionSpecification[] = [['in', ['get', 'mode'], ['literal', modes]]];
-  if (lines.length) parts.push(['in', ['get', 'routeKey'], ['literal', lines]]);
+  if (lines) parts.push(['in', ['get', 'routeKey'], ['literal', lines]]);
   if (selectedId) parts.push(['!=', ['get', 'id'], selectedId]);
   return ['all', ...parts];
 }
@@ -278,7 +279,7 @@ interface LayerState {
   station: Station | null;
   selected: GeoJSON.FeatureCollection;
   modes: Mode[];
-  lines: string[];
+  lines: string[] | null;
   selectedId: string | null;
   detail: VehicleDetail | null;
 }
@@ -553,7 +554,7 @@ export function MapView(props: Props) {
         }
         const { modes, lines } = state.current;
         const shownCount = vehicles.filter(
-          (v) => modes.includes(v.mode) && (!lines.length || lines.includes(routeKey(v))),
+          (v) => modes.includes(v.mode) && (!lines || lines.includes(routeKey(v))),
         ).length;
         callbacks.current.onUpdate({ count: shownCount });
       } catch (err) {
