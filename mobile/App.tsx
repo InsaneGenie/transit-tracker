@@ -52,6 +52,7 @@ import { VehiclePanel } from './src/VehiclePanel';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
 /** The server draws at most this many lines per request. */
@@ -210,6 +211,8 @@ function TransitMap() {
 
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>([]);
+  // Your lines whose routes are not drawn on the map; their vehicles still show.
+  const [hiddenRoutes, setHiddenRoutes] = useState<string[]>([]);
   const [station, setStation] = useState<Station | null>(null);
   const [showTransfers, setShowTransfers] = useState(false);
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
@@ -235,14 +238,17 @@ function TransitMap() {
 
   const zoom = zoomOf(region, width);
 
-  // The line filter is remembered between launches.
+  // The line filter, and which of its routes are hidden, are remembered between launches.
   useEffect(() => {
-    AsyncStorage.getItem(LINES_KEY)
-      .then((saved) => {
-        const parsed: unknown = JSON.parse(saved ?? '[]');
-        if (Array.isArray(parsed)) setLines(parsed.filter((k): k is string => typeof k === 'string'));
-      })
-      .catch(() => {});
+    const restore = (key: string, set: (keys: string[]) => void) =>
+      AsyncStorage.getItem(key)
+        .then((saved) => {
+          const parsed: unknown = JSON.parse(saved ?? '[]');
+          if (Array.isArray(parsed)) set(parsed.filter((k): k is string => typeof k === 'string'));
+        })
+        .catch(() => {});
+    void restore(LINES_KEY, setLines);
+    void restore(HIDDEN_ROUTES_KEY, setHiddenRoutes);
   }, []);
   // On the first launch, ask which lines they ride, then show the guide. People who already saw the
   // guide had the app before the question was added, so they are not asked.
@@ -268,6 +274,11 @@ function TransitMap() {
   const closeGuide = () => {
     setGuideOpen(false);
     AsyncStorage.setItem(GUIDE_SEEN_KEY, '1').catch(() => {});
+  };
+  const toggleRoute = (key: string) => {
+    const next = hiddenRoutes.includes(key) ? hiddenRoutes.filter((k) => k !== key) : [...hiddenRoutes, key];
+    setHiddenRoutes(next);
+    AsyncStorage.setItem(HIDDEN_ROUTES_KEY, JSON.stringify(next)).catch(() => {});
   };
   const changeLines = (next: string[]) => {
     setLines(next);
@@ -470,9 +481,10 @@ function TransitMap() {
   const otherLines = useMemo(() => {
     // A line opened on its own is shown alone.
     if (viewLine && !detail) return [];
-    const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
+    const drawn = filterRoutes.filter((l) => !hiddenRoutes.includes(l.key));
+    const byKey = new Map([...drawn, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
-  }, [filterRoutes, transferRoutes, viewLine, detail]);
+  }, [filterRoutes, hiddenRoutes, transferRoutes, viewLine, detail]);
 
   // Pick a station from the stop list or the map and bring it to the middle. Stations on the line and in
   // the stop list have different ids for the same place (127 and 127N), so look its transfers up by place.
@@ -971,11 +983,13 @@ function TransitMap() {
               <LinesScreen
                 routes={routes}
                 chosen={lines}
+                hiddenRoutes={hiddenRoutes}
                 alertSummary={alertSummary}
                 counts={lineCounts}
                 dark={dark}
                 topInset={insets.top}
                 onChange={changeLines}
+                onToggleRoute={toggleRoute}
                 onOpen={setLinePage}
               />
             )}

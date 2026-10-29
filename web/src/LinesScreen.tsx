@@ -21,17 +21,21 @@ interface Props {
   routes: RouteInfo[];
   /** The lines starred as theirs; the map shows only these when there are any. */
   chosen: string[];
+  /** Your lines whose routes are not drawn on the map. */
+  hiddenRoutes: string[];
   /** The most serious alert on now, by line key. */
   alertSummary: Record<string, AlertSeverity>;
   /** How many vehicles are out on each line; null until loaded. */
   counts: Record<string, number> | null;
   onChange: (chosen: string[]) => void;
+  /** Draws one of your lines' routes on the map, or stops drawing it. */
+  onToggleRoute: (key: string) => void;
   onOpen: (key: string) => void;
   onClose: () => void;
 }
 
 /** The Lines panel: your lines with how they're running, and every other line to browse and star. */
-export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, onOpen, onClose }: Props) {
+export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, onChange, onToggleRoute, onOpen, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
   // The bus list is long, so it shows one borough at a time.
@@ -86,6 +90,19 @@ export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, on
             </span>
           </span>
         </button>
+        {mine && (
+          <button
+            className="route-toggle"
+            role="switch"
+            aria-checked={!hiddenRoutes.includes(r.key)}
+            aria-label={`Draw the ${r.name} route on the map`}
+            title={hiddenRoutes.includes(r.key) ? 'Route hidden on the map' : 'Route drawn on the map'}
+            onClick={() => onToggleRoute(r.key)}
+          >
+            <span className="route-toggle-label">Route</span>
+            <span className="switch" aria-hidden="true" />
+          </button>
+        )}
         <button
           className={`star${on ? ' star-on' : ''}`}
           aria-pressed={on}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { boroughLabel } from '../../web/src/lines';
 import { legendGroups, MODE_LABELS } from '../../web/src/vehicles';
 import type { AlertSeverity, Mode, RouteInfo } from './api';
@@ -14,6 +14,8 @@ interface Props {
   routes: RouteInfo[];
   /** The lines starred as theirs; the map shows only these when there are any. */
   chosen: string[];
+  /** Your lines whose routes are not drawn on the map. */
+  hiddenRoutes: string[];
   /** The most serious alert on now, by line key. */
   alertSummary: Record<string, AlertSeverity>;
   /** How many vehicles are out on each line; null until loaded. */
@@ -21,13 +23,15 @@ interface Props {
   dark: boolean;
   topInset: number;
   onChange: (chosen: string[]) => void;
+  /** Draws one of your lines' routes on the map, or stops drawing it. */
+  onToggleRoute: (key: string) => void;
   onOpen: (key: string) => void;
 }
 
 type Section = { key: string; title?: string; mine?: boolean; browse?: boolean; data: RouteInfo[] };
 
 /** The Lines tab: your lines with how they're running, and every other line to browse and star. */
-export function LinesScreen({ routes, chosen, alertSummary, counts, dark, topInset, onChange, onOpen }: Props) {
+export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, dark, topInset, onChange, onToggleRoute, onOpen }: Props) {
   const c = palette(dark);
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
@@ -111,6 +115,17 @@ export function LinesScreen({ routes, chosen, alertSummary, counts, dark, topIns
           </Text>
           {statusText}
         </View>
+        {section.mine && (
+          <View style={styles.routeToggle}>
+            <Text style={[styles.routeLabel, { color: c.muted }]}>Route</Text>
+            <Switch
+              value={!hiddenRoutes.includes(r.key)}
+              onValueChange={() => onToggleRoute(r.key)}
+              accessibilityLabel={`Draw the ${r.name} route on the map`}
+              style={styles.switch}
+            />
+          </View>
+        )}
         {star(r)}
       </Pressable>
     );
@@ -237,6 +252,9 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 14 },
   segmentTextOn: { fontWeight: '700' },
   boroughs: { gap: 6, paddingVertical: 8 },
+  routeToggle: { alignItems: 'center', gap: 2 },
+  routeLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  switch: { transform: [{ scale: 0.8 }] },
   borough: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1 },
   boroughText: { fontSize: 14, fontWeight: '600' },
 });

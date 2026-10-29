@@ -1088,6 +1088,62 @@ button {
   display: block;
 }
 
+.route-toggle {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.route-toggle:hover {
+  background: var(--hover);
+}
+
+.route-toggle-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* An on/off switch, on when the route is drawn. */
+.switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--line);
+  transition: background-color 0.15s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s;
+}
+
+.route-toggle[aria-checked='true'] .switch {
+  background: var(--live);
+}
+
+.route-toggle[aria-checked='true'] .switch::after {
+  transform: translateX(14px);
+}
+
 .star {
   flex: none;
   width: 40px;
