@@ -97,6 +97,7 @@ const styles = StyleSheet.create({
   selectedIcon: { transform: [{ scale: 1.25 }] },
   estimated: { opacity: 0.9 },
   label: { fontSize: 11, fontWeight: '700' },
+  stopHit: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
   smallStopDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 2 },
 });
@@ -120,8 +121,12 @@ export const StopMarker = memo(function StopMarker({ stop, lineKey, color, backg
       anchor={{ x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       onPress={() => onPress(stop, lineKey)}
+      accessibilityLabel={stop.name}
     >
-      <View style={[styles.stopDot, small && styles.smallStopDot, { borderColor: color, backgroundColor: background }]} />
+      {/* The dot is far smaller than a fingertip, so a clear square around it takes the tap. */}
+      <View style={styles.stopHit}>
+        <View style={[styles.stopDot, small && styles.smallStopDot, { borderColor: color, backgroundColor: background }]} />
+      </View>
     </Marker>
   );
 });

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FeedConfig } from '../src/feeds.js';
+import { nearestOnPath } from '../src/geo.js';
 import { decodeFeed, snapshotFromFeed } from '../src/realtime.js';
 import { createApiServer } from '../src/server.js';
 import { VehicleStore } from '../src/store.js';
@@ -309,6 +310,8 @@ describe('API', () => {
     expect(lines[0].paths[0]).toHaveLength(5);
     expect(lines[0].paths[0][0]).toEqual([expect.any(Number), expect.any(Number)]);
     expect(lines[0].stops.map((st: { name: string }) => st.name)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    // Each station is drawn on the line itself.
+    for (const st of lines[0].stops) expect(nearestOnPath(st, lines[0].paths[0]).meters).toBeLessThan(1);
     const tooMany = Array.from({ length: 61 }, (_, i) => `test-train:${i}`).join(',');
     expect((await fetch(`${base}/api/route-lines?keys=${tooMany}`)).status).toBe(400);
     const { routes } = await (await fetch(`${base}/api/routes`)).json();

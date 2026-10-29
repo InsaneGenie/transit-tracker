@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { estimatePosition } from '../src/estimate.js';
+import { nearestOnPath } from '../src/geo.js';
 import type { TripState } from '../src/realtime.js';
 import { indexPromise } from './fixtures.js';
 
@@ -66,5 +67,19 @@ describe('estimatePosition', () => {
       stopId: 'A',
       status: 'STOPPED_AT',
     });
+  });
+});
+
+describe('nearestOnPath', () => {
+  it('finds the closest point between two corners of the path', () => {
+    // A curbside stop 15 m east of a street running north.
+    const path: [number, number][] = [
+      [-73.98, 40.75],
+      [-73.98, 40.76],
+    ];
+    const at = nearestOnPath({ lat: 40.755, lon: -73.98 + 15 / 84_300 }, path);
+    expect(at.meters).toBeCloseTo(15, 0);
+    expect(at.lat).toBeCloseTo(40.755, 6);
+    expect(at.lon).toBeCloseTo(-73.98, 6);
   });
 });

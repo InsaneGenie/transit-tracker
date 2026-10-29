@@ -98,3 +98,21 @@ export class Polyline {
     };
   }
 }
+
+/** The point on a path ([lon, lat] pairs) closest to `p`, and how far away it is in meters. */
+export function nearestOnPath(p: LatLon, path: [number, number][]): LatLon & { meters: number } {
+  // Flat x/y in meters around p is plenty accurate over the few hundred meters that matter here.
+  const kx = toRad(1) * EARTH_RADIUS_M * Math.cos(toRad(p.lat));
+  const ky = toRad(1) * EARTH_RADIUS_M;
+  let best = { lat: p.lat, lon: p.lon, meters: Infinity };
+  for (let i = 0; i < path.length; i++) {
+    const [ax, ay] = [(path[i][0] - p.lon) * kx, (path[i][1] - p.lat) * ky];
+    const [bx, by] = i + 1 < path.length ? [(path[i + 1][0] - p.lon) * kx, (path[i + 1][1] - p.lat) * ky] : [ax, ay];
+    const len2 = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = len2 > 0 ? Math.min(1, Math.max(0, -(ax * (bx - ax) + ay * (by - ay)) / len2)) : 0;
+    const [x, y] = [ax + (bx - ax) * t, ay + (by - ay) * t];
+    const meters = Math.hypot(x, y);
+    if (meters < best.meters) best = { lat: p.lat + y / ky, lon: p.lon + x / kx, meters };
+  }
+  return best;
+}
