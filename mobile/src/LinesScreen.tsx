@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { boroughLabel } from '../../web/src/lines';
 import { legendGroups, MODE_LABELS } from '../../web/src/vehicles';
@@ -22,7 +22,11 @@ interface Props {
   /** How many vehicles are out on each line; null until loaded. */
   counts: Record<string, number> | null;
   dark: boolean;
-  topInset: number;
+  /** Whether the Lines sheet is pulled up; lowered, it shows only the search and your lines. */
+  expanded: boolean;
+  onExpand: () => void;
+  /** How tall the search and your lines are, so the lowered sheet can show just them. */
+  onPeekHeight: (height: number) => void;
   onChange: (chosen: string[]) => void;
   /** Sets which of your lines' routes are not drawn. */
   onHiddenRoutesChange: (hidden: string[]) => void;
@@ -32,7 +36,20 @@ interface Props {
 type Section = { key: string; title?: string; mine?: boolean; browse?: boolean; data: RouteInfo[] };
 
 /** The Lines tab: your lines with how they're running, and every other line to browse and star. */
-export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, dark, topInset, onChange, onHiddenRoutesChange, onOpen }: Props) {
+export function LinesScreen({
+  routes,
+  chosen,
+  hiddenRoutes,
+  alertSummary,
+  counts,
+  dark,
+  expanded,
+  onExpand,
+  onPeekHeight,
+  onChange,
+  onHiddenRoutesChange,
+  onOpen,
+}: Props) {
   const c = palette(dark);
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
@@ -56,6 +73,11 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
     onHiddenRoutesChange(anyDrawn ? [...new Set([...hiddenRoutes, ...chosen])] : hiddenRoutes.filter((k) => !chosenSet.has(k)));
   // While a badge is dragged the list holds still.
   const [dragging, setDragging] = useState(false);
+  const peekParts = useRef({ search: 0, mine: 0 });
+  const measured = (part: 'search' | 'mine', h: number) => {
+    peekParts.current[part] = h;
+    onPeekHeight(peekParts.current.search + peekParts.current.mine);
+  };
 
   const sections = useMemo((): Section[] => {
     if (q) {
@@ -124,7 +146,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   const renderSectionHeader = ({ section }: { section: Section }) => {
     if (section.mine) {
       return (
-        <View style={{ backgroundColor: c.card }}>
+        <View style={{ backgroundColor: c.card }} onLayout={(e) => measured('mine', e.nativeEvent.layout.height + (mine.length ? 12 : 64))}>
           <View style={styles.sectionHead}>
             <Text style={[styles.h3, { color: c.muted }]}>My lines</Text>
             {chosen.length > 0 && (
@@ -202,9 +224,10 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   };
 
   return (
-    <View style={[styles.screen, { backgroundColor: c.card, paddingTop: topInset }]}>
-      <Text style={[styles.title, { color: c.text }]}>Lines</Text>
+    <View style={[styles.screen, { backgroundColor: c.card }]}>
       <TextInput
+        onLayout={(e) => measured('search', e.nativeEvent.layout.height + 4)}
+        onFocus={onExpand}
         style={[styles.search, { color: c.text, backgroundColor: c.raised }]}
         placeholder="Search lines and bus routes"
         placeholderTextColor={c.muted}
@@ -216,7 +239,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
       />
       <SectionList
         sections={sections}
-        scrollEnabled={!dragging}
+        scrollEnabled={expanded && !dragging}
         keyExtractor={(r) => r.key}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
@@ -243,7 +266,6 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  title: { fontSize: 32, fontWeight: '800', marginTop: 8, marginBottom: 10, paddingHorizontal: 16 },
   search: { borderRadius: 11, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginHorizontal: 16, marginBottom: 4 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
