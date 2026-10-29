@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ScrollViewInstance } from 'react-native';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from '../../web/src/vehicles';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '../../web/src/alerts';
 import { AlertList } from './AlertList';
@@ -64,6 +64,9 @@ function LineButton({
 export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alerts, routesByKey, dark, onChange, onClose }: Props) {
   const c = palette(dark);
   const [busSearch, setBusSearch] = useState('');
+  const scroll = useRef<ScrollViewInstance>(null);
+  // While searching, only the matching bus routes are listed, right under the search box.
+  const searching = busSearch.trim().length > 0;
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const isOn = (r: RouteInfo) => chosenSet.size === 0 || chosenSet.has(r.key);
   const toggle = (r: RouteInfo) =>
@@ -100,11 +103,34 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
             : 'Tap lines to show only those.'}
           {Object.keys(alertSummary).length > 0 && ' A red, orange or yellow dot means delays or a service change.'}
         </Text>
+        {/* Up here rather than down with the bus lines, so the keyboard never covers what is typed. */}
+        {modes.includes('bus') && (
+          <TextInput
+            style={[styles.search, { color: c.text, borderColor: c.border }]}
+            placeholder="Find a bus route, e.g. M15"
+            placeholderTextColor={c.muted}
+            value={busSearch}
+            onChangeText={(text) => {
+              setBusSearch(text);
+              scroll.current?.scrollTo({ y: 0, animated: false });
+            }}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="done"
+          />
+        )}
 
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+        <ScrollView
+          ref={scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={styles.body}
+        >
           {routes.length === 0 && <Text style={{ color: c.muted }}>The list of lines loads once the server answers.</Text>}
 
-          {chosen.length > 0 && (
+          {!searching && chosen.length > 0 && (
             <View>
               {heading('Service alerts on your lines')}
               {alerts ? (
@@ -115,7 +141,7 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
             </View>
           )}
 
-          {modes.includes('subway') && legendGroups(routes, 'subway').length > 0 && (
+          {!searching && modes.includes('subway') && legendGroups(routes, 'subway').length > 0 && (
             <View>
               {heading(MODE_LABELS.subway)}
               {legendGroups(routes, 'subway').map((g) => (
@@ -128,7 +154,7 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
             </View>
           )}
 
-          {modes.includes('rail') &&
+          {!searching && modes.includes('rail') &&
             legendGroups(routes, 'rail').map((g) => (
               <View key={g.title}>
                 {heading(g.title)}
@@ -141,16 +167,6 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
           {modes.includes('bus') && (
             <View>
               {heading(MODE_LABELS.bus)}
-              <TextInput
-                style={[styles.search, { color: c.text, borderColor: c.border }]}
-                placeholder="Filter bus routes, e.g. M15"
-                placeholderTextColor={c.muted}
-                value={busSearch}
-                onChangeText={setBusSearch}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
               {busGroups.length === 0 && routes.some((r) => r.mode === 'bus') && (
                 <Text style={{ color: c.muted }}>No bus route matches.</Text>
               )}
@@ -192,5 +208,5 @@ const styles = StyleSheet.create({
   railName: { fontSize: 15 },
   alertDot: { width: 10, height: 10, borderRadius: 5 },
   alertOnBadge: { position: 'absolute', top: -2, right: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
-  search: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginBottom: 10 },
+  search: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginHorizontal: 20, marginTop: 12 },
 });
