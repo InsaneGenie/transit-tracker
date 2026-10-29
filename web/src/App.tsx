@@ -4,6 +4,7 @@ import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchRouteLines, fetchRo
 import { Guide } from './Guide';
 import { Legend } from './Legend';
 import { LinePanel } from './LinePanel';
+import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
@@ -427,7 +428,7 @@ export function App() {
               aria-pressed={modes.includes(mode)}
               onClick={() => toggle(mode)}
             >
-              <span className="chip-dot" aria-hidden="true" />
+              <ModeIcon mode={mode} />
               {MODE_LABELS[mode]}
             </button>
           ))}

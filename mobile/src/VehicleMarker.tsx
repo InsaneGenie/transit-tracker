@@ -1,8 +1,9 @@
 import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 import { colorFor, displayName, textColorFor } from '../../web/src/vehicles';
 import type { UpcomingStop, Vehicle } from './api';
+import { GLYPHS, ModeIcon } from './ModeIcon';
 
 interface Props {
   vehicle: Vehicle;
@@ -12,10 +13,12 @@ interface Props {
   onPress: (id: string) => void;
 }
 
-/** A dot in the line's color, with the line's name on it when zoomed in. */
+/** The vehicle's mode icon in its line's color, or a tag with the line's name too when zoomed in. */
 export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, selected, dark, onPress }: Props) {
   const color = colorFor(vehicle);
+  const ink = textColorFor(color);
   const label = displayName(vehicle.routeName ?? vehicle.routeId ?? '');
+  const border = selected ? (dark ? '#f9fafb' : '#111827') : dark ? '#111827' : '#ffffff';
   return (
     <Marker
       identifier={vehicle.id}
@@ -27,23 +30,37 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, se
       onPress={() => onPress(vehicle.id)}
       accessibilityLabel={`${label} ${vehicle.mode}`}
     >
-      <View
-        style={[
-          labelled ? styles.pill : styles.dot,
-          { backgroundColor: color, borderColor: selected ? (dark ? '#f9fafb' : '#111827') : dark ? '#111827' : '#ffffff' },
-          selected && styles.selected,
-          vehicle.source === 'estimated' && !labelled && styles.estimated,
-        ]}
-      >
-        {labelled && (
-          <Text style={[styles.label, { color: textColorFor(color) }]} numberOfLines={1}>
-            {label}
-          </Text>
-        )}
-      </View>
+      {labelled ? (
+        <View
+          style={[
+            styles.tag,
+            TAG_CORNERS[vehicle.mode],
+            { backgroundColor: color, borderColor: border },
+            selected && styles.selected,
+          ]}
+        >
+          <Image source={GLYPHS[vehicle.mode]} style={[styles.tagGlyph, { tintColor: ink }]} />
+          {!!label && (
+            <Text style={[styles.label, { color: ink }]} numberOfLines={1}>
+              {label}
+            </Text>
+          )}
+        </View>
+      ) : (
+        <View style={[selected && styles.selectedIcon, vehicle.source === 'estimated' && styles.estimated]}>
+          <ModeIcon mode={vehicle.mode} size={20} color={color} ink={ink} border={{ color: border, width: selected ? 2.5 : 1.5 }} />
+        </View>
+      )}
     </Marker>
   );
 }, sameDot);
+
+/** Name tags keep a hint of their mode's outline: round for subway, square-ish for buses, sharp for rail. */
+const TAG_CORNERS = {
+  subway: { borderRadius: 11 },
+  bus: { borderRadius: 6 },
+  rail: { borderRadius: 2 },
+} as const;
 
 /** Every poll brings new vehicle objects; only the dots that look different or have moved are redrawn. */
 function sameDot(a: Props, b: Props): boolean {
@@ -65,17 +82,19 @@ function sameDot(a: Props, b: Props): boolean {
 }
 
 const styles = StyleSheet.create({
-  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5 },
-  pill: {
+  tag: {
+    flexDirection: 'row',
+    gap: 3,
     minWidth: 24,
     height: 22,
     paddingHorizontal: 5,
-    borderRadius: 11,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tagGlyph: { width: 13, height: 13 },
   selected: { borderWidth: 3, transform: [{ scale: 1.25 }] },
+  selectedIcon: { transform: [{ scale: 1.25 }] },
   estimated: { opacity: 0.9 },
   label: { fontSize: 11, fontWeight: '700' },
   stopHit: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },

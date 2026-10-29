@@ -12,6 +12,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { fetchVehicles, type Bounds, type Mode, type RouteLine, type UpcomingStop, type Vehicle, type VehicleDetail } from './api';
 import type { Theme } from './theme';
 import { colorFor, interpolate, routeKey, tidyStopName, toFeatureCollection } from './vehicles';
+import { GLYPH_SCALE, MODE_GLYPHS, MODE_SHAPES, shapePath } from './vehicleIcons';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
 setWorkerUrl(workerUrl);
@@ -88,6 +89,41 @@ function arrowImage(): ImageData {
   ctx.fillStyle = '#000';
   ctx.fill();
   return ctx.getImageData(0, 0, size, size);
+}
+
+/** Vehicle icons are drawn this many pixels wide and scaled down with `icon-size` as the map zooms out. */
+const ICON_PX = 32;
+const ICON_PREFIX = 'vehicle|';
+
+/** One vehicle icon: the mode's outline in the line's color with the mode's picture on it. */
+function vehicleIcon(mode: Mode, color: string, ink: string, outline: string): ImageData {
+  const ratio = 2;
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  ctx.canvas.width = ctx.canvas.height = ICON_PX * ratio;
+  ctx.scale(ratio, ratio);
+  const shape = MODE_SHAPES[mode];
+  const border = 2.5;
+  const outer = new Path2D(shapePath(shape, ICON_PX, border / 2));
+  ctx.fillStyle = color;
+  ctx.fill(outer);
+  ctx.lineWidth = border;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = outline;
+  ctx.stroke(outer);
+  const g = ICON_PX * GLYPH_SCALE[shape];
+  ctx.translate((ICON_PX - g) / 2, (ICON_PX - g) / 2);
+  ctx.scale(g / 24, g / 24);
+  ctx.fillStyle = ink;
+  ctx.fill(new Path2D(MODE_GLYPHS[mode]), 'evenodd');
+  return ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+}
+
+/** Icons are made the first time a mode and color is shown; the id carries everything needed to draw it. */
+function addMissingVehicleIcon(map: MapLibreMap, id: string) {
+  if (!id.startsWith(ICON_PREFIX) || map.hasImage(id)) return;
+  const [mode, color, ink, outline] = id.slice(ICON_PREFIX.length).split('|');
+  if (!(mode in MODE_SHAPES)) return;
+  map.addImage(id, vehicleIcon(mode as Mode, color, ink, outline), { pixelRatio: 2 });
 }
 
 function boundsOf(map: MapLibreMap): Bounds {
@@ -173,12 +209,13 @@ function selectionData(detail: VehicleDetail | null): {
   };
 }
 
-/** Arrow, dot and line label for every vehicle in `source`. */
+/** Arrow, icon and line label for every vehicle in `source`. */
 function addVehicleLayers(
   map: MapLibreMap,
   prefix: string,
   source: string,
   outline: string,
+  ink: string,
   filter: ExpressionSpecification,
   minzoom: number,
 ) {
@@ -198,19 +235,21 @@ function addVehicleLayers(
     },
     paint: { 'icon-color': ['get', 'color'] },
   });
+  // The layer keeps its old "dots" name: tapping and filtering look vehicles up by it.
   map.addLayer({
     id: `${prefix}-dots`,
-    type: 'circle',
+    type: 'symbol',
     source,
     minzoom,
     filter,
-    paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], VEHICLE_MIN_ZOOM, 2.5, 11, 3.5, 13, 6, 16, 13],
-      'circle-color': ['get', 'color'],
-      'circle-stroke-color': outline,
-      'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 13, 1.5],
+    layout: {
+      'icon-image': ['concat', ICON_PREFIX, ['get', 'mode'], '|', ['get', 'color'], '|', ['get', 'textColor'], '|', outline],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], VEHICLE_MIN_ZOOM, 6 / ICON_PX, 11, 8 / ICON_PX, 13, 16 / ICON_PX, 16, 28 / ICON_PX],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
     },
   });
+  // The line's name beside the icon, once zoomed in.
   map.addLayer({
     id: `${prefix}-labels`,
     type: 'symbol',
@@ -220,11 +259,13 @@ function addVehicleLayers(
     layout: {
       'text-field': ['get', 'label'],
       'text-font': ['Noto Sans Bold'],
-      'text-size': ['interpolate', ['linear'], ['zoom'], 14, 9, 16, 13],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 14, 10, 16, 13],
+      'text-anchor': 'left',
+      'text-offset': [1.3, 0],
       'text-allow-overlap': true,
       'text-ignore-placement': true,
     },
-    paint: { 'text-color': ['get', 'textColor'] },
+    paint: { 'text-color': ink, 'text-halo-color': outline, 'text-halo-width': 1.5 },
   });
 }
 
@@ -331,10 +372,10 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       'circle-stroke-width': 2,
     },
   });
-  addVehicleLayers(map, 'vehicle', 'vehicles', outline, vehicleFilter(state.modes, state.lines, state.selectedId), VEHICLE_MIN_ZOOM);
+  addVehicleLayers(map, 'vehicle', 'vehicles', outline, ring, vehicleFilter(state.modes, state.lines, state.selectedId), VEHICLE_MIN_ZOOM);
   // The tapped vehicle has its own source so it can glide smoothly every frame, which redrawing every
   // vehicle can't afford.
-  addVehicleLayers(map, 'selected', 'selected-vehicle', outline, ['literal', true], 0);
+  addVehicleLayers(map, 'selected', 'selected-vehicle', outline, ring, ['literal', true], 0);
   map.addLayer({
     id: 'selected-ring',
     type: 'circle',
@@ -537,6 +578,8 @@ export function MapView(props: Props) {
       selectedFrame = requestAnimationFrame(drawSelected);
     };
     selectedFrame = requestAnimationFrame(drawSelected);
+
+    map.on('styleimagemissing', (e) => addMissingVehicleIcon(map, e.id));
 
     let started = false;
     map.on('style.load', () => {

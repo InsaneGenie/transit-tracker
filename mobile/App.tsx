@@ -38,6 +38,7 @@ import {
 import { GuideSheet } from './src/GuideSheet';
 import { LinePanel } from './src/LinePanel';
 import { LinesSheet } from './src/LinesSheet';
+import { ModeIcon } from './src/ModeIcon';
 import { PanelSheet } from './src/PanelSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { MODE_DOT, palette } from './src/theme';
@@ -760,7 +761,7 @@ function TransitMap() {
                 accessibilityState={{ selected: on }}
                 style={[styles.chip, { backgroundColor: c.chip }, !on && styles.chipOff]}
               >
-                <View style={[styles.chipDot, { backgroundColor: MODE_DOT[mode] }]} />
+                <ModeIcon mode={mode} size={16} color={MODE_DOT[mode]} ink="#ffffff" hollow={!on} />
                 <Text style={[styles.chipText, { color: c.text }]}>{MODE_LABELS[mode]}</Text>
               </Pressable>
             );
@@ -932,7 +933,6 @@ const styles = StyleSheet.create({
   },
   chipOff: { opacity: 0.45 },
   helpChip: { minWidth: 34, justifyContent: 'center' },
-  chipDot: { width: 8, height: 8, borderRadius: 4 },
   chipText: { fontSize: 14, fontWeight: '600' },
   chipAlert: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5 },
   status: {
