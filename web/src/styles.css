@@ -810,6 +810,44 @@ button {
   background: var(--surface-solid);
 }
 
+/* How to use */
+
+.guide {
+  width: 340px;
+}
+
+.guide-points {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.guide-points li::marker {
+  color: var(--muted);
+}
+
+.guide-done {
+  margin: 18px 0 4px;
+  width: 100%;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.chip-help {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.help-float {
+  display: none;
+}
+
 /* Phones: one compact toolbar row, and the panel and legend become sheets along the bottom. */
 @media (max-width: 640px) {
   .toolbar {
@@ -836,6 +874,39 @@ button {
   .chip {
     height: 32px;
     padding: 0 11px;
+  }
+
+  .chip-help {
+    display: none;
+  }
+
+  /* Below the zoom and location buttons, styled like them. */
+  .help-float {
+    position: absolute;
+    top: 176px;
+    right: 10px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: var(--surface-solid);
+    box-shadow: var(--shadow);
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .help-float.chip-active {
+    background: var(--ink);
+    color: var(--surface-solid);
+  }
+
+  .guide {
+    width: auto;
   }
 
   .status {
@@ -877,6 +948,10 @@ button {
 
   .legend {
     max-height: 60%;
+  }
+
+  .guide {
+    max-height: 75%;
   }
 
   .sheet-handle {
