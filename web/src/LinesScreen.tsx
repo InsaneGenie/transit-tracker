@@ -83,52 +83,80 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
     (order) => onChange([...order, ...chosen.filter((k) => !byKey.has(k))]),
   );
 
-  const routeSwitch = (r: RouteInfo, label: boolean) => {
-    const drawn = !hiddenRoutes.includes(r.key);
-    return (
-      <button
-        className={label ? 'route-toggle' : 'route-toggle route-toggle-small'}
-        role="switch"
-        data-no-drag
-        aria-checked={drawn}
-        aria-label={`Draw the ${r.name} route on the map`}
-        title={drawn ? 'Route drawn on the map' : 'Route hidden on the map'}
-        onClick={() => toggleRoute(r.key)}
-      >
-        {label && <span className="route-toggle-label">Route</span>}
-        <span className="switch" aria-hidden="true" />
-      </button>
-    );
-  };
+  // The line whose details are open under the badges.
+  const [picked, setPicked] = useState<string | null>(null);
+  const pickedLine = picked && chosenSet.has(picked) ? byKey.get(picked) : undefined;
 
-  // Your lines at a glance: a badge each, with how it's running and its route switch. Tap one to open
-  // its page, or drag it to a new place.
-  const tile = (r: RouteInfo) => {
+  // Your lines as a row of badges, like a station sign. A faded badge has its route switched off.
+  // Tap one for its details, or drag it to a new place.
+  const chip = (r: RouteInfo) => {
     const count = counts?.[r.key];
     const s = lineStatus(alertSummary[r.key], counts ? (count ?? 0) : undefined);
     const hidden = hiddenRoutes.includes(r.key);
-    const caption = r.mode === 'rail' ? r.name : count ? vehicleCount(count, r.mode) : counts ? 'Not running' : '\u00a0';
     return (
       <li
         key={r.key}
         data-drag-key={r.key}
-        className={`line-tile${hidden ? ' line-tile-hidden' : ''}${drag.dragging === r.key ? ' dragging' : ''}`}
+        className={`line-chip${hidden ? ' line-chip-hidden' : ''}${drag.dragging === r.key ? ' dragging' : ''}`}
         onPointerDown={(e) => drag.onPointerDown(e, r.key)}
         onContextMenu={(e) => drag.dragging && e.preventDefault()}
       >
         <button
-          className="line-tile-open"
-          onClick={() => !drag.justDropped() && onOpen(r.key)}
-          title={`${r.longName ?? r.name}: ${s.text}${count ? `, ${vehicleCount(count, r.mode)} running` : ''}. Drag to move it.`}
+          className="line-chip-button"
+          aria-expanded={pickedLine?.key === r.key}
+          aria-label={`${r.name}: ${s.text}${hidden ? ', route hidden' : ''}`}
+          title={`${r.longName ?? r.name}: ${s.text}${count ? `, ${vehicleCount(count, r.mode)} running` : ''}${hidden ? '. Route hidden on the map' : ''}`}
+          onClick={() => !drag.justDropped() && setPicked(pickedLine?.key === r.key ? null : r.key)}
         >
-          <span className="line-tile-badge">
-            <LineBadge route={r} size={36} />
-            {s.color && <span className="line-tile-dot" style={{ background: s.color }} aria-label={s.text} />}
-          </span>
-          <span className="line-tile-caption">{caption}</span>
+          <LineBadge route={r} size={34} />
+          {s.color && <span className="line-chip-dot" style={{ background: s.color }} />}
         </button>
-        {routeSwitch(r, false)}
       </li>
+    );
+  };
+
+  // The picked line's name, how it's running, and what you can do with it.
+  const details = (r: RouteInfo) => {
+    const count = counts?.[r.key];
+    const s = lineStatus(alertSummary[r.key], counts ? (count ?? 0) : undefined);
+    const drawn = !hiddenRoutes.includes(r.key);
+    return (
+      <div className="line-chip-details">
+        <div className="line-chip-details-head">
+          <span className="line-open-text">
+            <span className="line-open-name">{r.mode === 'rail' ? r.name : (r.longName ?? `${MODE_LABELS[r.mode]} ${r.name}`)}</span>
+            <span className="line-open-status muted">
+              <span style={{ color: s.color }}>{s.text}</span>
+              {count ? ` · ${vehicleCount(count, r.mode)} running` : ''}
+            </span>
+          </span>
+          <button
+            className="route-toggle"
+            role="switch"
+            aria-checked={drawn}
+            aria-label={`Draw the ${r.name} route on the map`}
+            title={drawn ? 'Route drawn on the map' : 'Route hidden on the map'}
+            onClick={() => toggleRoute(r.key)}
+          >
+            <span className="route-toggle-label">Route</span>
+            <span className="switch" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="line-chip-actions">
+          <button className="button button-primary" onClick={() => onOpen(r.key)}>
+            Open line
+          </button>
+          <button
+            className="button"
+            onClick={() => {
+              setPicked(null);
+              toggle(r.key);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
     );
   };
 
@@ -191,7 +219,10 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
             )}
           </div>
           {mine.length ? (
-            <ul className="line-tiles">{mine.map(tile)}</ul>
+            <>
+              <ul className="line-chips">{mine.map(chip)}</ul>
+              {pickedLine && details(pickedLine)}
+            </>
           ) : (
             <p className="muted lines-empty">
               {routes.length
