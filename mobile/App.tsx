@@ -275,8 +275,7 @@ function TransitMap() {
     setGuideOpen(false);
     AsyncStorage.setItem(GUIDE_SEEN_KEY, '1').catch(() => {});
   };
-  const toggleRoute = (key: string) => {
-    const next = hiddenRoutes.includes(key) ? hiddenRoutes.filter((k) => k !== key) : [...hiddenRoutes, key];
+  const changeHiddenRoutes = (next: string[]) => {
     setHiddenRoutes(next);
     AsyncStorage.setItem(HIDDEN_ROUTES_KEY, JSON.stringify(next)).catch(() => {});
   };
@@ -454,18 +453,21 @@ function TransitMap() {
     );
   }, [detail, following, selectedId]);
 
+  // Reordering your lines changes none of the drawn ones, so it fetches nothing.
+  const drawnKeys = [...lines.slice(0, MAX_DRAWN_LINES)].sort().join(',');
   // The lines picked in Lines are drawn as soon as they're picked.
   useEffect(() => {
     setFilterRoutes([]);
-    if (!lines.length || !active) return;
+    if (!drawnKeys || !active) return;
+    const keys = drawnKeys.split(',');
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      fetchRouteLines(lines.slice(0, MAX_DRAWN_LINES), controller.signal)
+      fetchRouteLines(keys, controller.signal)
         .then((r) => {
           setFilterRoutes(r.lines);
           // Schedules can still be loading; ask again for the lines not found yet.
-          if (r.lines.length < Math.min(lines.length, MAX_DRAWN_LINES)) timer = setTimeout(load, 15_000);
+          if (r.lines.length < keys.length) timer = setTimeout(load, 15_000);
         })
         .catch(() => {
           if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
@@ -475,7 +477,7 @@ function TransitMap() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [lines, active]);
+  }, [drawnKeys, active]);
 
   // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
   const otherLines = useMemo(() => {
@@ -989,7 +991,7 @@ function TransitMap() {
                 dark={dark}
                 topInset={insets.top}
                 onChange={changeLines}
-                onToggleRoute={toggleRoute}
+                onHiddenRoutesChange={changeHiddenRoutes}
                 onOpen={setLinePage}
               />
             )}

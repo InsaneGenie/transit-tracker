@@ -23,15 +23,15 @@ interface Props {
   dark: boolean;
   topInset: number;
   onChange: (chosen: string[]) => void;
-  /** Draws one of your lines' routes on the map, or stops drawing it. */
-  onToggleRoute: (key: string) => void;
+  /** Sets which of your lines' routes are not drawn. */
+  onHiddenRoutesChange: (hidden: string[]) => void;
   onOpen: (key: string) => void;
 }
 
 type Section = { key: string; title?: string; mine?: boolean; browse?: boolean; data: RouteInfo[] };
 
 /** The Lines tab: your lines with how they're running, and every other line to browse and star. */
-export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, dark, topInset, onChange, onToggleRoute, onOpen }: Props) {
+export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, dark, topInset, onChange, onHiddenRoutesChange, onOpen }: Props) {
   const c = palette(dark);
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
@@ -47,6 +47,20 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const byKey = useMemo(() => new Map(routes.map((r) => [r.key, r])), [routes]);
   const toggle = (key: string) => onChange(chosenSet.has(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
+  const toggleRoute = (key: string) =>
+    onHiddenRoutesChange(hiddenRoutes.includes(key) ? hiddenRoutes.filter((k) => k !== key) : [...hiddenRoutes, key]);
+  const mine = useMemo(() => chosen.flatMap((k) => byKey.get(k) ?? []), [chosen, byKey]);
+  const [reordering, setReordering] = useState(false);
+  const reorder = reordering && mine.length > 1;
+  const anyDrawn = chosen.some((k) => !hiddenRoutes.includes(k));
+  const toggleAllRoutes = () =>
+    onHiddenRoutesChange(anyDrawn ? [...new Set([...hiddenRoutes, ...chosen])] : hiddenRoutes.filter((k) => !chosenSet.has(k)));
+  // Moves one of your lines up or down a place; the map and the site keep this order.
+  const move = (i: number, by: -1 | 1) => {
+    const order = mine.map((r) => r.key);
+    [order[i], order[i + by]] = [order[i + by], order[i]];
+    onChange([...order, ...chosen.filter((k) => !byKey.has(k))]);
+  };
 
   const sections = useMemo((): Section[] => {
     if (q) {
@@ -57,7 +71,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
         data: legendGroups(routes, m).flatMap((g) => g.routes.filter(matches)),
       })).filter((s) => s.data.length);
     }
-    const mine: Section = { key: 'mine', mine: true, data: chosen.flatMap((k) => byKey.get(k) ?? []) };
+    const mineSection: Section = { key: 'mine', mine: true, data: mine };
     const groups = legendGroups(routes, mode);
     // The subway is one list; rail lines go by railroad; buses show the picked borough's.
     const browse: Section[] =
@@ -68,8 +82,8 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
           : groups.map((g) => ({ key: g.title, title: g.title, data: g.routes }));
     if (browse.length) browse[0] = { ...browse[0], browse: true };
     else browse.push({ key: 'empty', browse: true, data: [] });
-    return [mine, ...browse];
-  }, [q, routes, chosen, byKey, mode, borough]);
+    return [mineSection, ...browse];
+  }, [q, routes, mine, mode, borough]);
 
   const status = (r: RouteInfo) => lineStatus(alertSummary[r.key], counts ? (counts[r.key] ?? 0) : undefined);
 
@@ -88,7 +102,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
     );
   };
 
-  const renderItem = ({ item: r, section }: { item: RouteInfo; section: Section }) => {
+  const renderItem = ({ item: r, index, section }: { item: RouteInfo; index: number; section: Section }) => {
     const s = status(r);
     const count = counts?.[r.key];
     const name = r.mode === 'rail' ? r.name : (r.longName ?? `${MODE_LABELS[r.mode]} ${r.name}`);
@@ -115,18 +129,39 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
           </Text>
           {statusText}
         </View>
-        {section.mine && (
+        {section.mine && reorder && (
+          <View style={styles.move}>
+            {([-1, 1] as const).map((by) => {
+              const off = by === -1 ? index === 0 : index === mine.length - 1;
+              return (
+                <Pressable
+                  key={by}
+                  onPress={() => move(index, by)}
+                  disabled={off}
+                  hitSlop={4}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: off }}
+                  accessibilityLabel={`Move ${r.name} ${by === -1 ? 'up' : 'down'}`}
+                  style={[styles.moveButton, { borderColor: c.border, backgroundColor: c.card }, off && styles.moveOff]}
+                >
+                  <Text style={[styles.moveText, { color: c.text }]}>{by === -1 ? '↑' : '↓'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {section.mine && !reorder && (
           <View style={styles.routeToggle}>
             <Text style={[styles.routeLabel, { color: c.muted }]}>Route</Text>
             <Switch
               value={!hiddenRoutes.includes(r.key)}
-              onValueChange={() => onToggleRoute(r.key)}
+              onValueChange={() => toggleRoute(r.key)}
               accessibilityLabel={`Draw the ${r.name} route on the map`}
               style={styles.switch}
             />
           </View>
         )}
-        {star(r)}
+        {!(section.mine && reorder) && star(r)}
       </Pressable>
     );
   };
@@ -137,9 +172,23 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
         <View style={[styles.sectionHead, { backgroundColor: c.card }]}>
           <Text style={[styles.h3, { color: c.muted }]}>My lines</Text>
           {chosen.length > 0 && (
-            <Pressable onPress={() => onChange([])} hitSlop={8} accessibilityRole="button">
-              <Text style={[styles.link, { color: c.accent }]}>Clear</Text>
-            </Pressable>
+            <View style={styles.headActions}>
+              {!reorder && (
+                <Pressable onPress={toggleAllRoutes} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.link, { color: c.accent }]}>{anyDrawn ? 'Hide all routes' : 'Show all routes'}</Text>
+                </Pressable>
+              )}
+              {mine.length > 1 && (
+                <Pressable onPress={() => setReordering(!reorder)} hitSlop={8} accessibilityRole="button" accessibilityState={{ selected: reorder }}>
+                  <Text style={[styles.link, { color: c.accent }, reorder && styles.linkStrong]}>{reorder ? 'Done' : 'Reorder'}</Text>
+                </Pressable>
+              )}
+              {!reorder && (
+                <Pressable onPress={() => onChange([])} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.link, { color: c.accent }]}>Clear</Text>
+                </Pressable>
+              )}
+            </View>
           )}
         </View>
       );
@@ -239,6 +288,12 @@ const styles = StyleSheet.create({
   h4: { fontSize: 14, fontWeight: '600', marginTop: 12, marginBottom: 2 },
   allLines: { marginTop: 22 },
   link: { fontSize: 15, marginTop: 8 },
+  linkStrong: { fontWeight: '700' },
+  headActions: { flexDirection: 'row', gap: 16 },
+  move: { flexDirection: 'row', gap: 8 },
+  moveButton: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  moveOff: { opacity: 0.35 },
+  moveText: { fontSize: 18, fontWeight: '600' },
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   pressed: { opacity: 0.6 },
