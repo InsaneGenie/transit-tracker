@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colorFor, displayName, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { colorFor, displayName, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchArrivals,
   fetchRouteLines,
@@ -52,7 +52,13 @@ type Status = 'connecting' | 'live' | 'error' | 'zoomedOut';
  * A line opened from a station's transfers or one of its stations on the map. `back` is the vehicle and
  * station it was opened from; `atStation` keeps the map on the tapped station instead of the whole line.
  */
-type ViewLine = { key: string; back?: { vehicleId: string; label: string; station: Station | null }; atStation?: boolean };
+type ViewLine = {
+  key: string;
+  back?: { vehicleId: string; label: string; station: Station | null };
+  atStation?: boolean;
+  /** The stops ahead of the vehicle it was opened from, so its stations read in that vehicle's direction. */
+  ahead?: UpcomingStop[];
+};
 /** Picked lines' stations show from this zoom; further out they would crowd the map. */
 const OTHER_STOPS_MIN_ZOOM = 12;
 /** The most of their stations drawn at once, since every one is a native view. */
@@ -146,6 +152,11 @@ function TransitMap() {
   // A line opened from a station's transfers, and where Back returns to.
   const [viewLine, setViewLine] = useState<ViewLine | null>(null);
   const viewRoute = useRouteLine(viewLine?.key ?? null, active);
+  // Its stations listed the way the vehicle it was opened from is going.
+  const listedRoute = useMemo(
+    () => (viewRoute && viewLine?.ahead ? { ...viewRoute, stops: facingWay(viewRoute.stops, viewLine.ahead) } : viewRoute),
+    [viewRoute, viewLine?.ahead],
+  );
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
@@ -332,7 +343,7 @@ function TransitMap() {
   };
 
   // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
-  const openLine = (key: string, at?: Station) => {
+  const openLine = (key: string, at?: Station, ahead?: UpcomingStop[]) => {
     const back = detail
       ? {
           vehicleId: detail.vehicle.id,
@@ -340,7 +351,7 @@ function TransitMap() {
           station,
         }
       : viewLine?.back;
-    setViewLine({ key, back, atStation: Boolean(at) });
+    setViewLine({ key, back, atStation: Boolean(at), ahead });
     setStation(at ?? null);
     setShowTransfers(false);
     // Closing the vehicle would otherwise drop the station just picked.
@@ -351,7 +362,7 @@ function TransitMap() {
 
   // Every station on the open vehicle's line, from its drawn route or the panel.
   const openOwnLine = () => {
-    if (selectedLine) openLine(selectedLine);
+    if (selectedLine) openLine(selectedLine, undefined, detail?.upcoming);
   };
 
   // A station of a picked line, tapped on the map, opens that line there.
@@ -709,7 +720,7 @@ function TransitMap() {
         >
           <LinePanel
             info={routesByKey.get(viewLine.key)}
-            line={viewRoute}
+            line={listedRoute}
             routes={routesByKey}
             station={station}
             arrivals={arrivals}

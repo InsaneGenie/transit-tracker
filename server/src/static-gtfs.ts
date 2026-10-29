@@ -1,6 +1,8 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
+import { createInflateRaw } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import { parse } from 'csv-parse';
 import { Polyline, type LatLon } from './geo.js';
@@ -39,7 +41,7 @@ export interface StaticIndex {
    * (Times Sq has the 1 2 3, N Q R W, S and 7). Keyed by any stop id, platform or station.
    */
   stopRoutes: Map<string, string[]>;
-  /** The stations each route regularly calls at, as station ids. */
+  /** The stations each route regularly calls at, as station ids; for stops-only schedules, in order, one way. */
   routeStations: Map<string, string[]>;
 }
 
@@ -61,6 +63,66 @@ async function* rows(files: GtfsFiles, name: string): AsyncGenerator<Row> {
 }
 
 const breather = () => new Promise((resolve) => setImmediate(resolve));
+
+/** Splits one CSV line, handling quoted fields only when the line has any. */
+function splitCsv(line: string): string[] {
+  if (!line.includes('"')) return line.split(',');
+  const out: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') field += line[i++];
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') {
+      out.push(field);
+      field = '';
+    } else field += ch;
+  }
+  out.push(field);
+  return out;
+}
+
+/**
+ * The rows of a big file whose `column` is in `wanted`, skimming the rest without parsing them. A bus
+ * schedule's stop times run to millions of rows; a full CSV parse of them is too slow for a small server.
+ */
+async function* rowsWhere(files: GtfsFiles, name: string, column: string, wanted: Set<string>): AsyncGenerator<Row> {
+  const input = files(name);
+  if (!input) return;
+  let header: string[] | undefined;
+  let at = -1;
+  let rest = '';
+  let count = 0;
+  // Keeps a character split between two chunks whole.
+  const decoder = new StringDecoder('utf8');
+  for await (const chunk of input) {
+    const lines = (rest + decoder.write(chunk)).split('\n');
+    rest = lines.pop()!;
+    for (const raw of lines) {
+      const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+      if (!header) {
+        header = splitCsv(line.replace(/^\uFEFF/, '')).map((h) => h.trim());
+        at = header.indexOf(column);
+        if (at < 0) return;
+        continue;
+      }
+      // The trip id usually leads the row, so most rows are passed over on their first field.
+      const value = at === 0 && !line.startsWith('"') ? line.slice(0, line.indexOf(',')) : splitCsv(line)[at];
+      if (!wanted.has(value)) continue;
+      const fields = splitCsv(line);
+      yield Object.fromEntries(header.map((h, i) => [h, fields[i] ?? '']));
+    }
+    if (++count % 20 === 0) await breather();
+  }
+  if (rest && header) {
+    const fields = splitCsv(rest);
+    if (wanted.has(fields[at])) yield Object.fromEntries(header.map((h, i) => [h, fields[i] ?? '']));
+  }
+}
 
 /** GTFS times can run past 24:00 for trips that continue after midnight. */
 export function parseGtfsTime(value: string | undefined): number | undefined {
@@ -94,8 +156,19 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   const trips = new Map<string, { routeId: string; shapeId?: string }>();
   const tripShapes = new Map<string, string>();
   const routeShapes = new Map<string, Set<string>>();
+  // Without every stop time, a route's stops come from one typical trip each way: one that follows the
+  // shape most of its trips that way take.
+  const patterns = new Map<string, Map<string, { count: number; tripId: string }>>();
   for await (const r of rows(files, 'trips.txt')) {
     trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined });
+    if (detail === 'stops') {
+      const way = `${r.route_id}|${r.direction_id ?? ''}`;
+      let byShape = patterns.get(way);
+      if (!byShape) patterns.set(way, (byShape = new Map()));
+      const shape = byShape.get(r.shape_id ?? '') ?? { count: 0, tripId: r.trip_id };
+      shape.count++;
+      byShape.set(r.shape_id ?? '', shape);
+    }
     if (!r.shape_id) continue;
     tripShapes.set(r.trip_id, r.shape_id);
     let shapeIds = routeShapes.get(r.route_id);
@@ -142,6 +215,11 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
       if (!byRoute) calls.set(station, (byRoute = new Map()));
       byRoute.set(trip.routeId, (byRoute.get(trip.routeId) ?? 0) + 1);
     }
+    // One typical trip says nothing about usual travel times.
+    if (detail === 'stops') {
+      if (listed.get(trip.routeId)?.tripId === tripId) listedStops.set(trip.routeId, times.map((t) => t.stopId));
+      return;
+    }
     for (let i = 1; i < times.length; i++) {
       const prev = times[i - 1];
       const cur = times[i];
@@ -155,7 +233,19 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
 
   let currentTrip: string | undefined;
   let buffer: StopTime[] = [];
-  const stopTimes = detail === 'full' ? rows(files, 'stop_times.txt') : [];
+  const typical = new Set<string>();
+  // The busier direction's typical trip lists the route's stops, in order, one side of the street.
+  const listed = new Map<string, { tripId: string; trips: number }>();
+  for (const [way, byShape] of patterns) {
+    const usual = [...byShape.values()].reduce((a, b) => (b.count > a.count ? b : a));
+    typical.add(usual.tripId);
+    const routeId = way.slice(0, way.lastIndexOf('|'));
+    const trips = [...byShape.values()].reduce((n, b) => n + b.count, 0);
+    if (trips > (listed.get(routeId)?.trips ?? 0)) listed.set(routeId, { tripId: usual.tripId, trips });
+  }
+  patterns.clear();
+  const listedStops = new Map<string, string[]>();
+  const stopTimes = detail === 'full' ? rows(files, 'stop_times.txt') : rowsWhere(files, 'stop_times.txt', 'trip_id', typical);
   for await (const r of stopTimes) {
     if (r.trip_id !== currentTrip) {
       if (currentTrip) flushTrip(currentTrip, buffer);
@@ -195,7 +285,9 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
     set.add(to);
   }
 
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...routesByStop(stops, stationOf, calls, transfers) };
+  const byStop = routesByStop(stops, stationOf, calls, transfers);
+  if (detail === 'stops') byStop.routeStations = listedStops;
+  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop };
 }
 
 /**
@@ -249,13 +341,16 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
   };
   for (const index of indexes) {
     for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {
-      if (key === 'routeShapes') continue;
+      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes') continue;
       const target = merged[key] as Map<string, unknown>;
       for (const [k, v] of index[key] as Map<string, unknown>) if (!target.has(k)) target.set(k, v);
     }
     // A route can run in several schedules (a bus crossing boroughs), so keep the shapes from each.
     for (const [routeId, shapeIds] of index.routeShapes) {
       merged.routeShapes.set(routeId, new Set([...(merged.routeShapes.get(routeId) ?? []), ...shapeIds]));
+    }
+    for (const key of ['routeStations', 'stopRoutes'] as const) {
+      for (const [id, list] of index[key]) merged[key].set(id, [...new Set([...(merged[key].get(id) ?? []), ...list])]);
     }
   }
   return merged;
@@ -265,7 +360,10 @@ export function zipFiles(zip: Buffer): GtfsFiles {
   const archive = new AdmZip(zip);
   return (name) => {
     const entry = archive.getEntries().find((e) => path.basename(e.entryName) === name);
-    return entry ? Readable.from(chunks(entry.getData())) : null;
+    if (!entry) return null;
+    // Unpack deflated files a piece at a time: a bus schedule's stop times are 150 MB unpacked.
+    if (entry.header.method === 8) return Readable.from(chunks(entry.getCompressedData())).pipe(createInflateRaw());
+    return Readable.from(chunks(entry.getData()));
   };
 }
 

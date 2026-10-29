@@ -404,7 +404,9 @@ export class VehicleStore {
       const transfers = this.transferKeys(feed, index, id, routeId);
       return [{ stopId: id, name: stop.name, lat: stop.lat, lon: stop.lon, ...(transfers && { transfers }) }];
     });
-    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops: alongPaths(stops, paths) };
+    // Stops-only schedules list a route's stops in order already.
+    const ordered = feed.config.staticDetail === 'stops' ? stops : alongPaths(stops, paths);
+    return { key, mode: feed.config.mode, color: index.routes.get(routeId)?.color, paths, stops: ordered };
   }
 
   /**
