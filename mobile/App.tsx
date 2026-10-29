@@ -349,6 +349,11 @@ function TransitMap() {
     if (at) mapRef.current?.animateCamera({ center: { latitude: at.lat, longitude: at.lon } }, { duration: 600 });
   };
 
+  // Every station on the open vehicle's line, from its drawn route or the panel.
+  const openOwnLine = () => {
+    if (selectedLine) openLine(selectedLine);
+  };
+
   // A station of a picked line, tapped on the map, opens that line there.
   const openLineStation = (key: string, stop: UpcomingStop) => {
     if (stop.lat === undefined || stop.lon === undefined) return;
@@ -364,9 +369,11 @@ function TransitMap() {
     setStation(null);
     if (back) {
       select(back.vehicleId);
-      // Show the station it was opened from, not the vehicle.
-      setFollowing(false);
-      setRestoreStation(back.station);
+      // Show the station it was opened from, not the vehicle; with no station, follow the vehicle again.
+      if (back.station) {
+        setFollowing(false);
+        setRestoreStation(back.station);
+      }
     }
   };
   useEffect(() => {
@@ -514,6 +521,8 @@ function TransitMap() {
                 strokeWidth={own ? 4 : 3}
                 lineCap="round"
                 lineJoin="round"
+                tappable={own && panelOpen}
+                onPress={own && panelOpen ? openOwnLine : undefined}
               />
             ));
           })}
@@ -524,6 +533,8 @@ function TransitMap() {
               strokeWidth={5}
               lineCap="round"
               lineJoin="round"
+              tappable
+              onPress={openOwnLine}
             />
           )}
           {/* Stations of the picked lines: tapping one opens that line there. */}
@@ -672,6 +683,7 @@ function TransitMap() {
             dark={dark}
             bottomInset={insets.bottom}
             onFollow={() => setFollowing((f) => !f)}
+            onAllStations={openOwnLine}
             station={station}
             stationTransfers={stationTransfers}
             showTransfers={showTransfers}

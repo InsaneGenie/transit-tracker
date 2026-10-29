@@ -243,9 +243,11 @@ export function App() {
     setStation(null);
     if (back) {
       select(back.vehicleId);
-      // Show the station it was opened from, not the vehicle.
-      setFollowing(false);
-      setRestoreStation(back.station);
+      // Show the station it was opened from, not the vehicle; with no station, follow the vehicle again.
+      if (back.station) {
+        setFollowing(false);
+        setRestoreStation(back.station);
+      }
     }
   };
 
@@ -292,6 +294,7 @@ export function App() {
         station={station}
         onStation={pickStation}
         onLineStation={openLineStation}
+        onRouteLine={() => selectedLine && openLine(selectedLine)}
         selectedId={selectedId}
         detail={detail}
         following={following}
@@ -372,6 +375,7 @@ export function App() {
           routes={routesByKey}
           following={following}
           onFollow={() => setFollowing((f) => !f)}
+          onAllStations={() => selectedLine && openLine(selectedLine)}
           station={station}
           stationTransfers={stationTransfers}
           showTransfers={showTransfers}

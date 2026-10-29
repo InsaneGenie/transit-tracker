@@ -22,6 +22,8 @@ const STYLES: Record<Theme, string> = {
 };
 /** Stations that can be tapped: those still ahead of the tapped vehicle first, then the rest of its line. */
 const STATION_LAYERS = ['selected-stops', 'route-stops'];
+/** The tapped vehicle's drawn line; tapping it lists every station on the line. */
+const ROUTE_LAYERS = ['selected-path', 'route-lines'];
 /** Below this zoom (about the size of New York City on screen) vehicles are hidden and not fetched. */
 export const VEHICLE_MIN_ZOOM = 10;
 /** How often the tapped vehicle is refreshed; it glides across each interval so it never stops. */
@@ -61,6 +63,8 @@ interface Props {
   onStation: (station: Omit<Station, 'at'>) => void;
   /** A station of one of `otherLines` was tapped. */
   onLineStation: (line: string, station: Omit<Station, 'at' | 'transfers'>) => void;
+  /** The tapped vehicle's drawn line was tapped. */
+  onRouteLine: () => void;
   selectedId: string | null;
   detail: VehicleDetail | null;
   following: boolean;
@@ -567,10 +571,22 @@ export function MapView(props: Props) {
         callbacks.current.onLineStation(line, { stopId, name: name || undefined, lon, lat });
         return;
       }
+      // The tapped vehicle's own line: show all of its stations.
+      if (!hit && state.current.detail && map.queryRenderedFeatures(box, { layers: ROUTE_LAYERS }).length) {
+        callbacks.current.onRouteLine();
+        return;
+      }
       callbacks.current.onSelect(hit ? String(hit.properties.id) : null);
     });
     for (const layer of [...clickable, ...STATION_LAYERS, 'other-stops']) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
+      map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
+    }
+    // The drawn line is only tappable while its vehicle is open.
+    for (const layer of ROUTE_LAYERS) {
+      map.on('mouseenter', layer, () => {
+        if (state.current.detail) map.getCanvas().style.cursor = 'pointer';
+      });
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
 

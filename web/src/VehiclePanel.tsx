@@ -24,6 +24,8 @@ interface Props {
   /** Tapping a transfer line at the station shows that whole line. */
   onLine: (key: string) => void;
   onFollow: () => void;
+  /** Show every station on the vehicle's line, not just the ones ahead. */
+  onAllStations: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
   onClose: () => void;
@@ -128,6 +130,7 @@ export function VehiclePanel({
   onArrival,
   onLine,
   onFollow,
+  onAllStations,
   onStop,
   onClose,
   ref,
@@ -164,9 +167,14 @@ export function VehiclePanel({
           <span className={`source-dot source-${vehicle.source}`} aria-hidden="true" />
           {vehicle.source === 'gps' ? 'Live GPS position' : 'Estimated from arrival times'}
         </p>
-        <button className={`chip follow${following ? ' chip-active' : ''}`} aria-pressed={following} onClick={onFollow}>
-          {following ? 'Following' : 'Follow'}
-        </button>
+        <div className="panel-actions">
+          <button className="chip follow" onClick={onAllStations}>
+            All stations
+          </button>
+          <button className={`chip follow${following ? ' chip-active' : ''}`} aria-pressed={following} onClick={onFollow}>
+            {following ? 'Following' : 'Follow'}
+          </button>
+        </div>
       </div>
 
       {station && (
