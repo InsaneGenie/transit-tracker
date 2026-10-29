@@ -18,6 +18,8 @@ interface Props {
   alerts: ServiceAlert[] | null;
   routesByKey: Map<string, RouteInfo>;
   dark: boolean;
+  /** Asked on the first launch: which lines they ride. Nothing is lit until it is picked. */
+  survey?: boolean;
   onChange: (chosen: string[]) => void;
   onClose: () => void;
 }
@@ -61,14 +63,14 @@ function LineButton({
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alerts, routesByKey, dark, onChange, onClose }: Props) {
+export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alerts, routesByKey, dark, survey, onChange, onClose }: Props) {
   const c = palette(dark);
   const [busSearch, setBusSearch] = useState('');
   const scroll = useRef<ScrollViewInstance>(null);
   // While searching, only the matching bus routes are listed, right under the search box.
   const searching = busSearch.trim().length > 0;
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
-  const isOn = (r: RouteInfo) => chosenSet.size === 0 || chosenSet.has(r.key);
+  const isOn = (r: RouteInfo) => (!survey && chosenSet.size === 0) || chosenSet.has(r.key);
   const toggle = (r: RouteInfo) =>
     onChange(chosenSet.has(r.key) ? chosen.filter((k) => k !== r.key) : [...chosen, r.key]);
 
@@ -87,21 +89,29 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={[styles.sheet, { backgroundColor: c.card }]}>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: c.text }]}>Lines</Text>
-          {chosen.length > 0 && (
+          <Text style={[styles.title, { color: c.text }]}>{survey ? 'Which lines do you ride?' : 'Lines'}</Text>
+          {survey ? (
+            <Pressable onPress={() => { onChange([]); onClose(); }} hitSlop={8} accessibilityRole="button">
+              <Text style={[styles.link, { color: c.accent }]}>Skip</Text>
+            </Pressable>
+          ) : chosen.length > 0 && (
             <Pressable onPress={() => onChange([])} hitSlop={8}>
               <Text style={[styles.link, { color: c.accent }]}>Show all</Text>
             </Pressable>
           )}
-          <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button">
-            <Text style={[styles.done, { color: c.accent }]}>Done</Text>
-          </Pressable>
+          {!survey && (
+            <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button">
+              <Text style={[styles.done, { color: c.accent }]}>Done</Text>
+            </Pressable>
+          )}
         </View>
         <Text style={[styles.hint, { color: c.muted }]}>
-          {chosen.length
+          {survey
+            ? 'Pick the subway, train and bus lines you use, and the map shows just those. You can add or remove lines any time from Lines.'
+            : chosen.length
             ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.`
             : 'Tap lines to show only those.'}
-          {Object.keys(alertSummary).length > 0 && ' A red, orange or yellow dot means delays or a service change.'}
+          {!survey && Object.keys(alertSummary).length > 0 && ' A red, orange or yellow dot means delays or a service change.'}
         </Text>
         {/* Up here rather than down with the bus lines, so the keyboard never covers what is typed. */}
         {modes.includes('bus') && (
@@ -130,7 +140,7 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
         >
           {routes.length === 0 && <Text style={{ color: c.muted }}>The list of lines loads once the server answers.</Text>}
 
-          {!searching && chosen.length > 0 && (
+          {!survey && !searching && chosen.length > 0 && (
             <View>
               {heading('Service alerts on your lines')}
               {alerts ? (
@@ -183,6 +193,15 @@ export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alert
             </View>
           )}
         </ScrollView>
+        {survey && (
+          <View style={[styles.footer, { borderColor: c.border }]}>
+            <Pressable onPress={onClose} accessibilityRole="button" style={[styles.finish, { backgroundColor: c.accent }]}>
+              <Text style={styles.finishText}>
+                {chosen.length ? `Show my ${chosen.length} line${chosen.length > 1 ? 's' : ''}` : 'Show every line'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </Modal>
   );
@@ -208,5 +227,8 @@ const styles = StyleSheet.create({
   railName: { fontSize: 15 },
   alertDot: { width: 10, height: 10, borderRadius: 5 },
   alertOnBadge: { position: 'absolute', top: -2, right: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
+  footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, borderTopWidth: StyleSheet.hairlineWidth },
+  finish: { alignItems: 'center', paddingVertical: 13, borderRadius: 12 },
+  finishText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
   search: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginHorizontal: 20, marginTop: 12 },
 });

@@ -48,6 +48,7 @@ import { VehiclePanel } from './src/VehiclePanel';
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
+const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
@@ -194,6 +195,7 @@ function TransitMap() {
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [linesOpen, setLinesOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
@@ -215,14 +217,27 @@ function TransitMap() {
       })
       .catch(() => {});
   }, []);
-  // The guide opens by itself on the first launch only.
+  // On the first launch, ask which lines they ride, then show the guide. People who already saw the
+  // guide had the app before the question was added, so they are not asked.
   useEffect(() => {
-    AsyncStorage.getItem(GUIDE_SEEN_KEY)
-      .then((seen) => {
-        if (seen === null) setGuideOpen(true);
+    AsyncStorage.multiGet([SURVEY_DONE_KEY, GUIDE_SEEN_KEY])
+      .then(([[, surveyed], [, seen]]) => {
+        if (surveyed === null && seen === null) setSurveyOpen(true);
+        else if (seen === null) setGuideOpen(true);
+        if (surveyed === null && seen !== null) AsyncStorage.setItem(SURVEY_DONE_KEY, '1').catch(() => {});
       })
       .catch(() => {});
   }, []);
+  const closeSurvey = () => {
+    setSurveyOpen(false);
+    AsyncStorage.setItem(SURVEY_DONE_KEY, '1').catch(() => {});
+    AsyncStorage.getItem(GUIDE_SEEN_KEY)
+      .then((seen) => {
+        // A moment for the survey sheet to slide away, since iOS shows one sheet at a time.
+        if (seen === null) setTimeout(() => setGuideOpen(true), 400);
+      })
+      .catch(() => {});
+  };
   const closeGuide = () => {
     setGuideOpen(false);
     AsyncStorage.setItem(GUIDE_SEEN_KEY, '1').catch(() => {});
@@ -889,6 +904,20 @@ function TransitMap() {
         dark={dark}
         onChange={changeLines}
         onClose={() => setLinesOpen(false)}
+      />
+
+      <LinesSheet
+        survey
+        visible={surveyOpen}
+        routes={routes}
+        modes={ALL_MODES}
+        chosen={lines}
+        alertSummary={alertSummary}
+        alerts={null}
+        routesByKey={routesByKey}
+        dark={dark}
+        onChange={changeLines}
+        onClose={closeSurvey}
       />
 
       <GuideSheet visible={guideOpen} dark={dark} onClose={closeGuide} />
