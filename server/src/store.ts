@@ -434,8 +434,9 @@ export class VehicleStore {
       return hit;
     };
 
-    // The platform or stop each vehicle arrives at tells the two directions apart.
-    const byPlatform = new Map<string, Arrival[]>();
+    // The soonest arrival of each vehicle, with the platform or stop it arrives at. A vehicle can be listed
+    // on more than one trip (one feed lists it as both its current and next trip), but it is shown once.
+    const soonest = new Map<string, { platform: string; arrival: Arrival }>();
     for (const trip of feed.snapshot.trips) {
       if (trip.routeId !== routeId) continue;
       const vehicle = byTrip.get(trip.tripId);
@@ -450,9 +451,16 @@ export class VehicleStore {
         stopsAway: at,
         destination: last && index.stops.get(last.stopId)?.name,
       };
-      const list = byPlatform.get(ahead[at].stopId);
+      const seen = soonest.get(vehicle.id);
+      if (!seen || arrival.time < seen.arrival.time) soonest.set(vehicle.id, { platform: ahead[at].stopId, arrival });
+    }
+
+    // The platform or stop each vehicle arrives at tells the two directions apart.
+    const byPlatform = new Map<string, Arrival[]>();
+    for (const { platform, arrival } of soonest.values()) {
+      const list = byPlatform.get(platform);
       if (list) list.push(arrival);
-      else byPlatform.set(ahead[at].stopId, [arrival]);
+      else byPlatform.set(platform, [arrival]);
     }
 
     // A direction can use more than one stop here; ones whose trips end at the same place are merged.
