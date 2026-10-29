@@ -234,6 +234,30 @@ describe('VehicleStore.arrivals', () => {
     expect(store.arrivals('test-train:1', { lat: 40.5, lon: -73.5 }, T)).toEqual([]);
     expect(store.arrivals('nope:1', { lat: 40.79, lon: -73.95 }, T)).toEqual([]);
   });
+
+  it('lists a vehicle once when two of the feed URLs both report it', async () => {
+    const trip = (tripId: string, at: number) => ({
+      id: tripId,
+      tripUpdate: { trip: { tripId, routeId: '1' }, stopTimeUpdate: [{ stopId: 'B', arrival: { time: at } }] },
+    });
+    const bus = (tripId: string, timestamp: number) => ({
+      id: `v-${tripId}`,
+      vehicle: { trip: { tripId, routeId: '1' }, vehicle: { id: '9' }, timestamp, position: { latitude: 40.785, longitude: -73.95 } },
+    });
+    // Each URL has the bus on a different trip; the newer report wins.
+    const feeds: Record<string, Uint8Array> = {
+      'https://example.test/a': encodeFeed([trip('t1', T + 60), trip('t2', T + 900), bus('t1', T - 5)]),
+      'https://example.test/b': encodeFeed([trip('t1', T + 60), trip('t2', T + 900), bus('t2', T - 60)]),
+    };
+    const twoUrls: FeedConfig = { ...train, realtimeUrls: Object.keys(feeds) };
+    const store = new VehicleStore([twoUrls], {}, async (url) => snapshotFromFeed(decodeFeed(feeds[url]), T), () => indexPromise);
+    await store.loadStatic();
+    await store.pollAll();
+    const gps = store.vehicles(T).filter((v) => v.source === 'gps');
+    expect(gps.map((v) => [v.id, v.tripId])).toEqual([['test-train:9', 't1']]);
+    const arrivals = store.arrivals('test-train:1', { lat: 40.79, lon: -73.95 }, T).flatMap((d) => d.arrivals);
+    expect(arrivals.map((a) => [a.vehicle.id, a.time])).toEqual([['test-train:9', T + 60]]);
+  });
 });
 
 describe('API', () => {

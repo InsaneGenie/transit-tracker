@@ -109,11 +109,22 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
   return { fetchedAt, gps, trips: [...trips.values()] };
 }
 
+/**
+ * One snapshot from several URLs. A vehicle or trip can be listed in more than one of them (or twice in one),
+ * so each is kept once: the newest GPS fix per vehicle, and the first listing of each trip.
+ */
 export function mergeSnapshots(snapshots: FeedSnapshot[]): FeedSnapshot {
+  const gps = new Map<string, GpsVehicle>();
+  for (const g of snapshots.flatMap((s) => s.gps)) {
+    const seen = gps.get(g.vehicleId);
+    if (!seen || (g.timestamp ?? 0) > (seen.timestamp ?? 0)) gps.set(g.vehicleId, g);
+  }
+  const trips = new Map<string, TripState>();
+  for (const t of snapshots.flatMap((s) => s.trips)) if (!trips.has(t.tripId)) trips.set(t.tripId, t);
   return {
     fetchedAt: Math.min(...snapshots.map((s) => s.fetchedAt)),
-    gps: snapshots.flatMap((s) => s.gps),
-    trips: snapshots.flatMap((s) => s.trips),
+    gps: [...gps.values()],
+    trips: [...trips.values()],
   };
 }
 
