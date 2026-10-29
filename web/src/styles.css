@@ -989,11 +989,7 @@ button {
   gap: 2px;
 }
 
-.link-strong {
-  font-weight: 700;
-}
-
-/* Your lines as a grid of badges. */
+/* Your lines as a grid of badges; drag one to move it. */
 .line-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -1007,17 +1003,39 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 4px 8px;
-  border: 0;
+  padding-bottom: 8px;
   border-radius: 12px;
   background: var(--surface-soft);
-  color: inherit;
-  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: box-shadow 0.15s, transform 0.15s;
 }
 
-.line-tile:hover {
+.line-tile.dragging {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  transform: scale(1.06);
+  cursor: grabbing;
+}
+
+.line-tile-open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 4px 6px;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  -webkit-user-drag: none;
+}
+
+.line-tile-open:hover {
   background: var(--hover);
 }
 
@@ -1050,72 +1068,10 @@ button {
   opacity: 0.4;
 }
 
-.line-edits {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.route-toggle-small {
+  padding: 2px 4px;
 }
 
-.line-edit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.line-edit-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.line-remove {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  color: var(--muted);
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.line-remove:hover {
-  background: var(--hover);
-  color: inherit;
-}
-
-.line-move {
-  display: flex;
-  flex: none;
-  gap: 4px;
-}
-
-.line-move button {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface-solid);
-  color: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.line-move button:hover:not(:disabled) {
-  background: var(--hover);
-}
-
-.line-move button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
 
 .lines-all {
   margin: 26px 0 10px !important;
