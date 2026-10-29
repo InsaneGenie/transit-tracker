@@ -989,89 +989,90 @@ button {
   gap: 2px;
 }
 
-/* Your lines as a grid of badges; drag one to move it. */
-.line-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 6px;
+/* Your lines as a row of badges; drag one to move it. */
+.line-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.line-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-bottom: 8px;
-  border-radius: 12px;
-  background: var(--surface-soft);
+.line-chip {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  transition: box-shadow 0.15s, transform 0.15s;
+  transition: transform 0.15s;
 }
 
-.line-tile.dragging {
+.line-chip.dragging {
   position: relative;
   z-index: 1;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
-  transform: scale(1.06);
+  transform: scale(1.15);
   cursor: grabbing;
 }
 
-.line-tile-open {
+.line-chip-button {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 4px 6px;
+  padding: 3px;
   border: 0;
-  border-radius: 12px 12px 0 0;
+  border-radius: 12px;
   background: none;
-  color: inherit;
   cursor: pointer;
   -webkit-user-drag: none;
 }
 
-.line-tile-open:hover {
+.line-chip-button:hover {
   background: var(--hover);
 }
 
-.line-tile-badge {
-  position: relative;
-  display: flex;
+.line-chip-button[aria-expanded='true'] {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
-.line-tile-dot {
+.line-chip-dot {
   position: absolute;
-  top: -3px;
-  right: -5px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--surface-soft);
+  top: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--surface-solid);
   border-radius: 50%;
 }
 
-.line-tile-caption {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* A line whose route is switched off: faded, its vehicles still on the map. */
-.line-tile-hidden .line-tile-badge > .line-icon {
-  opacity: 0.4;
+.line-chip-hidden .line-icon {
+  opacity: 0.35;
 }
 
-.route-toggle-small {
-  padding: 2px 4px;
+.line-chip-details {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-soft);
 }
 
+.line-chip-details-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.line-chip-details-head .line-open-text {
+  flex: 1;
+}
+
+.line-chip-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.line-chip-actions .button {
+  flex: 1;
+}
 
 .lines-all {
   margin: 26px 0 10px !important;
