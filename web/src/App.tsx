@@ -244,18 +244,21 @@ export function App() {
     };
   }, [station?.lat, station?.lon, selectedLine, viewLine?.key]);
 
+  // Reordering your lines changes none of the drawn ones, so it fetches nothing.
+  const drawnKeys = [...lines.slice(0, MAX_DRAWN_LINES)].sort().join(',');
   // The lines picked in the Lines tab are drawn as soon as they're picked.
   useEffect(() => {
     setFilterRoutes([]);
-    if (!lines.length) return;
+    if (!drawnKeys) return;
+    const keys = drawnKeys.split(',');
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      fetchRouteLines(lines.slice(0, MAX_DRAWN_LINES), controller.signal)
+      fetchRouteLines(keys, controller.signal)
         .then((r) => {
           setFilterRoutes(r.lines);
           // Schedules can still be loading; ask again for the lines not found yet.
-          if (r.lines.length < Math.min(lines.length, MAX_DRAWN_LINES)) timer = setTimeout(load, 15_000);
+          if (r.lines.length < keys.length) timer = setTimeout(load, 15_000);
         })
         .catch((err: Error) => {
           if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
@@ -265,7 +268,7 @@ export function App() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [lines]);
+  }, [drawnKeys]);
 
   // Lines drawn under the tapped vehicle's own: the picked lines and the picked station's transfers.
   const otherLines = useMemo(() => {
@@ -531,7 +534,7 @@ export function App() {
               alertSummary={alertSummary}
               counts={lineCounts}
               onChange={setLines}
-              onToggleRoute={(key) => setHiddenRoutes((h) => (h.includes(key) ? h.filter((k) => k !== key) : [...h, key]))}
+              onHiddenRoutesChange={setHiddenRoutes}
               onOpen={setLinePage}
               onClose={() => setLinesOpen(false)}
             />
