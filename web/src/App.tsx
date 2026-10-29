@@ -13,14 +13,15 @@ import { displayName, facingWay, MODE_LABELS, routeKey, sameStation, transferLin
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 
-/** The line filter is remembered between visits, when the browser allows it. */
-function savedLines(): string[] {
+/** A list of line keys remembered between visits, when the browser allows it. */
+function savedKeys(key: string): string[] {
   try {
-    const saved = JSON.parse(localStorage.getItem(LINES_KEY) ?? '[]');
+    const saved = JSON.parse(localStorage.getItem(key) ?? '[]');
     return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
   } catch {
     return [];
@@ -148,7 +149,9 @@ function useLineCounts(on: boolean): Record<string, number> | null {
 
 export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
-  const [lines, setLines] = useState<string[]>(savedLines);
+  const [lines, setLines] = useState<string[]>(() => savedKeys(LINES_KEY));
+  // Your lines whose routes are not drawn on the map; their vehicles still show.
+  const [hiddenRoutes, setHiddenRoutes] = useState<string[]>(() => savedKeys(HIDDEN_ROUTES_KEY));
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   // The Lines panel beside the map (its own page on phones), and the line whose page is open in it.
   const [linesOpen, setLinesOpen] = useState(false);
@@ -182,6 +185,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
+  useEffect(() => save(HIDDEN_ROUTES_KEY, JSON.stringify(hiddenRoutes)), [hiddenRoutes]);
 
   // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
@@ -267,9 +271,10 @@ export function App() {
   const otherLines = useMemo(() => {
     // A line opened on its own is shown alone.
     if (viewLine && !detail) return [];
-    const byKey = new Map([...filterRoutes, ...transferRoutes].map((l) => [l.key, l]));
+    const drawn = filterRoutes.filter((l) => !hiddenRoutes.includes(l.key));
+    const byKey = new Map([...drawn, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
-  }, [filterRoutes, transferRoutes, viewLine, detail]);
+  }, [filterRoutes, hiddenRoutes, transferRoutes, viewLine, detail]);
 
   // Stations tapped on the map arrive without their transfers; the line or the stop list knows them.
   const pickStation = (stop: Omit<Station, 'at' | 'transfers'>) => {
@@ -522,9 +527,11 @@ export function App() {
             <LinesScreen
               routes={routes}
               chosen={lines}
+              hiddenRoutes={hiddenRoutes}
               alertSummary={alertSummary}
               counts={lineCounts}
               onChange={setLines}
+              onToggleRoute={(key) => setHiddenRoutes((h) => (h.includes(key) ? h.filter((k) => k !== key) : [...h, key]))}
               onOpen={setLinePage}
               onClose={() => setLinesOpen(false)}
             />

@@ -17,6 +17,7 @@ export const GUIDE: GuideSection[] = [
       'Subway, Rail and Bus switch each kind on or off.',
       'Lines lists every line. Tap ☆ on the ones you ride to make them your lines; the map then shows only those, with their routes and stations drawn.',
       'Search finds any line or bus route, such as M15 or Q44. Clear brings every line back to the map.',
+      'The Route switch beside each of your lines draws its route on the map or hides it. Its vehicles show either way.',
       'Your lines are remembered for next time.',
     ],
   },
