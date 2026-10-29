@@ -123,8 +123,10 @@ export const StopMarker = memo(function StopMarker({ stop, lineKey, color, backg
       onPress={() => onPress(stop, lineKey)}
       accessibilityLabel={stop.name}
     >
-      {/* The dot is far smaller than a fingertip, so a clear square around it takes the tap. */}
-      <View style={styles.stopHit}>
+      {/* The dot is far smaller than a fingertip, so a clear square around it takes the tap. The square only
+          lays things out, so React Native would drop it and the map would center the dot's corner on the
+          station instead; collapsable={false} keeps it. */}
+      <View style={styles.stopHit} collapsable={false}>
         <View style={[styles.stopDot, small && styles.smallStopDot, { borderColor: color, backgroundColor: background }]} />
       </View>
     </Marker>
