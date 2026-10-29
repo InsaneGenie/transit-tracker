@@ -1,22 +1,10 @@
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  Animated,
-  PanResponder,
-  Pressable,
-  ScrollView,
-  SectionList,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-  type PanResponderInstance,
-  type ViewProps,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { boroughLabel } from '../../web/src/lines';
 import { legendGroups, MODE_LABELS } from '../../web/src/vehicles';
 import type { AlertSeverity, Mode, RouteInfo } from './api';
-import { LineBadge, lineStatus, vehicleCount } from './LineBadge';
+import { LineBadge, lineStatus } from './LineBadge';
+import { MyLineBadges } from './MyLineBadges';
 import { palette } from './theme';
 
 const BROWSE_MODES: Mode[] = ['subway', 'rail', 'bus'];
@@ -43,14 +31,6 @@ interface Props {
 
 type Section = { key: string; title?: string; mine?: boolean; browse?: boolean; data: RouteInfo[] };
 
-/** The line being dragged, so its list cell can sit above the others. */
-const DragContext = createContext<string | null>(null);
-
-function Cell({ item, style, ...rest }: ViewProps & { item?: { key?: string }; children?: ReactNode }) {
-  const dragKey = useContext(DragContext);
-  return <View {...rest} style={[style, dragKey !== null && item?.key === dragKey && styles.lifted]} />;
-}
-
 /** The Lines tab: your lines with how they're running, and every other line to browse and star. */
 export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts, dark, topInset, onChange, onHiddenRoutesChange, onOpen }: Props) {
   const c = palette(dark);
@@ -74,51 +54,8 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   const anyDrawn = chosen.some((k) => !hiddenRoutes.includes(k));
   const toggleAllRoutes = () =>
     onHiddenRoutesChange(anyDrawn ? [...new Set([...hiddenRoutes, ...chosen])] : hiddenRoutes.filter((k) => !chosenSet.has(k)));
-  // Dragging a card by its handle reorders your lines; the map and the site keep this order.
-  const [dragKey, setDragKey] = useState<string | null>(null);
-  const dragY = useRef(new Animated.Value(0)).current;
-  const rowHeight = useRef(74);
-  const drag = useRef<{ key: string; start: number; at: number } | null>(null);
-  const latest = useRef({ mine, chosen, byKey, onChange });
-  latest.current = { mine, chosen, byKey, onChange };
-  const responders = useRef(new Map<string, PanResponderInstance>());
-  const dragHandle = (key: string) => {
-    const existing = responders.current.get(key);
-    if (existing) return existing;
-    const end = () => {
-      drag.current = null;
-      Animated.spring(dragY, { toValue: 0, useNativeDriver: true, speed: 30 }).start(() => !drag.current && setDragKey(null));
-    };
-    const responder = PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => {
-        const start = latest.current.mine.findIndex((r) => r.key === key);
-        drag.current = { key, start, at: start };
-        dragY.setValue(0);
-        setDragKey(key);
-      },
-      onPanResponderMove: (_, g) => {
-        const d = drag.current;
-        if (!d) return;
-        const { mine: now, chosen: all, byKey: known, onChange: change } = latest.current;
-        const to = Math.max(0, Math.min(now.length - 1, d.start + Math.round(g.dy / rowHeight.current)));
-        if (to !== d.at) {
-          const order = now.map((r) => r.key).filter((k) => k !== key);
-          order.splice(to, 0, key);
-          d.at = to;
-          change([...order, ...all.filter((k) => !known.has(k))]);
-        }
-        dragY.setValue(g.dy - (d.at - d.start) * rowHeight.current);
-      },
-      onPanResponderRelease: end,
-      onPanResponderTerminate: end,
-    });
-    responders.current.set(key, responder);
-    return responder;
-  };
+  // While a badge is dragged the list holds still.
+  const [dragging, setDragging] = useState(false);
 
   const sections = useMemo((): Section[] => {
     if (q) {
@@ -129,7 +66,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
         data: legendGroups(routes, m).flatMap((g) => g.routes.filter(matches)),
       })).filter((s) => s.data.length);
     }
-    const mineSection: Section = { key: 'mine', mine: true, data: mine };
+    const mineSection: Section = { key: 'mine', mine: true, data: [] };
     const groups = legendGroups(routes, mode);
     // The subway is one list; rail lines go by railroad; buses show the picked borough's.
     const browse: Section[] =
@@ -160,87 +97,60 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
     );
   };
 
-  const renderItem = ({ item: r, section }: { item: RouteInfo; section: Section }) => {
+  const renderItem = ({ item: r }: { item: RouteInfo }) => {
     const s = status(r);
-    const count = counts?.[r.key];
     const name = r.mode === 'rail' ? r.name : (r.longName ?? `${MODE_LABELS[r.mode]} ${r.name}`);
-    const statusText = (
-      <Text style={[styles.meta, { color: c.muted }]} numberOfLines={1}>
-        <Text style={{ color: s.color ?? c.muted }}>
-          {section.mine && s.color ? '● ' : ''}
-          {s.text}
-        </Text>
-        {section.mine && count ? ` · ${vehicleCount(count, r.mode)} running` : ''}
-      </Text>
-    );
-    const card = (
+    return (
       <Pressable
         onPress={() => onOpen(r.key)}
         accessibilityRole="button"
         accessibilityLabel={`${r.name}, ${s.text}`}
-        style={({ pressed }) => [
-          section.mine ? [styles.card, { backgroundColor: c.raised }] : [styles.row, { borderColor: c.border }],
-          pressed && styles.pressed,
-        ]}
+        style={({ pressed }) => [styles.row, { borderColor: c.border }, pressed && styles.pressed]}
       >
-        {section.mine && (
-          <View
-            {...dragHandle(r.key).panHandlers}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 4 }}
-            accessible
-            accessibilityLabel={`Drag to move ${r.name}`}
-            style={styles.handle}
-          >
-            <Text style={[styles.handleText, { color: c.muted }]}>≡</Text>
-          </View>
-        )}
         <LineBadge route={r} />
         <View style={styles.rowText}>
           <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
             {name}
           </Text>
-          {statusText}
+          <Text style={[styles.meta, { color: s.color ?? c.muted }]} numberOfLines={1}>
+            {s.text}
+          </Text>
         </View>
-        {section.mine && (
-          <View style={styles.routeToggle}>
-            <Text style={[styles.routeLabel, { color: c.muted }]}>Route</Text>
-            <Switch
-              value={!hiddenRoutes.includes(r.key)}
-              onValueChange={() => toggleRoute(r.key)}
-              accessibilityLabel={`Draw the ${r.name} route on the map`}
-              style={styles.switch}
-            />
-          </View>
-        )}
         {star(r)}
       </Pressable>
-    );
-    if (!section.mine) return card;
-    const dragged = dragKey === r.key;
-    return (
-      <Animated.View
-        onLayout={(e) => (rowHeight.current = e.nativeEvent.layout.height + styles.cardWrap.marginBottom)}
-        style={[styles.cardWrap, dragged && [styles.dragged, { transform: [{ translateY: dragY }, { scale: 1.03 }] }]]}
-      >
-        {card}
-      </Animated.View>
     );
   };
 
   const renderSectionHeader = ({ section }: { section: Section }) => {
     if (section.mine) {
       return (
-        <View style={[styles.sectionHead, { backgroundColor: c.card }]}>
-          <Text style={[styles.h3, { color: c.muted }]}>My lines</Text>
-          {chosen.length > 0 && (
-            <View style={styles.headActions}>
-              <Pressable onPress={toggleAllRoutes} hitSlop={8} accessibilityRole="button">
-                <Text style={[styles.link, { color: c.accent }]}>{anyDrawn ? 'Hide all routes' : 'Show all routes'}</Text>
-              </Pressable>
-              <Pressable onPress={() => onChange([])} hitSlop={8} accessibilityRole="button">
-                <Text style={[styles.link, { color: c.accent }]}>Clear</Text>
-              </Pressable>
-            </View>
+        <View style={{ backgroundColor: c.card }}>
+          <View style={styles.sectionHead}>
+            <Text style={[styles.h3, { color: c.muted }]}>My lines</Text>
+            {chosen.length > 0 && (
+              <View style={styles.headActions}>
+                <Pressable onPress={toggleAllRoutes} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.link, { color: c.accent }]}>{anyDrawn ? 'Hide all routes' : 'Show all routes'}</Text>
+                </Pressable>
+                <Pressable onPress={() => onChange([])} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.link, { color: c.accent }]}>Clear</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+          {mine.length > 0 && (
+            <MyLineBadges
+              lines={mine}
+              hiddenRoutes={hiddenRoutes}
+              alertSummary={alertSummary}
+              counts={counts}
+              c={c}
+              onReorder={(order) => onChange([...order, ...chosen.filter((k) => !byKey.has(k))])}
+              onToggleRoute={toggleRoute}
+              onRemove={toggle}
+              onOpen={onOpen}
+              onDragging={setDragging}
+            />
           )}
         </View>
       );
@@ -304,32 +214,29 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
         clearButtonMode="while-editing"
         returnKeyType="search"
       />
-      <DragContext.Provider value={dragKey}>
-        <SectionList
-          sections={sections}
-          CellRendererComponent={Cell}
-          scrollEnabled={dragKey === null}
-          keyExtractor={(r) => r.key}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          renderSectionFooter={({ section }) =>
-            section.mine && section.data.length === 0 ? (
-              <Text style={[styles.empty, { color: c.muted }]}>
-                {routes.length
-                  ? 'Tap ☆ on the lines you ride to keep them here. The map then shows only those.'
-                  : 'The list of lines loads once the server answers.'}
-              </Text>
-            ) : null
-          }
-          ListEmptyComponent={q ? <Text style={[styles.empty, { color: c.muted }]}>No line matches.</Text> : undefined}
-          stickySectionHeadersEnabled={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={styles.list}
-          initialNumToRender={20}
-        />
-      </DragContext.Provider>
+      <SectionList
+        sections={sections}
+        scrollEnabled={!dragging}
+        keyExtractor={(r) => r.key}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        renderSectionFooter={({ section }) =>
+          section.mine && mine.length === 0 ? (
+            <Text style={[styles.empty, { color: c.muted }]}>
+              {routes.length
+                ? 'Tap ☆ on the lines you ride to keep them here. The map then shows only those.'
+                : 'The list of lines loads once the server answers.'}
+            </Text>
+          ) : null
+        }
+        ListEmptyComponent={q ? <Text style={[styles.empty, { color: c.muted }]}>No line matches.</Text> : undefined}
+        stickySectionHeadersEnabled={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.list}
+        initialNumToRender={20}
+      />
     </View>
   );
 }
@@ -345,12 +252,6 @@ const styles = StyleSheet.create({
   allLines: { marginTop: 22 },
   link: { fontSize: 15, marginTop: 8 },
   headActions: { flexDirection: 'row', gap: 16 },
-  cardWrap: { marginBottom: 8 },
-  dragged: { zIndex: 10, elevation: 8, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  lifted: { zIndex: 10, elevation: 10 },
-  handle: { marginLeft: -4, marginRight: -6, paddingHorizontal: 2, alignSelf: 'stretch', justifyContent: 'center' },
-  handleText: { fontSize: 22, lineHeight: 24 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   pressed: { opacity: 0.6 },
   rowText: { flex: 1, minWidth: 0 },
@@ -363,9 +264,6 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 14 },
   segmentTextOn: { fontWeight: '700' },
   boroughs: { gap: 6, paddingVertical: 8 },
-  routeToggle: { alignItems: 'center', gap: 2 },
-  routeLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
-  switch: { transform: [{ scale: 0.8 }] },
   borough: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1 },
   boroughText: { fontSize: 14, fontWeight: '600' },
 });
