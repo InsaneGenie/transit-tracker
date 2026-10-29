@@ -101,6 +101,14 @@ export function createApiServer(
       return send(200, { directions: store.arrivals(line, { lat, lon }, now()) });
     }
 
+    if (url.pathname === '/api/line-vehicles') {
+      const line = url.searchParams.get('line');
+      if (!line) return send(400, { error: 'line is required' });
+      return send(200, { vehicles: store.lineVehicles(line, now()) });
+    }
+
+    if (url.pathname === '/api/line-counts') return send(200, { lines: store.lineCounts(now()) });
+
     if (url.pathname === '/api/alerts') {
       if (!alerts) return send(200, { lines: {}, alerts: [] });
       const keys = (url.searchParams.get('lines') ?? '').split(',').filter(Boolean);

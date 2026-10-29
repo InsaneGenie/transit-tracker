@@ -1,7 +1,7 @@
-import type { AlertSeverity, ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { AlertSeverity, Arrival, ArrivalDirection, Mode, RouteInfo, RouteLine, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
@@ -52,6 +52,16 @@ export function fetchArrivals(
   signal?: AbortSignal,
 ): Promise<{ directions: ArrivalDirection[] }> {
   return get(`/api/arrivals?line=${encodeURIComponent(line)}&lat=${place.lat}&lon=${place.lon}`, signal);
+}
+
+/** Every vehicle of a line, placed along its stations. */
+export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[] }> {
+  return get(`/api/line-vehicles?line=${encodeURIComponent(line)}`, signal);
+}
+
+/** How many vehicles are out on each line, by line key. */
+export function fetchLineCounts(signal?: AbortSignal): Promise<{ lines: Record<string, number> }> {
+  return get('/api/line-counts', signal);
 }
 
 /** The most serious alert on now for each line with one, by line key. */

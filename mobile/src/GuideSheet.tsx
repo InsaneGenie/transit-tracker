@@ -26,7 +26,7 @@ export function GuideSheet({ visible, dark, onClose }: Props) {
           {GUIDE.map((section) => (
             <View key={section.title}>
               <Text style={[styles.h3, { color: c.muted }]}>{section.title}</Text>
-              {section.points.map((point) => (
+              {(section.appPoints ?? section.points).map((point) => (
                 <View style={styles.point} key={point}>
                   <Text style={[styles.bullet, { color: c.muted }]}>•</Text>
                   <Text style={[styles.pointText, { color: c.text }]}>{point}</Text>

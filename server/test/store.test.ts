@@ -281,6 +281,47 @@ describe('VehicleStore.arrivals', () => {
   });
 });
 
+describe('VehicleStore.lineVehicles', () => {
+  it('places each vehicle along the line, with the way it is going', async () => {
+    const feed = encodeFeed([
+      {
+        id: 'south',
+        tripUpdate: {
+          trip: { tripId: 'tS', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'A', departure: { time: T - 30 } },
+            { stopId: 'B', arrival: { time: T + 120 } },
+            { stopId: 'C', arrival: { time: T + 300 } },
+          ],
+        },
+      },
+      {
+        id: 'north',
+        tripUpdate: {
+          trip: { tripId: 'tN', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'B', arrival: { time: T + 20 } },
+            { stopId: 'A', arrival: { time: T + 200 } },
+          ],
+        },
+      },
+      // Standing at Bravo.
+      { id: 'n', vehicle: { trip: { tripId: 'tN', routeId: '1' }, vehicle: { id: '9' }, position: { latitude: 40.7901, longitude: -73.95 } } },
+    ]);
+    const store = new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(feed), T), () => indexPromise);
+    await store.loadStatic();
+    await store.pollAll();
+    expect(store.routeLines(['test-train:1'])[0].stops.map((s) => s.name)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    const placed = store.lineVehicles('test-train:1', T);
+    expect(placed.map((p) => [p.vehicle.id, p.at, p.heading, p.destination])).toEqual([
+      ['test-train:tS', 0.5, 1, 'Charlie'],
+      ['test-train:9', 1, -1, 'Alpha'],
+    ]);
+    expect(store.lineVehicles('nope:1', T)).toEqual([]);
+    expect(store.lineCounts(T)).toEqual({ 'test-train:1': 2 });
+  });
+});
+
 describe('API', () => {
   let close: (() => void) | undefined;
   afterEach(() => close?.());
