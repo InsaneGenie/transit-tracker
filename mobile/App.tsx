@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SEVERITY_COLORS, worstSeverity } from '../web/src/alerts';
 import { colorFor, displayName, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
@@ -43,10 +42,10 @@ import { LinePanel } from './src/LinePanel';
 import { LinesScreen } from './src/LinesScreen';
 import { LinesSheet } from './src/LinesSheet';
 import { ModeIcon } from './src/ModeIcon';
+import { LinesDrawer } from './src/LinesDrawer';
 import { PanelSheet } from './src/PanelSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { MODE_DOT, palette } from './src/theme';
-import { TAB_BAR_HEIGHT, TabBar, type Tab } from './src/TabBar';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { VehiclePanel } from './src/VehiclePanel';
 
@@ -221,8 +220,10 @@ function TransitMap() {
   // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
   const keepStation = useRef(false);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
-  const [tab, setTab] = useState<Tab>('map');
-  // The line whose own page is open in the Lines tab.
+  // The Lines sheet over the map: pulled up, and how tall it rests to show your lines.
+  const [linesUp, setLinesUp] = useState(false);
+  const [peekHeight, setPeekHeight] = useState(160);
+  // The line whose own page is open in the Lines sheet.
   const [linePage, setLinePage] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
@@ -300,12 +301,11 @@ function TransitMap() {
   // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
   const alertSummary = useAlertSummary(active);
   const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean), active);
-  // The Lines tab: how many vehicles each line has out, and the open line's route and alerts.
-  const onLines = tab === 'lines' && active;
+  // The Lines sheet: how many vehicles each line has out, and the open line's route and alerts.
+  const onLines = active;
   const lineCounts = useLineCounts(onLines);
   const pageRoute = useRouteLine(linePage, onLines);
   const pageAlerts = useLineAlerts(linePage ? [linePage] : [], onLines);
-  const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
@@ -533,9 +533,10 @@ function TransitMap() {
     openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
   };
 
-  // From a line's page in the Lines tab: the line on the map, at one of its stations when one is given.
+  // From a line's page in the Lines sheet: the line on the map, at one of its stations when one is given.
   const showLineOnMap = (key: string, stop?: UpcomingStop) => {
-    setTab('map');
+    setLinesUp(false);
+    setLinePage(null);
     if (stop?.lat !== undefined && stop.lon !== undefined) {
       setFollowing(false);
       openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
@@ -546,7 +547,8 @@ function TransitMap() {
 
   // A train or bus tapped on a line's page: close enough on the map to see it, and its card open.
   const showVehicleOnMap = ({ vehicle }: LineVehicle) => {
-    setTab('map');
+    setLinesUp(false);
+    setLinePage(null);
     setViewLine(null);
     setStation(null);
     select(vehicle.id, vehicle);
@@ -653,12 +655,22 @@ function TransitMap() {
   const lineOpen = !panelOpen && viewLine !== null;
   const anyPanel = panelOpen || lineOpen;
   // A panel takes the bottom half of the screen, or nearly all of it when dragged up.
-  // The map sits above the tab bar.
-  const mapHeight = height - TAB_BAR_HEIGHT - insets.bottom;
+  const mapHeight = height - insets.bottom;
   const halfPanel = mapHeight * 0.5;
   const fullPanel = mapHeight - insets.top - 12;
   // The map keeps its padding at half, so dragging the panel up covers the map rather than moving it.
   const panelPad = Math.min(panelHeight, halfPanel);
+  // With no panel open, the Lines sheet rests along the bottom, tall enough to show your lines.
+  const peekLimit = height * 0.45;
+  const linesPeek = Math.min(peekHeight + 24 + insets.bottom, peekLimit);
+  // A line's card opening below badges that already fill the lowered sheet pulls the sheet up to show it.
+  const lastPeek = useRef(0);
+  const onPeekHeight = (h: number) => {
+    if (lastPeek.current && h - lastPeek.current > 60 && h + 24 + insets.bottom > peekLimit) setLinesUp(true);
+    lastPeek.current = h;
+    setPeekHeight(h);
+  };
+  const bottomPad = anyPanel ? panelPad + insets.bottom : linesPeek;
   // The line drawn boldest, with its stations: the vehicle's own, or the line open on its own.
   const ownLine = panelOpen ? routeLine : lineOpen ? viewRoute : null;
   const ownColor = panelOpen
@@ -728,7 +740,7 @@ function TransitMap() {
             showsPointsOfInterests={false}
             pitchEnabled={false}
             userInterfaceStyle={dark ? 'dark' : 'light'}
-            mapPadding={{ top: insets.top + 96, right: 0, bottom: anyPanel ? panelPad : 0, left: 0 }}
+            mapPadding={{ top: insets.top + 96, right: 0, bottom: bottomPad, left: 0 }}
           >
             {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
             {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
@@ -856,7 +868,7 @@ function TransitMap() {
             {/* The map shows only your lines while there are any; this says so and leads to them. */}
             {lines.length > 0 && (
               <Pressable
-                onPress={() => setTab('lines')}
+                onPress={() => setLinesUp(true)}
                 accessibilityRole="button"
                 accessibilityLabel={`Showing my ${lines.length} lines`}
                 style={[styles.chip, { backgroundColor: c.accent }]}
@@ -876,7 +888,7 @@ function TransitMap() {
         </View>
 
         {!anyPanel && (
-          <View style={[styles.status, { bottom: 16, backgroundColor: c.chip }]} pointerEvents="none">
+          <View style={[styles.status, { bottom: bottomPad + 16, backgroundColor: c.chip }]} pointerEvents="none">
             <View
               style={[
                 styles.statusDot,
@@ -895,7 +907,7 @@ function TransitMap() {
             accessibilityLabel="Show my location"
             style={[
               styles.locate,
-              { backgroundColor: c.chip, bottom: (anyPanel ? panelPad : 0) + 16 },
+              { backgroundColor: c.chip, bottom: bottomPad + 16 },
             ]}
           >
             <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
@@ -912,7 +924,7 @@ function TransitMap() {
                 routes={routesByKey}
                 following={following}
                 dark={dark}
-                bottomInset={0}
+                bottomInset={insets.bottom}
                 onFollow={() => setFollowing((f) => !f)}
                 onAllStations={openOwnLine}
                 station={station}
@@ -947,7 +959,7 @@ function TransitMap() {
                 alerts={panelAlerts}
                 backLabel={viewLine.back?.label}
                 dark={dark}
-                bottomInset={0}
+                bottomInset={insets.bottom}
                 onBack={closeLine}
                 onStop={pickStation}
                 onArrival={(id) => {
@@ -961,8 +973,18 @@ function TransitMap() {
           </PanelSheet>
         )}
 
-        {tab === 'lines' && (
-          <View style={StyleSheet.absoluteFill}>
+        {!anyPanel && (
+          <LinesDrawer
+            peek={linesPeek}
+            full={height - insets.top - 8}
+            expanded={linesUp || linePage !== null}
+            onExpandedChange={(up) => {
+              setLinesUp(up);
+              if (!up) setLinePage(null);
+            }}
+            dark={dark}
+            bottomInset={insets.bottom}
+          >
             {linePage ? (
               <LinePage
                 key={linePage}
@@ -975,7 +997,7 @@ function TransitMap() {
                 starred={lines.includes(linePage)}
                 active={onLines}
                 dark={dark}
-                topInset={insets.top}
+                topInset={0}
                 onBack={() => setLinePage(null)}
                 onStar={() => changeLines(lines.includes(linePage) ? lines.filter((k) => k !== linePage) : [...lines, linePage])}
                 onShowOnMap={() => showLineOnMap(linePage)}
@@ -990,27 +1012,17 @@ function TransitMap() {
                 alertSummary={alertSummary}
                 counts={lineCounts}
                 dark={dark}
-                topInset={insets.top}
+                expanded={linesUp}
+                onExpand={() => setLinesUp(true)}
+                onPeekHeight={onPeekHeight}
                 onChange={changeLines}
                 onHiddenRoutesChange={changeHiddenRoutes}
                 onOpen={setLinePage}
               />
             )}
-          </View>
+          </LinesDrawer>
         )}
       </View>
-
-      <TabBar
-        tab={tab}
-        alertColor={pickedTrouble && SEVERITY_COLORS[pickedTrouble]}
-        dark={dark}
-        bottomInset={insets.bottom}
-        onTab={(t) => {
-          // Tapping Lines again goes back to the list.
-          if (t === 'lines' && tab === 'lines') setLinePage(null);
-          setTab(t);
-        }}
-      />
 
       <LinesSheet
         visible={surveyOpen}
