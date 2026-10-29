@@ -453,6 +453,35 @@ describe('buses', () => {
     expect(detail.path).toContainEqual([-73.94, 40.79]);
     expect(detail.path.at(-1)).toEqual([-73.95, 40.78]);
   });
+
+  it('follows the shape when Bus Time sends a bare trip id with underscores in it', async () => {
+    const { buildStaticIndex } = await import('../src/static-gtfs.js');
+    const { gtfs } = await import('./fixtures.js');
+    // Real bus trip ids look like `CH_D6-Weekday-SDon-085000_MISC_176`, and arrive without an agency prefix.
+    const tripId = 'CH_D6-Weekday-085000_MISC_176';
+    const renamed = (name: string) => (name in gtfs ? Readable.from([gtfs[name].replace(/\bt1\b/g, tripId)]) : null);
+    const busIndex = buildStaticIndex(renamed, 'stops');
+    const bare = (feed: Uint8Array) => {
+      const msg = decodeFeed(feed);
+      for (const e of msg.entity) {
+        const trip = e.vehicle?.trip ?? e.tripUpdate?.trip;
+        if (trip) Object.assign(trip, { tripId, routeId: '1' });
+      }
+      return msg;
+    };
+    const store = new VehicleStore(
+      [busFeedConfig],
+      {},
+      async (url) => snapshotFromFeed(bare(url.includes('vehiclePositions') ? positions : updates), T),
+      () => busIndex,
+    );
+    await store.loadStatic();
+    await store.pollAll();
+
+    const [bus] = store.vehicles(T);
+    const detail = store.detail(bus.id, T)!;
+    expect(detail.path).toContainEqual([-73.94, 40.79]);
+  });
 });
 
 describe('visible area', () => {

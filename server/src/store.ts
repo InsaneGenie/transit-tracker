@@ -126,8 +126,11 @@ interface FeedState {
  */
 const PART_MAX_AGE_MS = 120_000;
 
-/** `MTA NYCT_M15` -> `M15`, so realtime ids match the schedule's. */
-const unprefix = <T extends string | undefined>(id: T): T => (id ? id.replace(/^[^_]*_/, '') : id) as T;
+/**
+ * `MTA NYCT_M15` -> `M15`, so realtime ids match the schedule's. Only known agency prefixes go: Bus Time
+ * sends most ids bare now, and its trip ids have underscores of their own (`CH_D6-Weekday-SDon-085000_MISC_176`).
+ */
+const unprefix = <T extends string | undefined>(id: T): T => (id ? id.replace(/^(MTA NYCT|MTABC|MTA)_/, '') : id) as T;
 
 function withoutAgencyPrefixes(snapshot: FeedSnapshot): FeedSnapshot {
   return {
