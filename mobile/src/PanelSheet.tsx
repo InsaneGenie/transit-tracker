@@ -111,9 +111,12 @@ export function PanelSheet({ half, full, onHeight, onClose, children }: Props) {
   );
 }
 
-/** The bar at the top of a panel. Drag it, or tap it to make the panel taller or shorter again. */
+/**
+ * The bar at the top of a panel. Drag it, or tap it to make the panel taller or shorter again. A panel down
+ * the side of an iPad isn't dragged, so it has only a little space there instead.
+ */
 export function SheetHandle({ sheet, color }: { sheet?: Sheet; color: string }) {
-  if (!sheet) return <View style={[styles.handle, { backgroundColor: color }]} />;
+  if (!sheet) return <View style={styles.noHandle} />;
   return (
     <Pressable
       onPress={sheet.toggle}
@@ -132,4 +135,5 @@ const styles = StyleSheet.create({
   sheet: { justifyContent: 'flex-end' },
   handleTap: { alignSelf: 'center', paddingBottom: 10 },
   handle: { width: 36, height: 5, borderRadius: 3 },
+  noHandle: { height: 8 },
 });

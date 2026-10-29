@@ -67,7 +67,7 @@ Apple needs at least one iPhone screenshot at the **6.9-inch** size: 1320 × 286
 
 Take them on your iPhone in the TestFlight build (press the side button and volume up together). If your iPhone isn't a Pro Max or Plus, its screenshots are a different size: send them to me and I'll resize them to fit.
 
-iPad screenshots aren't needed, because the app is set to iPhone only.
+The app runs on iPad too, so Apple also needs at least one iPad screenshot at the **13-inch** size: 2064 × 2752 or 2048 × 2732 pixels (portrait), or the same turned sideways. On an iPad the lines and panels sit in a column down the left of the map, so a sideways shot shows the most map. Take them on an iPad in the TestFlight build (top button and volume up together); if your iPad is a smaller one, send them to me and I'll resize them. With no iPad, Xcode's iPad simulator on a Mac works too.
 
 ## Notes for the reviewer
 

@@ -43,8 +43,9 @@ import { LinesScreen } from './src/LinesScreen';
 import { LinesSheet } from './src/LinesSheet';
 import { ModeIcon } from './src/ModeIcon';
 import { LinesDrawer } from './src/LinesDrawer';
-import { PanelSheet } from './src/PanelSheet';
+import { PanelSheet, type Sheet } from './src/PanelSheet';
 import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
+import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { VehiclePanel } from './src/VehiclePanel';
@@ -57,6 +58,8 @@ const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
+// From this wide (an iPad, or a big iPhone window), panels go down the left side instead of along the bottom.
+const WIDE_MIN_WIDTH = 700;
 /** How often the tapped vehicle is refreshed. */
 const SELECTED_POLL_MS = 3000;
 /**
@@ -597,7 +600,7 @@ function TransitMap() {
       (b, [lon, lat]) => [Math.min(b[0], lon), Math.min(b[1], lat), Math.max(b[2], lon), Math.max(b[3], lat)],
       [Infinity, Infinity, -Infinity, -Infinity],
     );
-    const maxLonDelta = (360 * width) / (512 * 2 ** (VEHICLE_MIN_ZOOM + 0.5));
+    const maxLonDelta = (360 * mapWidth) / (512 * 2 ** (VEHICLE_MIN_ZOOM + 0.5));
     // The part of the map above the line panel is roughly as tall as the screen is wide.
     mapRef.current?.animateToRegion(
       {
@@ -654,7 +657,12 @@ function TransitMap() {
   // The line panel shows when a line is open on its own and no vehicle is.
   const lineOpen = !panelOpen && viewLine !== null;
   const anyPanel = panelOpen || lineOpen;
-  // A panel takes the bottom half of the screen, or nearly all of it when dragged up.
+  // On an iPad the panels and Lines sit in a column down the left, and the map is beside them.
+  const wide = width >= WIDE_MIN_WIDTH;
+  const sideWidth = wide ? Math.min(400, Math.round(width * 0.42)) : 0;
+  const sideLeft = wide ? sideWidth + 24 : 0;
+  const mapWidth = width - sideLeft;
+  // On a phone, a panel takes the bottom half of the screen, or nearly all of it when dragged up.
   const mapHeight = height - insets.bottom;
   const halfPanel = mapHeight * 0.5;
   const fullPanel = mapHeight - insets.top - 12;
@@ -670,7 +678,7 @@ function TransitMap() {
     lastPeek.current = h;
     setPeekHeight(h);
   };
-  const bottomPad = anyPanel ? panelPad + insets.bottom : linesPeek;
+  const bottomPad = wide ? insets.bottom : anyPanel ? panelPad + insets.bottom : linesPeek;
   // The line drawn boldest, with its stations: the vehicle's own, or the line open on its own.
   const ownLine = panelOpen ? routeLine : lineOpen ? viewRoute : null;
   const ownColor = panelOpen
@@ -719,6 +727,94 @@ function TransitMap() {
             ? `${inView.toLocaleString()} vehicles, zoom in to see them all`
             : `${inView.toLocaleString()} vehicles in view`;
 
+  // What the panels and the Lines sheet show; a phone holds them in sheets, an iPad down the side.
+  const vehiclePanel = (sheet?: Sheet) =>
+    detail && (
+      <VehiclePanel
+        sheet={sheet}
+        detail={detail}
+        loading={detail.loading}
+        routes={routesByKey}
+        following={following}
+        dark={dark}
+        bottomInset={wide ? 0 : insets.bottom}
+        onFollow={() => setFollowing((f) => !f)}
+        onAllStations={openOwnLine}
+        station={station}
+        stationTransfers={stationTransfers}
+        showTransfers={showTransfers}
+        onShowTransfers={setShowTransfers}
+        arrivals={arrivals}
+        alerts={panelAlerts}
+        onArrival={(id) => {
+          if (id === selectedId) return;
+          keepStation.current = true;
+          select(id);
+        }}
+        onLine={(key) => openLine(key)}
+        onStop={pickStation}
+        onClose={() => select(null)}
+      />
+    );
+  const linePanel = (sheet?: Sheet) =>
+    viewLine && (
+      <LinePanel
+        sheet={sheet}
+        info={routesByKey.get(viewLine.key)}
+        line={listedRoute}
+        routes={routesByKey}
+        station={station}
+        arrivals={arrivals}
+        alerts={panelAlerts}
+        backLabel={viewLine.back?.label}
+        dark={dark}
+        bottomInset={wide ? 0 : insets.bottom}
+        onBack={closeLine}
+        onStop={pickStation}
+        onArrival={(id) => {
+          keepStation.current = true;
+          select(id);
+        }}
+        onLine={(key) => openLine(key)}
+        onClose={closeViewLine}
+      />
+    );
+  const linesContent = linePage ? (
+    <LinePage
+      key={linePage}
+      lineKey={linePage}
+      info={routesByKey.get(linePage)}
+      line={pageRoute}
+      routes={routesByKey}
+      alerts={pageAlerts}
+      count={lineCounts?.[linePage]}
+      starred={lines.includes(linePage)}
+      active={onLines}
+      dark={dark}
+      topInset={0}
+      onBack={() => setLinePage(null)}
+      onStar={() => changeLines(lines.includes(linePage) ? lines.filter((k) => k !== linePage) : [...lines, linePage])}
+      onShowOnMap={() => showLineOnMap(linePage)}
+      onStation={(s) => showLineOnMap(linePage, s)}
+      onVehicle={showVehicleOnMap}
+    />
+    ) : (
+    <LinesScreen
+      routes={routes}
+      chosen={lines}
+      hiddenRoutes={hiddenRoutes}
+      alertSummary={alertSummary}
+      counts={lineCounts}
+      dark={dark}
+      expanded={wide || linesUp}
+      onExpand={() => setLinesUp(true)}
+      onPeekHeight={onPeekHeight}
+      onChange={changeLines}
+      onHiddenRoutesChange={changeHiddenRoutes}
+      onOpen={setLinePage}
+    />
+  );
+
   const onMapPress = (e: MapPressEvent) => {
     if (e.nativeEvent.action !== 'marker-press') select(null);
   };
@@ -740,7 +836,7 @@ function TransitMap() {
             showsPointsOfInterests={false}
             pitchEnabled={false}
             userInterfaceStyle={dark ? 'dark' : 'light'}
-            mapPadding={{ top: insets.top + 96, right: 0, bottom: bottomPad, left: 0 }}
+            mapPadding={{ top: insets.top + 96, right: 0, bottom: bottomPad, left: sideLeft }}
           >
             {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
             {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
@@ -844,7 +940,7 @@ function TransitMap() {
           </MapView>
         </View>
 
-        <View style={[styles.toolbar, { top: insets.top + 8 }]} pointerEvents="box-none">
+        <View style={[styles.toolbar, { top: insets.top + 8, left: sideLeft + 12 }]} pointerEvents="box-none">
           <View style={[styles.brand, { backgroundColor: c.chip }]}>
             <View style={styles.brandDot} />
             <Text style={[styles.brandText, { color: c.text }]}>NY Transit Live</Text>
@@ -887,19 +983,21 @@ function TransitMap() {
           </View>
         </View>
 
-        {!anyPanel && (
-          <View style={[styles.status, { bottom: bottomPad + 16, backgroundColor: c.chip }]} pointerEvents="none">
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: status === 'live' ? '#16a34a' : status === 'error' ? '#dc2626' : '#9ca3af' },
-              ]}
-            />
-            <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
+        {(!anyPanel || wide) && (
+          <View style={[styles.statusRow, { bottom: bottomPad + 16, left: sideLeft }]} pointerEvents="none">
+            <View style={[styles.status, { backgroundColor: c.chip }]}>
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: status === 'live' ? '#16a34a' : status === 'error' ? '#dc2626' : '#9ca3af' },
+                ]}
+              />
+              <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
+            </View>
           </View>
         )}
 
-        {!(anyPanel && panelHeight > halfPanel + 1) && (
+        {(wide || !(anyPanel && panelHeight > halfPanel + 1)) && (
           <Pressable
             onPress={locate}
             disabled={locating}
@@ -914,114 +1012,49 @@ function TransitMap() {
           </Pressable>
         )}
 
-        {panelOpen && (
-          <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={() => select(null)}>
-            {(sheet) => (
-              <VehiclePanel
-                sheet={sheet}
-                detail={detail}
-                loading={detail.loading}
-                routes={routesByKey}
-                following={following}
-                dark={dark}
-                bottomInset={insets.bottom}
-                onFollow={() => setFollowing((f) => !f)}
-                onAllStations={openOwnLine}
-                station={station}
-                stationTransfers={stationTransfers}
-                showTransfers={showTransfers}
-                onShowTransfers={setShowTransfers}
-                arrivals={arrivals}
-                alerts={panelAlerts}
-                onArrival={(id) => {
-                  if (id === selectedId) return;
-                  keepStation.current = true;
-                  select(id);
-                }}
-                onLine={(key) => openLine(key)}
-                onStop={pickStation}
-                onClose={() => select(null)}
-              />
-            )}
-          </PanelSheet>
-        )}
+        {panelOpen &&
+          (wide ? (
+            <SidePanel width={sideWidth} top={insets.top + 12} bottom={insets.bottom + 12} dark={dark}>
+              {vehiclePanel()}
+            </SidePanel>
+          ) : (
+            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={() => select(null)}>
+              {vehiclePanel}
+            </PanelSheet>
+          ))}
 
-        {lineOpen && viewLine && (
-          <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closeViewLine}>
-            {(sheet) => (
-              <LinePanel
-                sheet={sheet}
-                info={routesByKey.get(viewLine.key)}
-                line={listedRoute}
-                routes={routesByKey}
-                station={station}
-                arrivals={arrivals}
-                alerts={panelAlerts}
-                backLabel={viewLine.back?.label}
-                dark={dark}
-                bottomInset={insets.bottom}
-                onBack={closeLine}
-                onStop={pickStation}
-                onArrival={(id) => {
-                  keepStation.current = true;
-                  select(id);
-                }}
-                onLine={(key) => openLine(key)}
-                onClose={closeViewLine}
-              />
-            )}
-          </PanelSheet>
-        )}
+        {lineOpen &&
+          viewLine &&
+          (wide ? (
+            <SidePanel width={sideWidth} top={insets.top + 12} bottom={insets.bottom + 12} dark={dark}>
+              {linePanel()}
+            </SidePanel>
+          ) : (
+            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closeViewLine}>
+              {linePanel}
+            </PanelSheet>
+          ))}
 
-        {!anyPanel && (
-          <LinesDrawer
-            peek={linesPeek}
-            full={height - insets.top - 8}
-            expanded={linesUp || linePage !== null}
-            onExpandedChange={(up) => {
-              setLinesUp(up);
-              if (!up) setLinePage(null);
-            }}
-            dark={dark}
-            bottomInset={insets.bottom}
-          >
-            {linePage ? (
-              <LinePage
-                key={linePage}
-                lineKey={linePage}
-                info={routesByKey.get(linePage)}
-                line={pageRoute}
-                routes={routesByKey}
-                alerts={pageAlerts}
-                count={lineCounts?.[linePage]}
-                starred={lines.includes(linePage)}
-                active={onLines}
-                dark={dark}
-                topInset={0}
-                onBack={() => setLinePage(null)}
-                onStar={() => changeLines(lines.includes(linePage) ? lines.filter((k) => k !== linePage) : [...lines, linePage])}
-                onShowOnMap={() => showLineOnMap(linePage)}
-                onStation={(s) => showLineOnMap(linePage, s)}
-                onVehicle={showVehicleOnMap}
-              />
-            ) : (
-              <LinesScreen
-                routes={routes}
-                chosen={lines}
-                hiddenRoutes={hiddenRoutes}
-                alertSummary={alertSummary}
-                counts={lineCounts}
-                dark={dark}
-                expanded={linesUp}
-                onExpand={() => setLinesUp(true)}
-                onPeekHeight={onPeekHeight}
-                onChange={changeLines}
-                onHiddenRoutesChange={changeHiddenRoutes}
-                onOpen={setLinePage}
-              />
-            )}
-          </LinesDrawer>
-        )}
+        {!anyPanel &&
+          (wide ? (
+            <SidePanel width={sideWidth} top={insets.top + 12} bottom={insets.bottom + 12} fill dark={dark}>
+              {linesContent}
+            </SidePanel>
+          ) : (
+            <LinesDrawer
+              peek={linesPeek}
+              full={height - insets.top - 8}
+              expanded={linesUp || linePage !== null}
+              onExpandedChange={(up) => {
+                setLinesUp(up);
+                if (!up) setLinePage(null);
+              }}
+              dark={dark}
+              bottomInset={insets.bottom}
+            >
+              {linesContent}
+            </LinesDrawer>
+          ))}
       </View>
 
       <LinesSheet
@@ -1076,9 +1109,8 @@ const styles = StyleSheet.create({
   chipOff: { opacity: 0.45 },
   helpChip: { minWidth: 34, justifyContent: 'center' },
   chipText: { fontSize: 14, fontWeight: '600' },
+  statusRow: { position: 'absolute', right: 0, alignItems: 'center' },
   status: {
-    position: 'absolute',
-    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
