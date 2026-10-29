@@ -13,7 +13,7 @@ export function Guide({ onClose }: { onClose: () => void }) {
       <p className="muted small legend-hint">Live trains and buses across New York, wherever you zoom in.</p>
 
       <div className="legend-body">
-        {GUIDE.filter((section) => section.points.length).map((section) => (
+        {GUIDE.map((section) => (
           <section key={section.title}>
             <h3>{section.title}</h3>
             <ul className="guide-points">

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { worstSeverity } from './alerts';
-import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
+import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchLineCounts, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
 import { Guide } from './Guide';
-import { Legend } from './Legend';
+import { LinePage } from './LinePage';
 import { LinePanel } from './LinePanel';
+import { LinesScreen } from './LinesScreen';
 import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { themeFor, type Theme } from './theme';
@@ -125,11 +126,35 @@ function useAlertSummary(): Record<string, AlertSeverity> {
   return summary;
 }
 
+/** How many vehicles are out on each line, kept fresh while asked for; null until loaded. */
+function useLineCounts(on: boolean): Record<string, number> | null {
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchLineCounts(controller.signal)
+        .then((r) => setCounts(r.lines))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [on]);
+  return counts;
+}
+
 export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>(savedLines);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
-  const [legendOpen, setLegendOpen] = useState(false);
+  // The Lines panel beside the map (its own page on phones), and the line whose page is open in it.
+  const [linesOpen, setLinesOpen] = useState(false);
+  const [linePage, setLinePage] = useState<string | null>(null);
+  // A train or bus picked on a line's page, for the map to go to.
+  const [goTo, setGoTo] = useState<{ lon: number; lat: number; at: number } | null>(null);
   const [guideOpen, setGuideOpen] = useState(() => !guideSeen());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -276,14 +301,11 @@ export function App() {
     };
   }, []);
 
-  // Tapping a vehicle follows it; on small screens it also closes the legend to make room.
+  // Tapping a vehicle follows it; on small screens it also closes the guide to make room.
   const select = (id: string | null) => {
     setSelectedId(id);
     setFollowing(id !== null);
-    if (id && window.matchMedia('(max-width: 640px)').matches) {
-      setLegendOpen(false);
-      if (guideOpen) closeGuide();
-    }
+    if (id && guideOpen && window.matchMedia('(max-width: 640px)').matches) closeGuide();
   };
 
   // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
@@ -359,23 +381,53 @@ export function App() {
   // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
   const alertSummary = useAlertSummary();
   const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean));
-  const pickedAlerts = useLineAlerts(legendOpen ? lines : []);
   const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
+  // The Lines panel: how many vehicles each line has out, and the open line's route and alerts.
+  const lineCounts = useLineCounts(linesOpen);
+  const pageRoute = useRouteLine(linesOpen ? linePage : null);
+  const pageAlerts = useLineAlerts(linesOpen && linePage ? [linePage] : []);
+
+  // From a line's page: the line on the map, at one of its stations when one is given.
+  const showLineOnMap = (key: string, stop?: UpcomingStop) => {
+    setLinesOpen(false);
+    if (stop?.lat !== undefined && stop.lon !== undefined) {
+      openLine(key, { stopId: stop.stopId, name: stop.name, lon: stop.lon, lat: stop.lat, transfers: stop.transfers, at: Date.now() });
+    } else {
+      openLine(key);
+    }
+  };
+
+  // A train or bus picked on a line's page: the map goes to it, with its card open.
+  const showVehicleOnMap = ({ vehicle }: LineVehicle) => {
+    setLinesOpen(false);
+    setViewLine(null);
+    setStation(null);
+    select(vehicle.id);
+    setGoTo({ lon: vehicle.lon, lat: vehicle.lat, at: Date.now() });
+  };
 
   // Once closed, the guide doesn't open by itself again.
   const closeGuide = () => {
     setGuideOpen(false);
     save(GUIDE_SEEN_KEY, '1');
   };
-  // The guide and the Lines list sit in the same spot, so one closes the other.
-  const toggleLegend = () => {
-    setLegendOpen((o) => !o);
+  // The guide and the Lines panel sit in the same spot, so one closes the other.
+  const toggleLines = () => {
+    setLinesOpen((o) => !o);
     if (guideOpen) closeGuide();
   };
   const openGuide = () => {
     setGuideOpen(true);
-    setLegendOpen(false);
+    setLinesOpen(false);
   };
+
+  // Escape closes the Lines panel.
+  useEffect(() => {
+    if (!linesOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setLinesOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [linesOpen]);
 
   // In the toolbar on wider screens; on phones the toolbar is full, so it sits under the map buttons.
   const helpButton = (className: string) => (
@@ -413,6 +465,7 @@ export function App() {
         onFollowChange={setFollowing}
         onUpdate={setInfo}
         panelRef={panelRef}
+        goTo={goTo}
       />
 
       <div className="toolbar">
@@ -433,9 +486,9 @@ export function App() {
             </button>
           ))}
           <button
-            className={`chip chip-lines${lines.length ? ' chip-active' : ''}`}
-            aria-expanded={legendOpen}
-            onClick={toggleLegend}
+            className={`chip chip-lines${linesOpen ? ' chip-active' : ''}`}
+            aria-expanded={linesOpen}
+            onClick={toggleLines}
           >
             {lines.length ? `Lines (${lines.length})` : 'Lines'}
             {pickedTrouble && (
@@ -446,17 +499,37 @@ export function App() {
         </div>
       </div>
 
-      {legendOpen && (
-        <Legend
-          routes={routes}
-          modes={modes}
-          chosen={lines}
-          alertSummary={alertSummary}
-          alerts={pickedAlerts}
-          routesByKey={routesByKey}
-          onChange={setLines}
-          onClose={() => setLegendOpen(false)}
-        />
+      {linesOpen && (
+        <aside className="lines-panel" aria-label="Lines">
+          {linePage ? (
+            <LinePage
+              key={linePage}
+              lineKey={linePage}
+              info={routesByKey.get(linePage)}
+              line={pageRoute}
+              routes={routesByKey}
+              alerts={pageAlerts}
+              count={lineCounts?.[linePage]}
+              starred={lines.includes(linePage)}
+              onBack={() => setLinePage(null)}
+              onClose={() => setLinesOpen(false)}
+              onStar={() => setLines((l) => (l.includes(linePage) ? l.filter((k) => k !== linePage) : [...l, linePage]))}
+              onShowOnMap={() => showLineOnMap(linePage)}
+              onStation={(s) => showLineOnMap(linePage, s)}
+              onVehicle={showVehicleOnMap}
+            />
+          ) : (
+            <LinesScreen
+              routes={routes}
+              chosen={lines}
+              alertSummary={alertSummary}
+              counts={lineCounts}
+              onChange={setLines}
+              onOpen={setLinePage}
+              onClose={() => setLinesOpen(false)}
+            />
+          )}
+        </aside>
       )}
 
       {helpButton('help-float')}

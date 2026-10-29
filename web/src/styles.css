@@ -86,6 +86,7 @@ button {
 
 .toolbar {
   position: absolute;
+  z-index: 4;
   top: 12px;
   left: 12px;
   display: flex;
@@ -665,16 +666,6 @@ button {
   margin: 2px 0 4px;
 }
 
-.bus-group h4 {
-  margin: 12px 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.bus-group:first-of-type h4 {
-  margin-top: 4px;
-}
-
 .legend-body {
   overflow-y: auto;
   padding-bottom: 10px;
@@ -702,92 +693,6 @@ button {
 
 .link:hover {
   background: var(--hover);
-}
-
-.line-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.line-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.line-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.line {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--ink);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    opacity 0.15s,
-    transform 0.1s;
-}
-
-.line:hover .line-badge {
-  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4px var(--line);
-}
-
-.line:active {
-  transform: scale(0.94);
-}
-
-.line-off {
-  opacity: 0.3;
-}
-
-.line-badge {
-  display: grid;
-  place-items: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 6px;
-  border-radius: 14px;
-  font-weight: 700;
-  font-size: 12px;
-}
-
-/* Rail lines are a list of names with a colored dot. */
-.line-list .line {
-  padding: 6px 8px;
-  margin: 0 -8px;
-  width: calc(100% + 16px);
-  border-radius: 8px;
-}
-
-.line-list .line:hover {
-  background: var(--hover);
-}
-
-.line-list .line:hover .line-badge {
-  box-shadow: none;
-}
-
-.line-list .line-badge {
-  min-width: 12px;
-  height: 12px;
-  padding: 0;
-}
-
-.legend-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .swatch {
@@ -953,6 +858,9 @@ button {
 
 .alert-body {
   padding: 0 10px 8px 13px;
+  font-size: 13px;
+  line-height: 1.45;
+}
 
 /* How to use */
 
@@ -987,28 +895,7 @@ button {
   margin-left: -6px;
 }
 
-/* A dot on a line's badge in the Lines list, and on the Lines button for your picked lines. */
-.line-badge {
-  position: relative;
-}
-
-.line-alert {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--surface-solid);
-  border-radius: 50%;
-  background: var(--severity);
-}
-
-.line-name + .line-alert {
-  position: static;
-  width: 8px;
-  height: 8px;
-  border: 0;
-}
+/* A dot on the Lines button when one of your lines has trouble. */
 
 .chip-alert {
   width: 8px;
@@ -1016,6 +903,7 @@ button {
   margin-left: 6px;
   border-radius: 50%;
   background: var(--severity);
+}
 
 .guide-points li::marker {
   color: var(--muted);
@@ -1037,6 +925,368 @@ button {
 
 .help-float {
   display: none;
+}
+
+/* The Lines panel along the right of the map, with a page for each line in it. */
+
+.lines-panel {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 56px;
+  bottom: 12px;
+  width: 400px;
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+.lines-panel-inner {
+  padding: 16px 18px 24px;
+}
+
+.lines-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lines-panel h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.lines-panel h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.lines-search {
+  margin: 14px 0 8px;
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.lines-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  margin: 18px 0 8px;
+}
+
+.lines-all {
+  margin: 26px 0 10px !important;
+}
+
+.lines-group {
+  margin: 18px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lines-group-mode {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lines-empty {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.line-cards,
+.line-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line-card,
+.line-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.line-card {
+  margin-bottom: 8px;
+  padding-right: 8px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.line-item {
+  border-bottom: 1px solid var(--line);
+}
+
+.line-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.line-card .line-open {
+  padding: 12px;
+}
+
+.line-open:hover {
+  background: var(--hover);
+}
+
+.line-open-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.line-open-name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-open-status {
+  font-size: 13px;
+}
+
+.line-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0 5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.line-icon .mode-icon {
+  display: block;
+}
+
+.star {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.star:hover {
+  background: var(--hover);
+}
+
+.star-on {
+  color: #eab308;
+}
+
+.segment {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.segment button {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segment button[aria-selected='true'] {
+  background: var(--surface-solid);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.15);
+  font-weight: 700;
+}
+
+.line-back {
+  margin-left: -6px;
+  font-size: 16px;
+}
+
+.line-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0 14px;
+}
+
+.line-hero h2 {
+  font-size: 20px;
+}
+
+.line-hero p {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+.line-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.button {
+  flex: 1;
+  padding: 11px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover {
+  filter: brightness(0.96);
+}
+
+.button-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-starred {
+  color: #ca8a04;
+}
+
+.lines-panel .alerts {
+  max-height: none;
+  overflow: visible;
+}
+
+.lines-panel .segment {
+  margin: 14px 0 8px;
+}
+
+/* A line's stations down a strip in its color, with its vehicles placed between them. */
+.strip {
+  position: relative;
+  margin-top: 8px;
+}
+
+.strip-track {
+  position: absolute;
+  top: calc(var(--row) / 2);
+  left: 19px;
+  width: 6px;
+  border-radius: 3px;
+  background: var(--route);
+}
+
+.strip ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.strip-station {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--row);
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.strip-station:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.strip-dot {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 15px;
+  border: 3px solid var(--route);
+  border-radius: 50%;
+  background: var(--surface-solid);
+}
+
+.strip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-left: 22px;
+}
+
+.strip-name {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.strip-vehicle {
+  position: absolute;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  transform: translateY(-50%);
+  transition: top 0.8s ease;
+  cursor: pointer;
+}
+
+.strip-vehicle:hover {
+  transform: translateY(-50%) scale(1.12);
+}
+
+/* Not wide enough for the toolbar and the Lines panel side by side: the panel starts below the toolbar. */
+@media (max-width: 1060px) {
+  .lines-panel {
+    top: 68px;
+  }
 }
 
 /* Phones: one compact toolbar row, and the panel and legend become sheets along the bottom. */
@@ -1100,6 +1350,18 @@ button {
     width: auto;
   }
 
+  /* On phones, Lines is its own page over the map, under the toolbar. */
+  .lines-panel {
+    inset: 0;
+    width: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .lines-panel-inner {
+    padding: 64px 16px calc(32px + env(safe-area-inset-bottom));
+  }
+
   .status {
     left: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
@@ -1158,12 +1420,6 @@ button {
     background: var(--line);
   }
 
-  .line-badge {
-    min-width: 34px;
-    height: 34px;
-    border-radius: 17px;
-    font-size: 13px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1172,8 +1428,8 @@ button {
   }
 
   .chip,
-  .line,
-  .search {
+  .search,
+  .strip-vehicle {
     transition: none;
   }
 }
