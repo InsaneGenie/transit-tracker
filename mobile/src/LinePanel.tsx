@@ -2,6 +2,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
+import { SheetHandle, type Sheet } from './PanelSheet';
 import { palette } from './theme';
 import { Arrivals, panelStyles as styles, Transfers } from './VehiclePanel';
 
@@ -20,6 +21,8 @@ interface Props {
   backLabel?: string;
   dark: boolean;
   bottomInset: number;
+  /** Makes the panel draggable; without it the handle is only drawn. */
+  sheet?: Sheet;
   onBack: () => void;
   onStop: (stop: UpcomingStop) => void;
   onArrival: (vehicleId: string) => void;
@@ -39,6 +42,7 @@ export function LinePanel({
   backLabel,
   dark,
   bottomInset,
+  sheet,
   onBack,
   onStop,
   onArrival,
@@ -57,29 +61,32 @@ export function LinePanel({
       style={[styles.panel, { backgroundColor: c.card, paddingBottom: bottomInset + 12 }]}
       accessibilityLabel={`${name} line`}
     >
-      <View style={[styles.handle, { backgroundColor: c.border }]} />
-      <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: color }]}>
-          <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>
-        </View>
-        <View style={styles.title}>
-          <Text style={[styles.titleText, { color: c.text }]} numberOfLines={2}>
-            {info?.longName || `${MODE_LABELS[mode]} ${name}`}
-          </Text>
-          {info?.agency && <Text style={[styles.muted, { color: c.muted }]}>{info.agency}</Text>}
-        </View>
-        <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
-          <Text style={[styles.close, { color: c.muted }]}>✕</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.meta}>
-        <Text style={[styles.muted, { color: c.muted }]}>Every station and {noun} on this line</Text>
-        {backLabel && (
-          <Pressable onPress={onBack} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
-            <Text style={[styles.followText, { color: c.text }]}>Back to {backLabel}</Text>
+      {/* Dragging anywhere above the list moves the panel up or down. */}
+      <View {...sheet?.grab}>
+        <SheetHandle sheet={sheet} color={c.border} />
+        <View style={styles.header}>
+          <View style={[styles.badge, { backgroundColor: color }]}>
+            <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>
+          </View>
+          <View style={styles.title}>
+            <Text style={[styles.titleText, { color: c.text }]} numberOfLines={2}>
+              {info?.longName || `${MODE_LABELS[mode]} ${name}`}
+            </Text>
+            {info?.agency && <Text style={[styles.muted, { color: c.muted }]}>{info.agency}</Text>}
+          </View>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+            <Text style={[styles.close, { color: c.muted }]}>✕</Text>
           </Pressable>
-        )}
+        </View>
+
+        <View style={styles.meta}>
+          <Text style={[styles.muted, { color: c.muted }]}>Every station and {noun} on this line</Text>
+          {backLabel && (
+            <Pressable onPress={onBack} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
+              <Text style={[styles.followText, { color: c.text }]}>Back to {backLabel}</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <ScrollView style={styles.body}>

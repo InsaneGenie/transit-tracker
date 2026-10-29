@@ -11,12 +11,15 @@ import {
 } from '../../web/src/vehicles';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
+import { SheetHandle, type Sheet } from './PanelSheet';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
 
 interface Props {
   detail: VehicleDetail;
+  /** Only the vehicle is known so far; its stops are on their way. */
+  loading?: boolean;
   /** Every line by key, to show transfers with their colors. */
   routes: Map<string, RouteInfo>;
   following: boolean;
@@ -36,6 +39,8 @@ interface Props {
   onLine: (key: string) => void;
   dark: boolean;
   bottomInset: number;
+  /** Makes the panel draggable; without it the handle is only drawn. */
+  sheet?: Sheet;
   onFollow: () => void;
   /** Show every station on the vehicle's line, not just the ones ahead. */
   onAllStations: () => void;
@@ -161,6 +166,7 @@ export function Arrivals({
 /** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
 export function VehiclePanel({
   detail,
+  loading,
   routes,
   following,
   station,
@@ -173,6 +179,7 @@ export function VehiclePanel({
   onLine,
   dark,
   bottomInset,
+  sheet,
   onFollow,
   onAllStations,
   onStop,
@@ -189,45 +196,48 @@ export function VehiclePanel({
 
   return (
     <View style={[styles.panel, { backgroundColor: c.card, paddingBottom: bottomInset + 12 }]}>
-      <View style={[styles.handle, { backgroundColor: c.border }]} />
-      <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: color }]}>
-          <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>
-        </View>
-        <View style={styles.title}>
-          <Text style={[styles.titleText, { color: c.text }]} numberOfLines={2}>
-            {routeLongName || `${MODE_LABELS[vehicle.mode]} ${name}`}
-          </Text>
-          <Text style={[styles.muted, { color: c.muted }]}>{vehicle.agency}</Text>
-        </View>
-        <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
-          <Text style={[styles.close, { color: c.muted }]}>✕</Text>
-        </Pressable>
-      </View>
-
-      {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
-      <View style={styles.meta}>
-        <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
-          {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
-        </Text>
-        <View style={styles.actions}>
-          <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
-            <Text style={[styles.followText, { color: c.text }]}>All stations</Text>
-          </Pressable>
-          <Pressable
-            onPress={onFollow}
-            accessibilityRole="button"
-            accessibilityState={{ selected: following }}
-            style={[
-              styles.follow,
-              { borderColor: c.border },
-              following && { backgroundColor: c.accent, borderColor: c.accent },
-            ]}
-          >
-            <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
-              {following ? 'Following' : 'Follow'}
+      {/* Dragging anywhere above the list moves the panel up or down. */}
+      <View {...sheet?.grab}>
+        <SheetHandle sheet={sheet} color={c.border} />
+        <View style={styles.header}>
+          <View style={[styles.badge, { backgroundColor: color }]}>
+            <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>
+          </View>
+          <View style={styles.title}>
+            <Text style={[styles.titleText, { color: c.text }]} numberOfLines={2}>
+              {routeLongName || `${MODE_LABELS[vehicle.mode]} ${name}`}
             </Text>
+            <Text style={[styles.muted, { color: c.muted }]}>{vehicle.agency}</Text>
+          </View>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+            <Text style={[styles.close, { color: c.muted }]}>✕</Text>
           </Pressable>
+        </View>
+
+        {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
+        <View style={styles.meta}>
+          <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
+            {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
+          </Text>
+          <View style={styles.actions}>
+            <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
+              <Text style={[styles.followText, { color: c.text }]}>All stations</Text>
+            </Pressable>
+            <Pressable
+              onPress={onFollow}
+              accessibilityRole="button"
+              accessibilityState={{ selected: following }}
+              style={[
+                styles.follow,
+                { borderColor: c.border },
+                following && { backgroundColor: c.accent, borderColor: c.accent },
+              ]}
+            >
+              <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
+                {following ? 'Following' : 'Follow'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -303,7 +313,9 @@ export function VehiclePanel({
             })}
           </View>
         ) : (
-          <Text style={[styles.muted, { color: c.muted }]}>No upcoming stops reported for this vehicle.</Text>
+          <Text style={[styles.muted, { color: c.muted }]}>
+            {loading ? 'Finding its next stops…' : 'No upcoming stops reported for this vehicle.'}
+          </Text>
         )}
       </ScrollView>
     </View>
@@ -322,7 +334,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: -2 },
   },
-  handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginBottom: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   badge: {
     minWidth: 40,

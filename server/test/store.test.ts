@@ -124,6 +124,26 @@ describe('VehicleStore', () => {
     expect(store.vehicles(T)).toHaveLength(1);
     expect(store.status()[0].lastError).toBe('/train returned 503');
   });
+
+  it("keeps a URL's last vehicles when only that URL fails", async () => {
+    const twoUrls: FeedConfig = { ...bus, apiKeyEnv: undefined, realtimeUrls: ['https://example.test/bus', 'https://example.test/train'] };
+    let fail = false;
+    const store = new VehicleStore(
+      [twoUrls],
+      {},
+      async (url) => {
+        if (fail && url.includes('/bus')) throw new Error('/bus returned 503');
+        return snapshotFromFeed(decodeFeed(url.includes('/bus') ? busFeed : trainFeed), T);
+      },
+      () => indexPromise,
+    );
+    await store.pollAll();
+    expect(store.vehicles(T).map((v) => v.id)).toContain('test-bus:MTA_1234');
+    fail = true;
+    await store.pollAll();
+    expect(store.vehicles(T).map((v) => v.id)).toContain('test-bus:MTA_1234');
+    expect(store.status()[0].lastError).toBe('/bus returned 503');
+  });
 });
 
 describe('VehicleStore.detail', () => {
