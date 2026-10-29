@@ -22,6 +22,7 @@ npm start
 The first start downloads the MTA schedules (about a minute). Then open:
 
 - http://localhost:3000/api/vehicles: every vehicle. Add `?bbox=west,south,east,north` to get only what's on screen, or `?mode=subway,rail,bus`.
+- http://localhost:3000/api/alerts: which lines have delays, suspensions or service changes right now. Add `?lines=mta-subway:A,mta-bus:M15` for the full alerts on those lines, including planned work starting in the next 3 days. They come from the MTA's service alert feed, which needs no key.
 - http://localhost:3000/api/health: whether each feed is working.
 
 Run the tests with `npm test`.

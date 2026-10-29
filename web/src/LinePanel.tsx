@@ -1,5 +1,6 @@
 import type { CSSProperties, Ref } from 'react';
-import type { ArrivalDirection, RouteInfo, RouteLine, UpcomingStop } from './api';
+import { AlertList } from './AlertList';
+import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, UpcomingStop } from './api';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
@@ -14,6 +15,8 @@ interface Props {
   station: Station | null;
   /** The line's vehicles on their way to the picked station. */
   arrivals: ArrivalDirection[] | null;
+  /** Delays and service changes on the line; null while loading. */
+  alerts: ServiceAlert[] | null;
   /** Where Back goes, e.g. "A train"; no Back button without it. */
   backLabel?: string;
   onBack: () => void;
@@ -26,7 +29,7 @@ interface Props {
 }
 
 /** A whole line, opened from a station's transfers: its stations here, its route and vehicles on the map. */
-export function LinePanel({ info, line, routes, station, arrivals, backLabel, onBack, onStop, onArrival, onLine, onClose, ref }: Props) {
+export function LinePanel({ info, line, routes, station, arrivals, alerts, backLabel, onBack, onStop, onArrival, onLine, onClose, ref }: Props) {
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
@@ -55,6 +58,8 @@ export function LinePanel({ info, line, routes, station, arrivals, backLabel, on
           </button>
         )}
       </div>
+
+      <AlertList alerts={alerts} routes={routes} empty="No delays or service changes on this line right now." />
 
       {station && (
         <section className="station-card" aria-label="Picked station">

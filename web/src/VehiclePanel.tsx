@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties, type Ref } from 'react';
-import type { ArrivalDirection, RouteInfo, UpcomingStop, VehicleDetail } from './api';
+import { AlertList } from './AlertList';
+import type { ArrivalDirection, RouteInfo, ServiceAlert, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
@@ -19,6 +20,8 @@ interface Props {
   onShowTransfers: (show: boolean) => void;
   /** The line's vehicles on their way to the picked station, both ways; null while loading. */
   arrivals: ArrivalDirection[] | null;
+  /** Delays and service changes on the vehicle's line; null while loading. */
+  alerts: ServiceAlert[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
   /** Tapping a transfer line at the station shows that whole line. */
@@ -127,6 +130,7 @@ export function VehiclePanel({
   showTransfers,
   onShowTransfers,
   arrivals,
+  alerts,
   onArrival,
   onLine,
   onFollow,
@@ -176,6 +180,8 @@ export function VehiclePanel({
           </button>
         </div>
       </div>
+
+      <AlertList alerts={alerts} routes={routes} />
 
       {station && (
         <section className="station-card" aria-label="Picked station">

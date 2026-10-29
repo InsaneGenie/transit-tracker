@@ -40,6 +40,15 @@ export const GUIDE: GuideSection[] = [
     ],
   },
   {
+    title: 'Delays and service changes',
+    points: [
+      'A train or bus card, and a line opened on its own, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',
+      'Tap an alert to read all of it, such as which stops are skipped and what to take instead.',
+      'In Lines, a red, orange or yellow dot on a line means it is suspended, delayed or changed right now. Your picked lines’ alerts are listed at the top.',
+      'A dot on the Lines button means one of your picked lines has trouble.',
+    ],
+  },
+  {
     title: 'Good to know',
     points: [
       'Positions and arrival times come from the MTA’s live feeds and refresh every few seconds. Times are predictions and can change.',

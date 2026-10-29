@@ -1,7 +1,7 @@
-import type { ArrivalDirection, RouteInfo, RouteLine, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { Arrival, ArrivalDirection, Mode, RouteInfo, RouteLine, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { AlertSeverity, Arrival, ArrivalDirection, Mode, RouteInfo, RouteLine, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
@@ -52,4 +52,13 @@ export function fetchArrivals(
   signal?: AbortSignal,
 ): Promise<{ directions: ArrivalDirection[] }> {
   return get(`/api/arrivals?line=${encodeURIComponent(line)}&lat=${place.lat}&lon=${place.lon}`, signal);
+}
+
+/** The most serious alert on now for each line with one, by line key. */
+export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record<string, AlertSeverity> }> {
+  return get('/api/alerts', signal);
+}
+
+export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
+  return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
 }
