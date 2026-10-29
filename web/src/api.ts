@@ -142,3 +142,13 @@ export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record
 export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
   return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
 }
+
+/** Every vehicle of a line, placed along its stations. */
+export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[] }> {
+  return get(`/api/line-vehicles?line=${encodeURIComponent(line)}`, signal);
+}
+
+/** How many vehicles are out on each line, by line key. */
+export function fetchLineCounts(signal?: AbortSignal): Promise<{ lines: Record<string, number> }> {
+  return get('/api/line-counts', signal);
+}

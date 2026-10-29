@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from '../../web/src/vehicles';
+import { towards } from '../../web/src/lines';
 import { AlertList } from './AlertList';
 import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { LineBadge, vehicleCount } from './LineBadge';
@@ -52,16 +53,6 @@ function useLineVehicles(key: string, active: boolean): LineVehicle[] | null {
     };
   }, [key, active]);
   return vehicles;
-}
-
-/** Where most of these vehicles are going, or the end of the line that way. */
-function towards(vehicles: LineVehicle[], heading: 1 | -1, stops: UpcomingStop[]): string | undefined {
-  const tally = new Map<string, number>();
-  for (const v of vehicles) if (v.heading === heading && v.destination) tally.set(v.destination, (tally.get(v.destination) ?? 0) + 1);
-  const top = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const end = heading === 1 ? stops.at(-1) : stops[0];
-  const name = top ?? end?.name;
-  return name && tidyStopName(name);
 }
 
 /** A line's own page: its alerts, and its trains or buses moving down a strip of its stations. */

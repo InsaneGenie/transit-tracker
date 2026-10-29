@@ -69,6 +69,8 @@ interface Props {
   selectedId: string | null;
   detail: VehicleDetail | null;
   following: boolean;
+  /** A place to bring into view, close enough to see vehicles; `at` makes each request new. */
+  goTo?: { lon: number; lat: number; at: number } | null;
   onSelect: (id: string | null) => void;
   onFollowChange: (following: boolean) => void;
   onUpdate: (info: MapInfo) => void;
@@ -772,6 +774,18 @@ export function MapView(props: Props) {
     (map.getSource('selected-path') as GeoJSONSource).setData(selection.path);
     (map.getSource('selected-stops') as GeoJSONSource).setData(selection.stops);
   }, [detail, selectedId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !props.goTo) return;
+    state.current.easeUntil = performance.now() + 650;
+    map.easeTo({
+      center: [props.goTo.lon, props.goTo.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      offset: uncoveredOffset(map, props.panelRef.current),
+      duration: 600,
+    });
+  }, [props.goTo]);
 
   // While following, zoom around the vehicle rather than the pointer, and bring it to the middle.
   useEffect(() => {

@@ -1,10 +1,5 @@
 /** The "How to use" guide, shared by the website and the app so both say the same thing. */
-export type GuideSection = {
-  title: string;
-  points: string[];
-  /** What the app says instead, where it works differently from the website. */
-  appPoints?: string[];
-};
+export type GuideSection = { title: string; points: string[] };
 
 export const GUIDE: GuideSection[] = [
   {
@@ -20,22 +15,15 @@ export const GUIDE: GuideSection[] = [
     title: 'Show only what you want',
     points: [
       'Subway, Rail and Bus switch each kind on or off.',
-      'Lines lists every line. Tap some to show only those; their routes and stations are drawn on the map.',
-      'Type in the bus search to find a route, such as M15 or Q44. Show all brings every line back.',
-      'Your picked lines are remembered for next time.',
-    ],
-    appPoints: [
-      'Subway, Rail and Bus switch each kind on or off.',
-      'The Lines tab lists every line. Tap ☆ on the ones you ride to make them your lines; the map then shows only those, with their routes and stations drawn.',
+      'Lines lists every line. Tap ☆ on the ones you ride to make them your lines; the map then shows only those, with their routes and stations drawn.',
       'Search finds any line or bus route, such as M15 or Q44. Clear brings every line back to the map.',
       'Your lines are remembered for next time.',
     ],
   },
   {
     title: 'A line’s own page',
-    points: [],
-    appPoints: [
-      'Tap any line in the Lines tab to open its page: how many trains or buses are out, its alerts, and every station.',
+    points: [
+      'Tap any line in Lines to open its page: how many trains or buses are out, its alerts, and every station.',
       'Its trains or buses move down the strip of stations as they go. Switch direction at the top of the strip.',
       'Tap a train or bus there to jump to it on the map, or a station to open the line there. Show on map shows the whole line.',
     ],
@@ -56,22 +44,16 @@ export const GUIDE: GuideSection[] = [
       'Its card lists the vehicles of that line on their way there, in both directions. Tap one to jump to it.',
       'The colored badges are the lines you can change to there. Show transfer lines draws them on the map.',
       'Tap a transfer badge to see that line on its own. Back returns you to where you were.',
-      'Stations of the lines you picked in Lines can be tapped too; that line opens at the station.',
+      'Stations of your lines can be tapped too; that line opens at the station.',
     ],
   },
   {
     title: 'Delays and service changes',
     points: [
-      'A train or bus card, and a line opened on its own, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',
-      'Tap an alert to read all of it, such as which stops are skipped and what to take instead.',
-      'In Lines, a red, orange or yellow dot on a line means it is suspended, delayed or changed right now. Your picked lines’ alerts are listed at the top.',
-      'A dot on the Lines button means one of your picked lines has trouble.',
-    ],
-    appPoints: [
       'A train or bus card, and a line’s page, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',
       'Tap an alert to read all of it, such as which stops are skipped and what to take instead.',
-      'In the Lines tab, each line says whether it has delays, a suspension or a service change right now.',
-      'A dot on the Lines tab means one of your lines has trouble.',
+      'In Lines, each line says whether it has delays, a suspension or a service change right now.',
+      'A dot on Lines means one of your lines has trouble.',
     ],
   },
   {
