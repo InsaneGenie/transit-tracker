@@ -927,38 +927,41 @@ button {
   display: none;
 }
 
-/* The Lines page: its own page over the map, with a page for each line. */
+/* The Lines panel along the right of the map, with a page for each line in it. */
 
-.lines-page {
+.lines-panel {
   position: absolute;
   z-index: 3;
-  inset: 0;
+  top: 12px;
+  right: 56px;
+  bottom: 12px;
+  width: 400px;
   overflow-y: auto;
+  border-radius: var(--radius);
   background: var(--surface-solid);
+  box-shadow: var(--shadow);
   color: var(--ink);
 }
 
-.lines-page-inner {
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 76px 20px 40px;
+.lines-panel-inner {
+  padding: 16px 18px 24px;
 }
 
-.lines-page-header {
+.lines-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.lines-page h2 {
+.lines-panel h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
-.lines-page h3 {
+.lines-panel h3 {
   margin: 0;
   font-size: 12px;
   font-weight: 700;
@@ -1147,7 +1150,7 @@ button {
 }
 
 .line-hero h2 {
-  font-size: 26px;
+  font-size: 20px;
 }
 
 .line-hero p {
@@ -1186,12 +1189,12 @@ button {
   color: #ca8a04;
 }
 
-.lines-page .alerts {
+.lines-panel .alerts {
   max-height: none;
   overflow: visible;
 }
 
-.lines-page .segment {
+.lines-panel .segment {
   margin: 14px 0 8px;
 }
 
@@ -1279,6 +1282,13 @@ button {
   transform: translateY(-50%) scale(1.12);
 }
 
+/* Not wide enough for the toolbar and the Lines panel side by side: the panel starts below the toolbar. */
+@media (max-width: 1060px) {
+  .lines-panel {
+    top: 68px;
+  }
+}
+
 /* Phones: one compact toolbar row, and the panel and legend become sheets along the bottom. */
 @media (max-width: 640px) {
   .toolbar {
@@ -1340,16 +1350,16 @@ button {
     width: auto;
   }
 
-  .lines-page-inner {
+  /* On phones, Lines is its own page over the map, under the toolbar. */
+  .lines-panel {
+    inset: 0;
+    width: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .lines-panel-inner {
     padding: 64px 16px calc(32px + env(safe-area-inset-bottom));
-  }
-
-  .lines-page h2 {
-    font-size: 26px;
-  }
-
-  .line-hero h2 {
-    font-size: 22px;
   }
 
   .status {

@@ -20,7 +20,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** The Lines page: your lines with how they're running, and every other line to browse and star. */
+/** The Lines panel: your lines with how they're running, and every other line to browse and star. */
 export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, onOpen, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('subway');
   const [search, setSearch] = useState('');
@@ -78,8 +78,8 @@ export function LinesScreen({ routes, chosen, alertSummary, counts, onChange, on
   const mine = chosen.flatMap((k) => byKey.get(k) ?? []);
 
   return (
-    <div className="lines-page-inner">
-      <header className="lines-page-header">
+    <div className="lines-panel-inner">
+      <header className="lines-panel-header">
         <h2>Lines</h2>
         <CloseButton onClick={onClose} />
       </header>

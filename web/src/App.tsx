@@ -150,7 +150,7 @@ export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>(savedLines);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
-  // The Lines page, over the map, and the line whose own page is open in it.
+  // The Lines panel beside the map (its own page on phones), and the line whose page is open in it.
   const [linesOpen, setLinesOpen] = useState(false);
   const [linePage, setLinePage] = useState<string | null>(null);
   // A train or bus picked on a line's page, for the map to go to.
@@ -382,7 +382,7 @@ export function App() {
   const alertSummary = useAlertSummary();
   const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean));
   const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
-  // The Lines page: how many vehicles each line has out, and the open line's route and alerts.
+  // The Lines panel: how many vehicles each line has out, and the open line's route and alerts.
   const lineCounts = useLineCounts(linesOpen);
   const pageRoute = useRouteLine(linesOpen ? linePage : null);
   const pageAlerts = useLineAlerts(linesOpen && linePage ? [linePage] : []);
@@ -411,7 +411,7 @@ export function App() {
     setGuideOpen(false);
     save(GUIDE_SEEN_KEY, '1');
   };
-  // The Lines page covers the map, so the guide, which is about the map, closes it.
+  // The guide and the Lines panel sit in the same spot, so one closes the other.
   const toggleLines = () => {
     setLinesOpen((o) => !o);
     if (guideOpen) closeGuide();
@@ -421,7 +421,7 @@ export function App() {
     setLinesOpen(false);
   };
 
-  // Escape leaves the Lines page.
+  // Escape closes the Lines panel.
   useEffect(() => {
     if (!linesOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setLinesOpen(false);
@@ -500,7 +500,7 @@ export function App() {
       </div>
 
       {linesOpen && (
-        <main className="lines-page" aria-label="Lines">
+        <aside className="lines-panel" aria-label="Lines">
           {linePage ? (
             <LinePage
               key={linePage}
@@ -529,7 +529,7 @@ export function App() {
               onClose={() => setLinesOpen(false)}
             />
           )}
-        </main>
+        </aside>
       )}
 
       {helpButton('help-float')}

@@ -62,8 +62,8 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
   const out = count ?? vehicles?.length;
 
   return (
-    <div className="lines-page-inner" style={{ '--route': color, '--row': `${ROW}px` } as CSSProperties}>
-      <header className="lines-page-header">
+    <div className="lines-panel-inner" style={{ '--route': color, '--row': `${ROW}px` } as CSSProperties}>
+      <header className="lines-panel-header">
         <button className="link line-back" onClick={onBack}>
           ‹ Lines
         </button>
