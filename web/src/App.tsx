@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { worstSeverity } from './alerts';
 import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
+import { Guide } from './Guide';
 import { Legend } from './Legend';
 import { LinePanel } from './LinePanel';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
@@ -10,6 +11,7 @@ import { displayName, facingWay, MODE_LABELS, routeKey, sameStation, transferLin
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
+const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 
@@ -20,6 +22,15 @@ function savedLines(): string[] {
     return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+/** The guide opens by itself on a first visit only. */
+function guideSeen(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_SEEN_KEY) !== null;
+  } catch {
+    return true;
   }
 }
 
@@ -118,6 +129,7 @@ export function App() {
   const [lines, setLines] = useState<string[]>(savedLines);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(() => !guideSeen());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
@@ -267,7 +279,10 @@ export function App() {
   const select = (id: string | null) => {
     setSelectedId(id);
     setFollowing(id !== null);
-    if (id && window.matchMedia('(max-width: 640px)').matches) setLegendOpen(false);
+    if (id && window.matchMedia('(max-width: 640px)').matches) {
+      setLegendOpen(false);
+      if (guideOpen) closeGuide();
+    }
   };
 
   // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
@@ -346,6 +361,34 @@ export function App() {
   const pickedAlerts = useLineAlerts(legendOpen ? lines : []);
   const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
 
+  // Once closed, the guide doesn't open by itself again.
+  const closeGuide = () => {
+    setGuideOpen(false);
+    save(GUIDE_SEEN_KEY, '1');
+  };
+  // The guide and the Lines list sit in the same spot, so one closes the other.
+  const toggleLegend = () => {
+    setLegendOpen((o) => !o);
+    if (guideOpen) closeGuide();
+  };
+  const openGuide = () => {
+    setGuideOpen(true);
+    setLegendOpen(false);
+  };
+
+  // In the toolbar on wider screens; on phones the toolbar is full, so it sits under the map buttons.
+  const helpButton = (className: string) => (
+    <button
+      className={`${className}${guideOpen ? ' chip-active' : ''}`}
+      aria-expanded={guideOpen}
+      aria-label="How to use"
+      title="How to use"
+      onClick={guideOpen ? closeGuide : openGuide}
+    >
+      ?
+    </button>
+  );
+
   const toggle = (mode: Mode) =>
     setModes((m) => (m.includes(mode) ? m.filter((x) => x !== mode) : [...m, mode]));
 
@@ -391,13 +434,14 @@ export function App() {
           <button
             className={`chip chip-lines${lines.length ? ' chip-active' : ''}`}
             aria-expanded={legendOpen}
-            onClick={() => setLegendOpen((o) => !o)}
+            onClick={toggleLegend}
           >
             {lines.length ? `Lines (${lines.length})` : 'Lines'}
             {pickedTrouble && (
               <span className={`chip-alert alert-${pickedTrouble}`} role="img" aria-label="Service alerts on your lines" />
             )}
           </button>
+          {helpButton('chip chip-help')}
         </div>
       </div>
 
@@ -413,6 +457,9 @@ export function App() {
           onClose={() => setLegendOpen(false)}
         />
       )}
+
+      {helpButton('help-float')}
+      {guideOpen && <Guide onClose={closeGuide} />}
 
       <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
