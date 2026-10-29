@@ -549,7 +549,8 @@ export function MapView(props: Props) {
 
     const clickable = ['vehicle-dots', 'vehicle-labels', 'vehicle-arrows', 'selected-dots'];
     map.on('click', (e) => {
-      const pad = 8;
+      // A fingertip needs more room than a mouse pointer to land on a small station dot.
+      const pad = matchMedia('(pointer: coarse)').matches ? 16 : 8;
       const box: [[number, number], [number, number]] = [
         [e.point.x - pad, e.point.y - pad],
         [e.point.x + pad, e.point.y + pad],

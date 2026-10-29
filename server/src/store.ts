@@ -1,5 +1,5 @@
 import { estimatePosition, trackBetween } from './estimate.js';
-import { distanceMeters, Polyline, type LatLon } from './geo.js';
+import { distanceMeters, nearestOnPath, Polyline, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
 import { loadStaticIndex, type StaticIndex } from './static-gtfs.js';
@@ -152,6 +152,23 @@ function inside(b: Bbox, lat: number, lon: number, margin = 0): boolean {
 
 /** A station counts as on a path when the path passes within this distance of it. */
 const ON_PATH_M = 150;
+
+/**
+ * A station this close to its drawn line is drawn on it. Bus stops sit at the curb and stations beside
+ * the track, while the line runs down the middle of the street, so their dots would otherwise sit off it.
+ */
+const SNAP_M = 50;
+
+/** A station moved onto the nearest of the drawn paths, when one passes close enough. */
+function ontoPaths<T extends { lat: number; lon: number }>(stop: T, paths: [number, number][][]): T {
+  let nearest: (LatLon & { meters: number }) | undefined;
+  for (const path of paths) {
+    const at = nearestOnPath(stop, path);
+    if (!nearest || at.meters < nearest.meters) nearest = at;
+  }
+  if (!nearest || nearest.meters > SNAP_M) return stop;
+  return { ...stop, lat: round(nearest.lat), lon: round(nearest.lon) };
+}
 
 /**
  * Stations in the order a rider meets them: along the longest path first, then any branch that path
@@ -416,7 +433,8 @@ export class VehicleStore {
       const stop = index.stops.get(id);
       if (!stop) return [];
       const transfers = this.transferKeys(feed, index, id, routeId);
-      return [{ stopId: id, name: stop.name, lat: stop.lat, lon: stop.lon, ...(transfers && { transfers }) }];
+      const place = ontoPaths({ lat: stop.lat, lon: stop.lon }, paths);
+      return [{ stopId: id, name: stop.name, ...place, ...(transfers && { transfers }) }];
     });
     // Stops-only schedules list a route's stops in order already.
     const ordered = feed.config.staticDetail === 'stops' ? stops : alongPaths(stops, paths);
