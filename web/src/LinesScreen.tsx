@@ -3,6 +3,7 @@ import type { AlertSeverity, Mode, RouteInfo } from './api';
 import { CloseButton } from './CloseButton';
 import { LineBadge } from './LineBadge';
 import { boroughLabel, lineStatus, vehicleCount } from './lines';
+import { useDragOrder } from './useDragOrder';
 import { legendGroups, MODE_LABELS } from './vehicles';
 
 const BROWSE_MODES: Mode[] = ['subway', 'rail', 'bus'];
@@ -56,7 +57,6 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   const toggle = (key: string) => onChange(chosenSet.has(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
   const toggleRoute = (key: string) =>
     onHiddenRoutesChange(hiddenRoutes.includes(key) ? hiddenRoutes.filter((k) => k !== key) : [...hiddenRoutes, key]);
-  const [editing, setEditing] = useState(false);
 
   // While searching, every matching line of every kind; otherwise the picked kind, in its groups.
   const groups = useMemo(() => {
@@ -74,29 +74,52 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
   }, [q, routes, mode, borough]);
 
   const mine = chosen.flatMap((k) => byKey.get(k) ?? []);
-  const edit = editing && mine.length > 0;
   const anyDrawn = chosen.some((k) => !hiddenRoutes.includes(k));
   const toggleAllRoutes = () =>
     onHiddenRoutesChange(anyDrawn ? [...new Set([...hiddenRoutes, ...chosen])] : hiddenRoutes.filter((k) => !chosenSet.has(k)));
-  // Moves one of your lines up or down a place; the map and the app keep this order.
-  const move = (i: number, by: -1 | 1) => {
-    const order = mine.map((r) => r.key);
-    [order[i], order[i + by]] = [order[i + by], order[i]];
-    onChange([...order, ...chosen.filter((k) => !byKey.has(k))]);
+  // Dragging your lines reorders them; the map and the app keep this order.
+  const drag = useDragOrder(
+    mine.map((r) => r.key),
+    (order) => onChange([...order, ...chosen.filter((k) => !byKey.has(k))]),
+  );
+
+  const routeSwitch = (r: RouteInfo, label: boolean) => {
+    const drawn = !hiddenRoutes.includes(r.key);
+    return (
+      <button
+        className={label ? 'route-toggle' : 'route-toggle route-toggle-small'}
+        role="switch"
+        data-no-drag
+        aria-checked={drawn}
+        aria-label={`Draw the ${r.name} route on the map`}
+        title={drawn ? 'Route drawn on the map' : 'Route hidden on the map'}
+        onClick={() => toggleRoute(r.key)}
+      >
+        {label && <span className="route-toggle-label">Route</span>}
+        <span className="switch" aria-hidden="true" />
+      </button>
+    );
   };
 
-  // Your lines at a glance: a badge each, with how it's running. Tap one to open its page.
+  // Your lines at a glance: a badge each, with how it's running and its route switch. Tap one to open
+  // its page, or drag it to a new place.
   const tile = (r: RouteInfo) => {
     const count = counts?.[r.key];
     const s = lineStatus(alertSummary[r.key], counts ? (count ?? 0) : undefined);
     const hidden = hiddenRoutes.includes(r.key);
     const caption = r.mode === 'rail' ? r.name : count ? vehicleCount(count, r.mode) : counts ? 'Not running' : '\u00a0';
     return (
-      <li key={r.key}>
+      <li
+        key={r.key}
+        data-drag-key={r.key}
+        className={`line-tile${hidden ? ' line-tile-hidden' : ''}${drag.dragging === r.key ? ' dragging' : ''}`}
+        onPointerDown={(e) => drag.onPointerDown(e, r.key)}
+        onContextMenu={(e) => drag.dragging && e.preventDefault()}
+      >
         <button
-          className={`line-tile${hidden ? ' line-tile-hidden' : ''}`}
-          onClick={() => onOpen(r.key)}
-          title={`${r.longName ?? r.name}: ${s.text}${count ? `, ${vehicleCount(count, r.mode)} running` : ''}${hidden ? '. Route hidden on the map' : ''}`}
+          className="line-tile-open"
+          onClick={() => !drag.justDropped() && onOpen(r.key)}
+          title={`${r.longName ?? r.name}: ${s.text}${count ? `, ${vehicleCount(count, r.mode)} running` : ''}. Drag to move it.`}
         >
           <span className="line-tile-badge">
             <LineBadge route={r} size={36} />
@@ -104,39 +127,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
           </span>
           <span className="line-tile-caption">{caption}</span>
         </button>
-      </li>
-    );
-  };
-
-  // While editing: each of your lines on one row, to move, hide its route or remove.
-  const editRow = (r: RouteInfo, i: number) => {
-    const drawn = !hiddenRoutes.includes(r.key);
-    return (
-      <li key={r.key} className="line-edit">
-        <div className="line-move">
-          <button aria-label={`Move ${r.name} up`} title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
-            ↑
-          </button>
-          <button aria-label={`Move ${r.name} down`} title="Move down" disabled={i === mine.length - 1} onClick={() => move(i, 1)}>
-            ↓
-          </button>
-        </div>
-        <LineBadge route={r} size={28} />
-        <span className="line-edit-name">{r.mode === 'rail' ? r.name : (r.longName ?? `${MODE_LABELS[r.mode]} ${r.name}`)}</span>
-        <button
-          className="route-toggle"
-          role="switch"
-          aria-checked={drawn}
-          aria-label={`Draw the ${r.name} route on the map`}
-          title={drawn ? 'Route drawn on the map' : 'Route hidden on the map'}
-          onClick={() => toggleRoute(r.key)}
-        >
-          <span className="route-toggle-label">Route</span>
-          <span className="switch" aria-hidden="true" />
-        </button>
-        <button className="line-remove" aria-label={`Remove ${r.name} from my lines`} title="Remove from my lines" onClick={() => toggle(r.key)}>
-          ×
-        </button>
+        {routeSwitch(r, false)}
       </li>
     );
   };
@@ -193,23 +184,14 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
                 <button className="link" onClick={toggleAllRoutes}>
                   {anyDrawn ? 'Hide all routes' : 'Show all routes'}
                 </button>
-                {edit && (
-                  <button className="link" onClick={() => onChange([])}>
-                    Clear
-                  </button>
-                )}
-                <button className={`link${edit ? ' link-strong' : ''}`} aria-pressed={edit} onClick={() => setEditing(!edit)}>
-                  {edit ? 'Done' : 'Edit'}
+                <button className="link" onClick={() => onChange([])}>
+                  Clear
                 </button>
               </div>
             )}
           </div>
           {mine.length ? (
-            edit ? (
-              <ul className="line-edits">{mine.map(editRow)}</ul>
-            ) : (
-              <ul className="line-tiles">{mine.map(tile)}</ul>
-            )
+            <ul className="line-tiles">{mine.map(tile)}</ul>
           ) : (
             <p className="muted lines-empty">
               {routes.length
