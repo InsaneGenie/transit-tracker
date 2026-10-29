@@ -389,6 +389,8 @@ export function App() {
   // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
   const alertSummary = useAlertSummary();
   const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean));
+  // Your lines with their route switched on; a line switched off hides its vehicles too.
+  const shownLines = useMemo(() => (lines.length ? lines.filter((k) => !hiddenRoutes.includes(k)) : null), [lines, hiddenRoutes]);
   const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
   // The Lines panel: how many vehicles each line has out, and the open line's route and alerts.
   const lineCounts = useLineCounts(linesOpen);
@@ -458,7 +460,7 @@ export function App() {
       <MapView
         theme={theme}
         modes={viewLine && viewRoute && !modes.includes(viewRoute.mode) ? [...modes, viewRoute.mode] : modes}
-        lines={viewLine ? [viewLine.key] : lines}
+        lines={viewLine ? [viewLine.key] : shownLines}
         routeLine={detail ? routeLine : viewRoute}
         focusLine={viewLine?.atStation ? null : viewRoute}
         otherLines={otherLines}
