@@ -73,6 +73,23 @@ export interface ArrivalDirection {
   arrivals: Arrival[];
 }
 
+/** Mirrors `AlertSeverity` in server/src/alerts.ts. */
+export type AlertSeverity = 'suspended' | 'delays' | 'changes' | 'info';
+
+/** Mirrors `ServiceAlert` in server/src/alerts.ts. */
+export interface ServiceAlert {
+  id: string;
+  type: string;
+  severity: AlertSeverity;
+  header: string;
+  description?: string;
+  when?: string;
+  start: number;
+  end?: number;
+  active: boolean;
+  lines: string[];
+}
+
 const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -105,4 +122,13 @@ export function fetchArrivals(
   signal?: AbortSignal,
 ): Promise<{ directions: ArrivalDirection[] }> {
   return get(`/api/arrivals?line=${encodeURIComponent(line)}&lat=${place.lat}&lon=${place.lon}`, signal);
+}
+
+/** The most serious alert on now for each line with one, by line key. */
+export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record<string, AlertSeverity> }> {
+  return get('/api/alerts', signal);
+}
+
+export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
+  return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
 }

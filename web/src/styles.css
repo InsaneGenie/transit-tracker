@@ -810,6 +810,194 @@ button {
   background: var(--surface-solid);
 }
 
+/* Service alerts: delays, suspensions and planned changes */
+
+.alert-suspended {
+  --severity: #dc2626;
+}
+
+.alert-delays {
+  --severity: #ea580c;
+}
+
+.alert-changes {
+  --severity: #ca8a04;
+}
+
+.alert-info {
+  --severity: #64748b;
+}
+
+.alerts {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-height: 40vh;
+  margin: 8px 0;
+  overflow-y: auto;
+}
+
+.panel > .alerts-empty {
+  margin: 8px 0;
+}
+
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert {
+  border-radius: 10px;
+  box-shadow: inset 3px 0 0 var(--severity);
+  background: color-mix(in srgb, var(--severity) 9%, var(--surface-solid));
+}
+
+.alert-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px 8px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alert-head:hover {
+  background: var(--hover);
+}
+
+.alert-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+}
+
+.alert-kind strong {
+  color: var(--severity);
+}
+
+.alert-kind .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--severity);
+}
+
+.alert-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 3px 3px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.alert-open .alert-chevron {
+  margin-bottom: -3px;
+  transform: rotate(-135deg);
+}
+
+/* Collapsed, the alert is two lines; open, all of it. */
+.alert-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.alert-open .alert-text {
+  display: block;
+}
+
+.alert-line {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 1px;
+  vertical-align: -3px;
+}
+
+.alert-body {
+  padding: 0 10px 8px 13px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.alert-body p {
+  margin: 0 0 8px;
+}
+
+.alert-body p:last-child {
+  margin-bottom: 0;
+}
+
+.alert-period {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.alerts-more {
+  margin-left: -6px;
+}
+
+/* A dot on a line's badge in the Lines list, and on the Lines button for your picked lines. */
+.line-badge {
+  position: relative;
+}
+
+.line-alert {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface-solid);
+  border-radius: 50%;
+  background: var(--severity);
+}
+
+.line-name + .line-alert {
+  position: static;
+  width: 8px;
+  height: 8px;
+  border: 0;
+}
+
+.chip-alert {
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--severity);
+}
+
 /* Phones: one compact toolbar row, and the panel and legend become sheets along the bottom. */
 @media (max-width: 640px) {
   .toolbar {
@@ -861,16 +1049,19 @@ button {
   }
 
   /* The sheet is short, so it scrolls as one instead of squeezing the stops under the arrivals. */
-  .panel:has(.station-card) {
+  .panel:has(.station-card),
+  .panel:has(.alerts) {
     overflow-y: auto;
   }
 
-  .panel:has(.station-card) .stops {
+  .panel:has(.station-card) .stops,
+  .panel:has(.alerts) .stops {
     flex: none;
     overflow: visible;
   }
 
-  .panel:has(.station-card) .arrivals {
+  .panel:has(.station-card) .arrivals,
+  .panel .alerts {
     max-height: none;
     overflow: visible;
   }

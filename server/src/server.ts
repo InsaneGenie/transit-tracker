@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
+import type { AlertStore } from './alerts.js';
 import type { Bbox, VehicleStore } from './store.js';
 
 /** The built map (`npm run build` in web/), served alongside the API so the whole site is one service. */
@@ -49,7 +50,12 @@ function parseBbox(value: string | null): Bbox | null | 'invalid' {
   return parts as Bbox;
 }
 
-export function createApiServer(store: VehicleStore, now = () => Date.now() / 1000, webDir = WEB_DIR): Server {
+export function createApiServer(
+  store: VehicleStore,
+  now = () => Date.now() / 1000,
+  webDir = WEB_DIR,
+  alerts?: AlertStore,
+): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const send = (status: number, body: unknown) => {
@@ -95,7 +101,18 @@ export function createApiServer(store: VehicleStore, now = () => Date.now() / 10
       return send(200, { directions: store.arrivals(line, { lat, lon }, now()) });
     }
 
-    if (url.pathname === '/api/health') return send(200, { feeds: store.status() });
+    if (url.pathname === '/api/alerts') {
+      if (!alerts) return send(200, { lines: {}, alerts: [] });
+      const keys = (url.searchParams.get('lines') ?? '').split(',').filter(Boolean);
+      if (keys.length > MAX_ROUTE_LINES) return send(400, { error: `at most ${MAX_ROUTE_LINES} lines at once` });
+      // With no lines asked for, just which lines have trouble now; the details are asked for per line.
+      return keys.length ? send(200, { alerts: alerts.forLines(keys, now()) }) : send(200, { lines: alerts.summary(now()) });
+    }
+
+    if (url.pathname === '/api/health') {
+      const alertStatus = alerts && { updatedAt: alerts.updatedAt, lastError: alerts.lastError };
+      return send(200, { feeds: store.status(), ...(alertStatus && { alerts: alertStatus }) });
+    }
 
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
 

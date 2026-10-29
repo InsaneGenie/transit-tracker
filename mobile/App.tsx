@@ -13,18 +13,23 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SEVERITY_COLORS, worstSeverity } from '../web/src/alerts';
 import { colorFor, displayName, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
+  fetchAlerts,
+  fetchAlertSummary,
   fetchArrivals,
   fetchRouteLines,
   fetchRoutes,
   fetchVehicleDetail,
   fetchVehicles,
   NotFoundError,
+  type AlertSeverity,
   type ArrivalDirection,
   type Mode,
   type RouteInfo,
   type RouteLine,
+  type ServiceAlert,
   type Station,
   type UpcomingStop,
   type Vehicle,
@@ -88,6 +93,53 @@ function useRouteLine(key: string | null, active: boolean): RouteLine | null {
     };
   }, [key, active]);
   return line;
+}
+
+/** Alerts change every few minutes at most. */
+const ALERT_POLL_MS = 120_000;
+
+/** Service alerts on these lines, kept fresh while the app is on screen; null while loading. */
+function useLineAlerts(keys: string[], active: boolean): ServiceAlert[] | null {
+  const [alerts, setAlerts] = useState<ServiceAlert[] | null>(null);
+  const joined = keys.slice(0, MAX_DRAWN_LINES).join(',');
+  useEffect(() => {
+    if (!joined || !active) {
+      setAlerts(null);
+      return;
+    }
+    const controller = new AbortController();
+    const load = () =>
+      fetchAlerts(joined.split(','), controller.signal)
+        .then((r) => setAlerts(r.alerts))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, ALERT_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [joined, active]);
+  return alerts;
+}
+
+/** Which lines have trouble right now, by line key. */
+function useAlertSummary(active: boolean): Record<string, AlertSeverity> {
+  const [summary, setSummary] = useState<Record<string, AlertSeverity>>({});
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchAlertSummary(controller.signal)
+        .then((r) => setSummary(r.lines))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, ALERT_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [active]);
+  return summary;
 }
 
 /** Whether the app is on screen; nothing is fetched while it's in the background. */
@@ -157,6 +209,12 @@ function TransitMap() {
     () => (viewRoute && viewLine?.ahead ? { ...viewRoute, stops: facingWay(viewRoute.stops, viewLine.ahead) } : viewRoute),
     [viewRoute, viewLine?.ahead],
   );
+
+  // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
+  const alertSummary = useAlertSummary(active);
+  const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean), active);
+  const pickedAlerts = useLineAlerts(linesOpen ? lines : [], active);
+  const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
 
   // A picked station belongs to the vehicle it was picked for, or to the line when one of its arrivals is picked.
   useEffect(() => {
@@ -656,6 +714,12 @@ function TransitMap() {
             <Text style={[styles.chipText, { color: lines.length ? '#ffffff' : c.text }]}>
               {lines.length ? `Lines (${lines.length})` : 'Lines'}
             </Text>
+            {pickedTrouble && (
+              <View
+                style={[styles.chipAlert, { backgroundColor: SEVERITY_COLORS[pickedTrouble], borderColor: lines.length ? '#ffffff' : c.chip }]}
+                accessibilityLabel="Service alerts on your lines"
+              />
+            )}
           </Pressable>
         </View>
       </View>
@@ -700,6 +764,7 @@ function TransitMap() {
             showTransfers={showTransfers}
             onShowTransfers={setShowTransfers}
             arrivals={arrivals}
+            alerts={panelAlerts}
             onArrival={(id) => {
               if (id === selectedId) return;
               keepStation.current = true;
@@ -724,6 +789,7 @@ function TransitMap() {
             routes={routesByKey}
             station={station}
             arrivals={arrivals}
+            alerts={panelAlerts}
             backLabel={viewLine.back?.label}
             dark={dark}
             bottomInset={insets.bottom}
@@ -747,6 +813,9 @@ function TransitMap() {
         routes={routes}
         modes={modes}
         chosen={lines}
+        alertSummary={alertSummary}
+        alerts={pickedAlerts}
+        routesByKey={routesByKey}
         dark={dark}
         onChange={changeLines}
         onClose={() => setLinesOpen(false)}
@@ -793,6 +862,7 @@ const styles = StyleSheet.create({
   chipOff: { opacity: 0.45 },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
   chipText: { fontSize: 14, fontWeight: '600' },
+  chipAlert: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5 },
   status: {
     position: 'absolute',
     alignSelf: 'center',

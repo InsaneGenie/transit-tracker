@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
-import type { ArrivalDirection, RouteInfo, RouteLine, Station, UpcomingStop } from './api';
+import { AlertList } from './AlertList';
+import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
 import { palette } from './theme';
 import { Arrivals, panelStyles as styles, Transfers } from './VehiclePanel';
 
@@ -13,6 +14,8 @@ interface Props {
   station: Station | null;
   /** The line's vehicles on their way to the picked station. */
   arrivals: ArrivalDirection[] | null;
+  /** Delays and service changes on the line; null while loading. */
+  alerts: ServiceAlert[] | null;
   /** Where Back goes, e.g. "the A train"; no Back button without it. */
   backLabel?: string;
   dark: boolean;
@@ -32,6 +35,7 @@ export function LinePanel({
   routes,
   station,
   arrivals,
+  alerts,
   backLabel,
   dark,
   bottomInset,
@@ -79,6 +83,8 @@ export function LinePanel({
       </View>
 
       <ScrollView style={styles.body}>
+        <AlertList alerts={alerts} routes={routes} dark={dark} empty="No delays or service changes on this line right now." />
+
         {station && (
           <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">
             <View style={styles.stationText}>

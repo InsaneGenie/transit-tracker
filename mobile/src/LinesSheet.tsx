@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colorFor, legendGroups, MODE_LABELS, textColorFor } from '../../web/src/vehicles';
-import type { Mode, RouteInfo } from './api';
+import { SEVERITY_COLORS, SEVERITY_LABELS } from '../../web/src/alerts';
+import { AlertList } from './AlertList';
+import type { AlertSeverity, Mode, RouteInfo, ServiceAlert } from './api';
 import { palette } from './theme';
 
 interface Props {
@@ -10,33 +12,56 @@ interface Props {
   modes: Mode[];
   /** Line keys shown; empty means every line. */
   chosen: string[];
+  /** The most serious alert on now, by line key, to mark those lines. */
+  alertSummary: Record<string, AlertSeverity>;
+  /** Every alert on the chosen lines; null while loading. */
+  alerts: ServiceAlert[] | null;
+  routesByKey: Map<string, RouteInfo>;
   dark: boolean;
   onChange: (chosen: string[]) => void;
   onClose: () => void;
 }
 
-function LineButton({ route, on, dark, onToggle }: { route: RouteInfo; on: boolean; dark: boolean; onToggle: () => void }) {
+function LineButton({
+  route,
+  on,
+  alert,
+  dark,
+  onToggle,
+}: {
+  route: RouteInfo;
+  on: boolean;
+  alert?: AlertSeverity;
+  dark: boolean;
+  onToggle: () => void;
+}) {
   const c = palette(dark);
   const color = colorFor({ routeColor: route.color, mode: route.mode });
   const rail = route.mode === 'rail';
+  const name = route.longName ?? route.name;
+  const mark = alert && (
+    <View style={[styles.alertDot, !rail && styles.alertOnBadge, { backgroundColor: SEVERITY_COLORS[alert], borderColor: c.card }]} />
+  );
   return (
     <Pressable
       onPress={onToggle}
       accessibilityRole="button"
       accessibilityState={{ selected: on }}
-      accessibilityLabel={route.longName ?? route.name}
+      accessibilityLabel={alert ? `${name}, ${SEVERITY_LABELS[alert].toLowerCase()}` : name}
       style={[styles.line, rail && styles.railLine, !on && styles.off]}
     >
       <View style={[styles.lineBadge, { backgroundColor: color }, rail && styles.railBadge]}>
         {!rail && <Text style={[styles.lineBadgeText, { color: textColorFor(color) }]}>{route.name}</Text>}
+        {!rail && mark}
       </View>
       {rail && <Text style={[styles.railName, { color: c.text }]}>{route.name}</Text>}
+      {rail && mark}
     </Pressable>
   );
 }
 
 /** What each dot color means, and a way to show only some lines. */
-export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onClose }: Props) {
+export function LinesSheet({ visible, routes, modes, chosen, alertSummary, alerts, routesByKey, dark, onChange, onClose }: Props) {
   const c = palette(dark);
   const [busSearch, setBusSearch] = useState('');
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
@@ -73,10 +98,22 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
           {chosen.length
             ? `Showing ${chosen.length} chosen line${chosen.length > 1 ? 's' : ''}.`
             : 'Tap lines to show only those.'}
+          {Object.keys(alertSummary).length > 0 && ' A red, orange or yellow dot means delays or a service change.'}
         </Text>
 
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
           {routes.length === 0 && <Text style={{ color: c.muted }}>The list of lines loads once the server answers.</Text>}
+
+          {chosen.length > 0 && (
+            <View>
+              {heading('Service alerts on your lines')}
+              {alerts ? (
+                <AlertList alerts={alerts} routes={routesByKey} dark={dark} empty="No delays or service changes right now." />
+              ) : (
+                <Text style={{ color: c.muted }}>Checking for delays…</Text>
+              )}
+            </View>
+          )}
 
           {modes.includes('subway') && legendGroups(routes, 'subway').length > 0 && (
             <View>
@@ -84,7 +121,7 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
               {legendGroups(routes, 'subway').map((g) => (
                 <View style={styles.row} key={g.color ?? g.routes[0].key}>
                   {g.routes.map((r) => (
-                    <LineButton key={r.key} route={r} on={isOn(r)} dark={dark} onToggle={() => toggle(r)} />
+                    <LineButton key={r.key} route={r} on={isOn(r)} alert={alertSummary[r.key]} dark={dark} onToggle={() => toggle(r)} />
                   ))}
                 </View>
               ))}
@@ -96,7 +133,7 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
               <View key={g.title}>
                 {heading(g.title)}
                 {g.routes.map((r) => (
-                  <LineButton key={r.key} route={r} on={isOn(r)} dark={dark} onToggle={() => toggle(r)} />
+                  <LineButton key={r.key} route={r} on={isOn(r)} alert={alertSummary[r.key]} dark={dark} onToggle={() => toggle(r)} />
                 ))}
               </View>
             ))}
@@ -122,7 +159,7 @@ export function LinesSheet({ visible, routes, modes, chosen, dark, onChange, onC
                   <Text style={[styles.h4, { color: c.muted }]}>{g.title}</Text>
                   <View style={styles.row}>
                     {g.routes.map((r) => (
-                      <LineButton key={r.key} route={r} on={isOn(r)} dark={dark} onToggle={() => toggle(r)} />
+                      <LineButton key={r.key} route={r} on={isOn(r)} alert={alertSummary[r.key]} dark={dark} onToggle={() => toggle(r)} />
                     ))}
                   </View>
                 </View>
@@ -153,5 +190,7 @@ const styles = StyleSheet.create({
   railBadge: { minWidth: 14, width: 14, height: 14, borderRadius: 7, paddingHorizontal: 0 },
   lineBadgeText: { fontSize: 14, fontWeight: '800' },
   railName: { fontSize: 15 },
+  alertDot: { width: 10, height: 10, borderRadius: 5 },
+  alertOnBadge: { position: 'absolute', top: -2, right: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
   search: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginBottom: 10 },
 });

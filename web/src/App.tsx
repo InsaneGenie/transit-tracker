@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type UpcomingStop, type VehicleDetail } from './api';
+import { worstSeverity } from './alerts';
+import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type Mode, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
 import { Legend } from './Legend';
 import { LinePanel } from './LinePanel';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
@@ -66,6 +67,50 @@ function useRouteLine(key: string | null): RouteLine | null {
     };
   }, [key]);
   return line;
+}
+
+/** Alerts change every few minutes at most. */
+const ALERT_POLL_MS = 120_000;
+
+/** Service alerts on these lines, kept fresh; null while loading. */
+function useLineAlerts(keys: string[]): ServiceAlert[] | null {
+  const [alerts, setAlerts] = useState<ServiceAlert[] | null>(null);
+  const joined = keys.slice(0, MAX_DRAWN_LINES).join(',');
+  useEffect(() => {
+    setAlerts(null);
+    if (!joined) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchAlerts(joined.split(','), controller.signal)
+        .then((r) => setAlerts(r.alerts))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, ALERT_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [joined]);
+  return alerts;
+}
+
+/** Which lines have trouble right now, by line key. */
+function useAlertSummary(): Record<string, AlertSeverity> {
+  const [summary, setSummary] = useState<Record<string, AlertSeverity>>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = () =>
+      fetchAlertSummary(controller.signal)
+        .then((r) => setSummary(r.lines))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, ALERT_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, []);
+  return summary;
 }
 
 export function App() {
@@ -295,6 +340,12 @@ export function App() {
     };
   }, [selectedId]);
 
+  // Delays, suspensions and planned changes: for the open vehicle's or line's panel, and the picked lines.
+  const alertSummary = useAlertSummary();
+  const panelAlerts = useLineAlerts([(detail ? selectedLine : viewLine?.key) ?? ''].filter(Boolean));
+  const pickedAlerts = useLineAlerts(legendOpen ? lines : []);
+  const pickedTrouble = worstSeverity(lines.map((k) => alertSummary[k]));
+
   const toggle = (mode: Mode) =>
     setModes((m) => (m.includes(mode) ? m.filter((x) => x !== mode) : [...m, mode]));
 
@@ -343,6 +394,9 @@ export function App() {
             onClick={() => setLegendOpen((o) => !o)}
           >
             {lines.length ? `Lines (${lines.length})` : 'Lines'}
+            {pickedTrouble && (
+              <span className={`chip-alert alert-${pickedTrouble}`} role="img" aria-label="Service alerts on your lines" />
+            )}
           </button>
         </div>
       </div>
@@ -352,6 +406,9 @@ export function App() {
           routes={routes}
           modes={modes}
           chosen={lines}
+          alertSummary={alertSummary}
+          alerts={pickedAlerts}
+          routesByKey={routesByKey}
           onChange={setLines}
           onClose={() => setLegendOpen(false)}
         />
@@ -369,6 +426,7 @@ export function App() {
           routes={routesByKey}
           station={station}
           arrivals={arrivals}
+          alerts={panelAlerts}
           backLabel={viewLine.back?.label}
           onBack={closeLine}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
@@ -396,6 +454,7 @@ export function App() {
           stationTransfers={stationTransfers}
           showTransfers={showTransfers}
           arrivals={arrivals}
+          alerts={panelAlerts}
           onArrival={(id) => {
             if (id === selectedId) return;
             keepStation.current = true;

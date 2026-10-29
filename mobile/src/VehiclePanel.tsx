@@ -9,7 +9,8 @@ import {
   tidyStopName,
   transferLines,
 } from '../../web/src/vehicles';
-import type { ArrivalDirection, RouteInfo, Station, UpcomingStop, VehicleDetail } from './api';
+import { AlertList } from './AlertList';
+import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
@@ -27,6 +28,8 @@ interface Props {
   onShowTransfers: (show: boolean) => void;
   /** The line's vehicles on their way to the picked station, both ways; null while loading. */
   arrivals: ArrivalDirection[] | null;
+  /** Delays and service changes on the vehicle's line; null while loading. */
+  alerts: ServiceAlert[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
   /** Tapping a transfer line at the station shows that whole line. */
@@ -165,6 +168,7 @@ export function VehiclePanel({
   showTransfers,
   onShowTransfers,
   arrivals,
+  alerts,
   onArrival,
   onLine,
   dark,
@@ -228,6 +232,8 @@ export function VehiclePanel({
       </View>
 
       <ScrollView style={styles.body}>
+        <AlertList alerts={alerts} routes={routes} dark={dark} />
+
         {station && (
           <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">
             <View style={styles.stationTop}>
