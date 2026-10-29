@@ -34,6 +34,8 @@ interface Props {
   dark: boolean;
   bottomInset: number;
   onFollow: () => void;
+  /** Show every station on the vehicle's line, not just the ones ahead. */
+  onAllStations: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
   onClose: () => void;
@@ -168,6 +170,7 @@ export function VehiclePanel({
   dark,
   bottomInset,
   onFollow,
+  onAllStations,
   onStop,
   onClose,
 }: Props) {
@@ -200,23 +203,28 @@ export function VehiclePanel({
 
       {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
       <View style={styles.meta}>
-        <Text style={[styles.muted, { color: c.muted }]}>
+        <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
           {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
         </Text>
-        <Pressable
-          onPress={onFollow}
-          accessibilityRole="button"
-          accessibilityState={{ selected: following }}
-          style={[
-            styles.follow,
-            { borderColor: c.border },
-            following && { backgroundColor: c.accent, borderColor: c.accent },
-          ]}
-        >
-          <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
-            {following ? 'Following' : 'Follow'}
-          </Text>
-        </Pressable>
+        <View style={styles.actions}>
+          <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
+            <Text style={[styles.followText, { color: c.text }]}>All stations</Text>
+          </Pressable>
+          <Pressable
+            onPress={onFollow}
+            accessibilityRole="button"
+            accessibilityState={{ selected: following }}
+            style={[
+              styles.follow,
+              { borderColor: c.border },
+              following && { backgroundColor: c.accent, borderColor: c.accent },
+            ]}
+          >
+            <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
+              {following ? 'Following' : 'Follow'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView style={styles.body}>
@@ -325,6 +333,8 @@ const styles = StyleSheet.create({
   close: { fontSize: 18, padding: 4 },
   where: { fontSize: 15, fontWeight: '600', marginTop: 12 },
   meta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 8 },
+  metaText: { flexShrink: 1, marginRight: 8 },
+  actions: { flexDirection: 'row', gap: 6 },
   follow: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 },
   followText: { fontSize: 14, fontWeight: '600' },
   body: { flexGrow: 0, flexShrink: 1 },

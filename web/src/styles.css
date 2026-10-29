@@ -355,6 +355,12 @@ button {
   flex: none;
 }
 
+.panel-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 /* Upcoming stops, drawn as a line in the route's color. */
 .stops {
   list-style: none;

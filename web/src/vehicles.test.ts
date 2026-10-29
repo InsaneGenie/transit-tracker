@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RouteInfo, Vehicle } from './api';
 import {
   colorFor,
+  facingWay,
   formatEta,
   interpolate,
   legendGroups,
@@ -153,5 +154,16 @@ describe('sameStation', () => {
     expect(sameStation({ stopId: '128N', lat: 40.759901, lon: -73.984139 }, station)).toBe(false);
     expect(sameStation({ stopId: '127' }, station)).toBe(true);
     expect(sameStation({ stopId: 'X' }, station)).toBe(false);
+  });
+});
+
+describe('facingWay', () => {
+  const line = [0, 1, 2, 3].map((i) => ({ stopId: `s${i}`, lat: 40 + i * 0.01, lon: -74 }));
+  it('keeps the order when the vehicle runs the same way', () => {
+    expect(facingWay(line, [line[1], line[3]])).toBe(line);
+  });
+  it('reverses it for a vehicle heading back, even a street over', () => {
+    const back = [{ stopId: 'x', lat: 40.03, lon: -73.999 }, { stopId: 'y', lat: 40.011, lon: -73.999 }];
+    expect(facingWay(line, back).map((s) => s.stopId)).toEqual(['s3', 's2', 's1', 's0']);
   });
 });

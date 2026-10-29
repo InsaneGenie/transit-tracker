@@ -36,6 +36,20 @@ describe('stops-only schedules', () => {
     expect(index.tripShapes.get('t1')).toBe('s1');
   });
 
+  it("lists each route's stops in order from its busier direction, skimming stop times", async () => {
+    const bus: Record<string, string> = {
+      'stops.txt': 'stop_id,stop_name,stop_lat,stop_lon\nA,Alpha,40.8,-73.95\nB,Bravo,40.79,-73.95\nC,Charlie,40.78,-73.95\nX,"Bravo, west side",40.79,-73.951\n',
+      'routes.txt': 'route_id,route_short_name\nM1,M1\n',
+      'trips.txt': 'route_id,trip_id,service_id,direction_id,shape_id\nM1,n1,wk,0,sn\nM1,s1,wk,1,ss\nM1,s2,wk,1,ss\nM1,s3,wk,1,short\n',
+      // Out of order within a trip, a quoted field, and Windows line endings.
+      'stop_times.txt':
+        'trip_id,stop_id,arrival_time,departure_time,stop_sequence\r\nn1,A,,,1\r\nn1,B,,,2\r\ns1,C,,,1\r\ns1,A,,,3\r\ns1,"X",,,2\r\ns2,C,,,1\r\ns3,C,,,1',
+    };
+    const index = await buildStaticIndex((name) => (name in bus ? Readable.from([bus[name]]) : null), 'stops');
+    expect(index.routeStations.get('M1')).toEqual(['C', 'X', 'A']);
+    expect(index.stopRoutes.get('B')).toEqual(['M1']);
+  });
+
   it('merges several schedules into one', async () => {
     const a = await buildStaticIndex(files, 'stops');
     const b = await buildStaticIndex(files, 'stops');

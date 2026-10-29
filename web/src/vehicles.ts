@@ -142,3 +142,23 @@ export function sameStation(a: Place, b: Place): boolean {
   if (a.lat === undefined || a.lon === undefined || b.lat === undefined || b.lon === undefined) return false;
   return Math.abs(a.lat - b.lat) < 0.0003 && Math.abs(a.lon - b.lon) < 0.0004;
 }
+
+/**
+ * A line's stops in the order a vehicle meets them: reversed when the vehicle's stops ahead run the
+ * other way. Matched by nearest stop, since a bus heading back may use the next street over.
+ */
+export function facingWay<T extends Place>(stops: T[], ahead: Place[]): T[] {
+  const placed = ahead.filter((s) => s.lat !== undefined && s.lon !== undefined);
+  if (stops.length < 2 || placed.length < 2) return stops;
+  const nearest = (p: Place) => {
+    let best = -1;
+    let bestD = Infinity;
+    stops.forEach((s, i) => {
+      if (s.lat === undefined || s.lon === undefined) return;
+      const d = (s.lat - p.lat!) ** 2 + (s.lon - p.lon!) ** 2;
+      if (d < bestD) [best, bestD] = [i, d];
+    });
+    return best;
+  };
+  return nearest(placed[0]) > nearest(placed.at(-1)!) ? [...stops].reverse() : stops;
+}
