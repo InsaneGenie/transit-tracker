@@ -18,13 +18,15 @@ interface Props {
   border?: { color: string; width: number };
   /** Drawn hollow, for a mode that's switched off. */
   hollow?: boolean;
+  /** Called once the picture has loaded. */
+  onLoad?: () => void;
 }
 
 /**
  * The same icon vehicles have on the site: subway trains are circles, buses rounded squares and
  * commuter trains diamonds, each in the line's color with its own picture.
  */
-export function ModeIcon({ mode, size, color, ink, border, hollow }: Props) {
+export function ModeIcon({ mode, size, color, ink, border, hollow, onLoad }: Props) {
   const shape = MODE_SHAPES[mode];
   const edge = { borderColor: border?.color ?? color, borderWidth: border?.width ?? (hollow ? 1.5 : 0) };
   const fill = { backgroundColor: hollow ? 'transparent' : color };
@@ -37,7 +39,11 @@ export function ModeIcon({ mode, size, color, ink, border, hollow }: Props) {
   return (
     <View style={[styles.box, { width: size, height: size }]}>
       <View style={[outline, fill, edge]} />
-      <Image source={GLYPHS[mode]} style={[styles.glyph, { width: glyph, height: glyph, tintColor: hollow ? color : ink }]} />
+      <Image
+        source={GLYPHS[mode]}
+        style={[styles.glyph, { width: glyph, height: glyph, tintColor: hollow ? color : ink }]}
+        onLoad={onLoad}
+      />
     </View>
   );
 }
