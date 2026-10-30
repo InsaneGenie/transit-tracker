@@ -99,6 +99,11 @@ type ViewLine = {
 const OTHER_STOPS_MIN_ZOOM = 12;
 /** The most of their stations drawn at once, since every one is a native view. */
 const MAX_OTHER_STOPS = 200;
+/** Station names appear beside the drawn stations from this zoom, at most this many at once. */
+const STATION_NAMES_MIN_ZOOM = 13.5;
+const MAX_STATION_NAMES = 60;
+/** Each name's box is this wide; longer names are cut short. */
+const STATION_NAME_WIDTH = 150;
 
 /** A line's whole route with its stations. Retries while the server may still be starting. */
 function useRouteLine(key: string | null, active: boolean): RouteLine | null {
@@ -707,6 +712,37 @@ function TransitMap() {
       .slice(0, MAX_OTHER_STOPS);
   }, [otherLines, ownLine?.key, region, zoom]);
 
+  // Names beside the drawn stations once zoomed in to street level, the open line's first. A name that would
+  // run into one already placed is left out, so a crowded stretch shows the ones that fit.
+  const stationNames = useMemo(() => {
+    if (zoom < STATION_NAMES_MIN_ZOOM) return [];
+    const [west, south, east, north] = boundsOf(region);
+    const toScreen = (s: UpcomingStop) => ({
+      x: ((s.lon! - west) / (east - west)) * mapWidth,
+      y: ((north - s.lat!) / (north - south)) * mapHeight,
+    });
+    const placed: { x: number; y: number; w: number; h: number }[] = [];
+    if (anyPanel && station) placed.push({ ...toScreen(station), w: 90, h: 50 });
+    const out: { stop: UpcomingStop; name: string }[] = [];
+    const candidates = [...stationDots, ...otherStops.map((o) => o.stop)];
+    for (const stop of candidates) {
+      if (out.length >= MAX_STATION_NAMES) break;
+      if (stop.lat === undefined || stop.lon === undefined || !stop.name) continue;
+      if (stop.lon < west || stop.lon > east || stop.lat < south || stop.lat > north) continue;
+      const name = tidyStopName(stop.name);
+      const at = toScreen(stop);
+      // The name starts just right of the dot.
+      const box = { x: at.x + 7, y: at.y - 8, w: Math.min(name.length * 6.5 + 4, STATION_NAME_WIDTH), h: 16 };
+      const hits = (b: (typeof placed)[number]) =>
+        box.x < b.x + b.w + 4 && b.x < box.x + box.w + 4 && box.y < b.y + b.h && b.y < box.y + box.h;
+      // Also keeps a station shared by two drawn lines from being named twice.
+      if (placed.some(hits)) continue;
+      placed.push(box);
+      out.push({ stop, name });
+    }
+    return out;
+  }, [zoom, region, mapWidth, mapHeight, stationDots, otherStops, anyPanel, station]);
+
   // Station dots keep the same tap handlers from one update to the next, so they aren't redrawn each time.
   const stopTaps = useRef({ pickStation, openLineStation });
   stopTaps.current = { pickStation, openLineStation };
@@ -892,6 +928,24 @@ function TransitMap() {
                   onPress={onOwnStop}
                 />
               ))}
+            {stationNames.map(({ stop, name }) => (
+              <Marker
+                key={`station-name-${stop.stopId}-${dark ? 'd' : 'l'}`}
+                coordinate={{ latitude: stop.lat!, longitude: stop.lon! }}
+                // The name's box starts just right of the dot.
+                centerOffset={{ x: 7 + STATION_NAME_WIDTH / 2, y: 0 }}
+                tracksViewChanges={false}
+              >
+                <View style={styles.stationName} pointerEvents="none">
+                  <Text
+                    style={[styles.stationNameText, { color: c.text, textShadowColor: c.card }]}
+                    numberOfLines={1}
+                  >
+                    {name}
+                  </Text>
+                </View>
+              </Marker>
+            ))}
             {/* The picked station's ring and name. They are two markers of fixed size: Apple Maps centers a
                 marker's view on its coordinate using the size it had when first drawn, and one view holding
                 text could be drawn before the text was laid out, which put the ring off the station. */}
@@ -1137,6 +1191,9 @@ const styles = StyleSheet.create({
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
   // A fixed-size box, so the marker's size is known before the text is laid out.
   stationLabel: { width: 180, height: STATION_LABEL_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  // Fixed size for the same reason; the text starts at its left edge, next to the dot.
+  stationName: { width: STATION_NAME_WIDTH, height: 16, justifyContent: 'center' },
+  stationNameText: { fontSize: 11, fontWeight: '700', textShadowRadius: 3, textShadowOffset: { width: 0, height: 0 } },
   stationLabelText: {
     fontSize: 12,
     fontWeight: '700',

@@ -27,6 +27,10 @@ const STATION_LAYERS = ['selected-stops', 'route-stops'];
 const ROUTE_LAYERS = ['selected-path', 'route-lines'];
 /** Below this zoom (about the size of New York City on screen) vehicles are hidden and not fetched. */
 export const VEHICLE_MIN_ZOOM = 10;
+/** Vehicles show which way they are heading from this zoom. */
+const ARROW_MIN_ZOOM = 12;
+/** Station names appear beside the drawn lines' stations from this zoom. */
+const STATION_NAMES_MIN_ZOOM = 13;
 /** How often the tapped vehicle is refreshed; it glides across each interval so it never stops. */
 export const SELECTED_POLL_MS = 3000;
 /** Gliding is only visible up close; further out, dots jump once per update, which costs far less. */
@@ -79,19 +83,40 @@ interface Props {
   panelRef: RefObject<HTMLElement | null>;
 }
 
-/** A small arrow drawn once and tinted per vehicle, pointing the way it is heading. */
-function arrowImage(): ImageData {
-  const size = 64;
+/** Direction arrows are made per line color, like the vehicle icons. */
+const ARROW_PREFIX = 'arrow|';
+/** The arrow is drawn this many pixels across. */
+const ARROW_PX = 14;
+
+/** An arrowhead pointing up in the line's color, outlined so it shows on the line it rides along. */
+function arrowImage(color: string, outline: string): ImageData {
+  const ratio = 2;
   const ctx = document.createElement('canvas').getContext('2d')!;
-  ctx.canvas.width = ctx.canvas.height = size;
+  ctx.canvas.width = ctx.canvas.height = ARROW_PX * ratio;
+  // The arrow is laid out on a 12 by 12 grid.
+  ctx.scale((ratio * ARROW_PX) / 12, (ratio * ARROW_PX) / 12);
   ctx.beginPath();
-  ctx.moveTo(32, 2);
-  ctx.lineTo(44, 22);
-  ctx.lineTo(20, 22);
+  ctx.moveTo(6, 1.5);
+  ctx.lineTo(10.5, 10);
+  ctx.lineTo(6, 8);
+  ctx.lineTo(1.5, 10);
   ctx.closePath();
-  ctx.fillStyle = '#000';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = outline;
+  ctx.stroke();
+  ctx.fillStyle = color;
   ctx.fill();
-  return ctx.getImageData(0, 0, size, size);
+  return ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+}
+
+/**
+ * How far the arrow sits from the vehicle's middle, in pixels: just outside its icon, which grows as the
+ * map zooms in (see the icons' `icon-size`). The offset turns with the arrow, so "up" is the way it heads.
+ */
+function arrowOffset(gap: number): ExpressionSpecification {
+  const at = (iconPx: number): ExpressionSpecification => ['literal', [0, -(iconPx / 2 + gap)]];
+  return ['interpolate', ['linear'], ['zoom'], 11, at(8), 13, at(16), 16, at(28)];
 }
 
 /** Vehicle icons are drawn this many pixels wide and scaled down with `icon-size` as the map zooms out. */
@@ -123,7 +148,13 @@ function vehicleIcon(mode: Mode, color: string, ink: string, outline: string): I
 
 /** Icons are made the first time a mode and color is shown; the id carries everything needed to draw it. */
 function addMissingVehicleIcon(map: MapLibreMap, id: string) {
-  if (!id.startsWith(ICON_PREFIX) || map.hasImage(id)) return;
+  if (map.hasImage(id)) return;
+  if (id.startsWith(ARROW_PREFIX)) {
+    const [color, outline] = id.slice(ARROW_PREFIX.length).split('|');
+    map.addImage(id, arrowImage(color, outline), { pixelRatio: 2 });
+    return;
+  }
+  if (!id.startsWith(ICON_PREFIX)) return;
   const [mode, color, ink, outline] = id.slice(ICON_PREFIX.length).split('|');
   if (!(mode in MODE_SHAPES)) return;
   map.addImage(id, vehicleIcon(mode as Mode, color, ink, outline), { pixelRatio: 2 });
@@ -221,22 +252,24 @@ function addVehicleLayers(
   ink: string,
   filter: ExpressionSpecification,
   minzoom: number,
+  /** Room between the icon and its arrow; the tapped vehicle's ring needs more. */
+  arrowGap: number,
 ) {
+  // Which way it is heading: an arrowhead just outside the icon, from the zoom where the map shows streets.
   map.addLayer({
     id: `${prefix}-arrows`,
     type: 'symbol',
     source,
-    minzoom: 13,
+    minzoom: Math.max(minzoom, ARROW_MIN_ZOOM),
     filter: ['all', ['get', 'hasBearing'], filter],
     layout: {
-      'icon-image': 'arrow',
+      'icon-image': ['concat', ARROW_PREFIX, ['get', 'color'], '|', outline],
       'icon-rotate': ['get', 'bearing'],
       'icon-rotation-alignment': 'map',
+      'icon-offset': arrowOffset(arrowGap),
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 16, 0.85],
     },
-    paint: { 'icon-color': ['get', 'color'] },
   });
   // The layer keeps its old "dots" name: tapping and filtering look vehicles up by it.
   map.addLayer({
@@ -290,7 +323,6 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   const ring = theme === 'dark' ? '#f9fafb' : '#111827';
   const selection = selectionData(state.detail);
 
-  if (!map.hasImage('arrow')) map.addImage('arrow', arrowImage(), { sdf: true });
   // Points don't need detailed tiles, so tile only up to zoom 12 and let MapLibre overzoom from there.
   map.addSource('vehicles', { type: 'geojson', data: state.vehicles, maxzoom: 12, buffer: 32 });
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
@@ -375,10 +407,31 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       'circle-stroke-width': 2,
     },
   });
-  addVehicleLayers(map, 'vehicle', 'vehicles', outline, ring, vehicleFilter(state.modes, state.lines, state.selectedId), VEHICLE_MIN_ZOOM);
+  // Station names, once zoomed in to street level. They give way to each other (and to the picked
+  // station's own name) rather than pile up, so a crowded stretch shows the ones that fit.
+  for (const source of ['other-stops', 'route-stops']) {
+    map.addLayer({
+      id: `${source}-names`,
+      type: 'symbol',
+      source,
+      minzoom: STATION_NAMES_MIN_ZOOM,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], STATION_NAMES_MIN_ZOOM, 10.5, 16, 12.5],
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': 0.7,
+        'text-justify': 'auto',
+        'text-max-width': 8,
+        'text-padding': 4,
+      },
+      paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 1.5 },
+    });
+  }
+  addVehicleLayers(map, 'vehicle', 'vehicles', outline, ring, vehicleFilter(state.modes, state.lines, state.selectedId), VEHICLE_MIN_ZOOM, 6);
   // The tapped vehicle has its own source so it can glide smoothly every frame, which redrawing every
   // vehicle can't afford.
-  addVehicleLayers(map, 'selected', 'selected-vehicle', outline, ring, ['literal', true], 0);
+  addVehicleLayers(map, 'selected', 'selected-vehicle', outline, ring, ['literal', true], 0, 10);
   map.addLayer({
     id: 'selected-ring',
     type: 'circle',
@@ -424,7 +477,8 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       'text-anchor': 'top',
       'text-offset': [0, 1.4],
       'text-allow-overlap': true,
-      'text-ignore-placement': true,
+      // Takes its room from the other station names, so its own isn't shown twice.
+      'text-ignore-placement': false,
     },
     paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 2 },
   });

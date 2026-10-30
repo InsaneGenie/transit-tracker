@@ -7,7 +7,7 @@ export const GUIDE: GuideSection[] = [
     points: [
       'Every icon is a vehicle, moving where it is right now: circles are subway trains, rounded squares are buses and diamonds are LIRR and Metro-North trains. Its color is its line’s color.',
       'Zoom in to see them. Vehicles are hidden while the whole city fits on the screen.',
-      'Closer in, arrows show which way each one is heading, and their line names appear beside the icons.',
+      'Closer in, a small arrow beside each one shows which way it is heading, the stations of drawn lines get their names, and line names appear beside the icons.',
       'Subway trains don’t send GPS, so they are placed from their arrival times. A vehicle’s card says which kind of position it has.',
     ],
   },
