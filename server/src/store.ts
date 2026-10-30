@@ -1,4 +1,4 @@
-import { estimatePosition, trackBetween } from './estimate.js';
+import { estimatePosition, shapeBetween, trackBetween } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
@@ -392,7 +392,10 @@ export class VehicleStore {
         if (!stop) continue;
         const seg = segmentTo(s.stopId);
         if (from) {
-          add(trackBetween(index, from, s.stopId, seg?.fromStopId === from ? seg.shapeId : undefined));
+          const shapeId = shapeBetween(index, vehicle.routeId, from, s.stopId, [
+            seg?.fromStopId === from ? seg.shapeId : undefined,
+          ]);
+          add(trackBetween(index, from, s.stopId, shapeId));
         } else if (seg && index.stops.has(seg.fromStopId)) {
           // First hop: the stretch of track from the vehicle to its next stop.
           add(trackBetween(index, seg.fromStopId, s.stopId, seg.shapeId).slice(vehicle, stop));

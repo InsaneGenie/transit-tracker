@@ -1,8 +1,10 @@
+import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { estimatePosition } from '../src/estimate.js';
 import { nearestOnPath } from '../src/geo.js';
 import type { TripState } from '../src/realtime.js';
-import { indexPromise } from './fixtures.js';
+import { buildStaticIndex } from '../src/static-gtfs.js';
+import { files, gtfs, indexPromise } from './fixtures.js';
 
 const T = 1_700_000_000;
 
@@ -37,6 +39,31 @@ describe('estimatePosition', () => {
     expect(pos?.lat).toBeCloseTo(40.785, 3);
     expect(pos?.lon).toBeCloseTo(-73.95, 5);
     expect(pos?.bearing).toBeCloseTo(180, 0);
+  });
+
+  it('follows the track when the usual way into the next stop is from the other direction', async () => {
+    // Three trips run C -> B -> A to the two running A -> B, so the usual hop into B is from C.
+    const index = await buildStaticIndex((name) => {
+      const extra: Record<string, string> = {
+        'trips.txt': `1,r1,wk,s2\n1,r2,wk,s2\n1,r3,wk,s2\n`,
+        'shapes.txt': `s2,0,40.78,-73.95\ns2,1,40.79,-73.95\ns2,2,40.79,-73.94\ns2,3,40.80,-73.94\ns2,4,40.80,-73.95\n`,
+        'stop_times.txt':
+          `r1,C,09:00:00,09:00:00,1\nr1,B,09:03:00,09:03:00,2\nr1,A,09:05:00,09:05:00,3\n` +
+          `r2,C,10:00:00,10:00:00,1\nr2,B,10:03:00,10:03:00,2\nr2,A,10:05:00,10:05:00,3\n` +
+          `r3,C,11:00:00,11:00:00,1\nr3,B,11:03:00,11:03:00,2\nr3,A,11:05:00,11:05:00,3\n`,
+      };
+      return name in extra ? files(name) && Readable.from([gtfs[name] + extra[name]]) : files(name);
+    });
+    expect(index.segments.get('1|B')?.fromStopId).toBe('C');
+    const pos = estimatePosition(
+      trip([
+        { stopId: 'A', departure: T - 60 },
+        { stopId: 'B', arrival: T + 60 },
+      ]),
+      T,
+      index,
+    );
+    expect(pos!.lon).toBeGreaterThan(-73.95); // on the dog-leg, not cutting straight from A to B
   });
 
   it('holds a train at a stop while it dwells', async () => {
