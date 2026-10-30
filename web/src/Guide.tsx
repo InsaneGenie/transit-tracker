@@ -1,6 +1,7 @@
 import { CloseButton } from './CloseButton';
 import { FEEDBACK_EMAIL, feedbackMailto } from './feedback';
 import { GUIDE } from './guide';
+import { TESTFLIGHT_URL } from './testflight';
 
 /** How to use the map, opened from the toolbar's "?" and shown once on a first visit. */
 export function Guide({ onClose }: { onClose: () => void }) {
@@ -24,6 +25,15 @@ export function Guide({ onClose }: { onClose: () => void }) {
             </ul>
           </section>
         ))}
+        <section className="guide-feedback">
+          <h3>iPhone app</h3>
+          <p className="muted small">
+            The map is also an iPhone app, in beta. Open the link on your iPhone; Apple's free TestFlight app installs it.
+          </p>
+          <a className="chip guide-feedback-button" href={TESTFLIGHT_URL} target="_blank" rel="noopener">
+            Try the iPhone app beta
+          </a>
+        </section>
         <section className="guide-feedback">
           <h3>Feedback</h3>
           <p className="muted small">Found a bug, or have an idea? Tell us; it opens an email that's ready to send.</p>
