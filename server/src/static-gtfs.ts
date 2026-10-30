@@ -9,7 +9,13 @@ import { Polyline, type LatLon } from './geo.js';
 
 export interface Stop extends LatLon {
   name: string;
+  /** Step-free from the street to the trains: every platform, or only some of them. */
+  access?: Access;
+  /** What a partly accessible station's step-free route reaches, like "only toward Manhattan". */
+  accessNote?: string;
 }
+
+export type Access = 'full' | 'partial';
 
 export interface Route {
   shortName: string;
@@ -139,8 +145,15 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   for await (const r of rows(files, 'stops.txt')) {
     const lat = Number(r.stop_lat);
     const lon = Number(r.stop_lon);
-    if (Number.isFinite(lat) && Number.isFinite(lon)) stops.set(r.stop_id, { name: r.stop_name, lat, lon });
+    // 1 is step-free, 2 is not, and blank or 0 means unknown (or, for a platform, the same as its station).
+    const access = r.wheelchair_boarding?.trim() === '1' ? 'full' : undefined;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) stops.set(r.stop_id, { name: r.stop_name, lat, lon, ...(access && { access }) });
     if (r.parent_station) stationOf.set(r.stop_id, r.parent_station);
+  }
+  for (const [id, station] of stationOf) {
+    const stop = stops.get(id);
+    const access = stops.get(station)?.access;
+    if (stop && access && !stop.access) stop.access = access;
   }
 
   const routes = new Map<string, Route>();
@@ -386,7 +399,8 @@ export async function loadStaticIndex(
   return indexes.length === 1 ? indexes[0] : mergeIndexes(indexes);
 }
 
-async function download(feedId: string, url: string): Promise<Buffer> {
+/** Downloads a file, reusing a copy from the last day. */
+export async function download(feedId: string, url: string): Promise<Buffer> {
   const file = path.join(CACHE_DIR, `${feedId}-${path.basename(new URL(url).pathname)}`);
   let zip: Buffer | undefined;
   try {

@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 import { colorFor, displayName, textColorFor } from '../../web/src/vehicles';
+import { AccessIcon } from './AccessIcon';
 import type { UpcomingStop, Vehicle } from './api';
 import { GLYPHS, ModeIcon } from './ModeIcon';
 
@@ -189,6 +190,8 @@ const styles = StyleSheet.create({
   stopHit: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   stopDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
   smallStopDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 2 },
+  // Up and to the right of the dot, inside the tap square.
+  stopAccess: { position: 'absolute', left: 19, top: 1 },
 });
 
 interface StopProps {
@@ -199,16 +202,26 @@ interface StopProps {
   background: string;
   /** Stations of other lines are drawn a little smaller. */
   small?: boolean;
+  /** Marks an accessible station with the wheelchair symbol, once zoomed in enough to have room. */
+  showAccess?: boolean;
   onPress: (stop: UpcomingStop, lineKey: string) => void;
 }
 
 /** A station on a drawn line. Kept apart so a vehicle update doesn't redraw every station too. */
-export const StopMarker = memo(function StopMarker({ stop, lineKey, color, background, small, onPress }: StopProps) {
+export const StopMarker = memo(function StopMarker({ stop, lineKey, color, background, small, showAccess, onPress }: StopProps) {
+  const badge = showAccess && !!stop.access;
+  // Like a vehicle's picture, the wheelchair has to load before the map's snapshot of the view is taken.
+  const [drawn, setDrawn] = useState(!badge);
+  useEffect(() => {
+    if (drawn) return;
+    const timer = setTimeout(() => setDrawn(true), 1500);
+    return () => clearTimeout(timer);
+  }, [drawn]);
   return (
     <Marker
       coordinate={{ latitude: stop.lat!, longitude: stop.lon! }}
       anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={false}
+      tracksViewChanges={!drawn}
       onPress={() => onPress(stop, lineKey)}
       accessibilityLabel={stop.name}
     >
@@ -217,6 +230,11 @@ export const StopMarker = memo(function StopMarker({ stop, lineKey, color, backg
           station instead; collapsable={false} keeps it. */}
       <View style={styles.stopHit} collapsable={false}>
         <View style={[styles.stopDot, small && styles.smallStopDot, { borderColor: color, backgroundColor: background }]} />
+        {badge && (
+          <View style={styles.stopAccess} pointerEvents="none">
+            <AccessIcon stop={stop} size={13} border={background} onLoad={() => setDrawn(true)} />
+          </View>
+        )}
       </View>
     </Marker>
   );
