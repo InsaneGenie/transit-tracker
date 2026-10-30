@@ -190,6 +190,22 @@ button {
   gap: 4px;
 }
 
+/* Every line's route drawn on the map. */
+.routes-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.chip-routes[aria-pressed='true'],
+.routes-float[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface-solid);
+}
+
 .chip-active,
 .chip-lines.chip-active,
 .chip.follow[aria-pressed='true'] {
@@ -923,7 +939,8 @@ button {
   font-weight: 700;
 }
 
-.help-float {
+.help-float,
+.routes-float {
   display: none;
 }
 
@@ -1460,12 +1477,14 @@ button {
     padding: 0 11px;
   }
 
-  .chip-help {
+  .chip-help,
+  .chip-routes {
     display: none;
   }
 
   /* Below the zoom and location buttons, styled like them. */
-  .help-float {
+  .help-float,
+  .routes-float {
     position: absolute;
     top: 176px;
     right: 10px;
@@ -1482,6 +1501,19 @@ button {
     font-size: 17px;
     font-weight: 700;
     cursor: pointer;
+  }
+
+  .routes-float {
+    top: 220px;
+  }
+
+  .routes-float .routes-label {
+    display: none;
+  }
+
+  .routes-float .routes-icon {
+    width: 18px;
+    height: 18px;
   }
 
   .help-float.chip-active {

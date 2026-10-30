@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AlertStore } from './alerts.js';
+import type { Mode } from './feeds.js';
 import type { Bbox, VehicleStore } from './store.js';
 
 /** The built map (`npm run build` in web/), served alongside the API so the whole site is one service. */
@@ -89,6 +90,12 @@ export function createApiServer(
       const keys = (url.searchParams.get('keys') ?? '').split(',').filter(Boolean);
       if (keys.length > MAX_ROUTE_LINES) return send(400, { error: `at most ${MAX_ROUTE_LINES} lines at once` });
       return send(200, { lines: store.routeLines(keys) });
+    }
+
+    if (url.pathname === '/api/route-paths') {
+      // Buses are left out: hundreds of routes would cover the map.
+      const modes = (url.searchParams.get('modes') ?? 'subway,rail').split(',').filter((m): m is Mode => m === 'subway' || m === 'rail');
+      return send(200, { lines: store.routePaths(modes) });
     }
 
     if (url.pathname === '/api/arrivals') {

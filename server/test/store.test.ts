@@ -417,6 +417,11 @@ describe('API', () => {
     for (const st of lines[0].stops) expect(nearestOnPath(st, lines[0].paths[0]).meters).toBeLessThan(1);
     const tooMany = Array.from({ length: 61 }, (_, i) => `test-train:${i}`).join(',');
     expect((await fetch(`${base}/api/route-lines?keys=${tooMany}`)).status).toBe(400);
+    // Every train line's path, without stations; buses are never drawn all at once.
+    const paths = await (await fetch(`${base}/api/route-paths?modes=subway,bus`)).json();
+    expect(paths.lines.map((l: { key: string }) => l.key)).toEqual(['test-train:1']);
+    expect(paths.lines[0].stops).toBeUndefined();
+    expect(paths.lines[0].paths[0]).toHaveLength(5);
     const { routes } = await (await fetch(`${base}/api/routes`)).json();
     expect(routes).toContainEqual({
       key: 'test-train:1',

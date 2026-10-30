@@ -1,7 +1,7 @@
-import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
@@ -44,6 +44,11 @@ export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[]
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+/** Every subway and rail line's path, for drawing all of them at once. */
+export function fetchRoutePaths(signal?: AbortSignal): Promise<{ lines: RoutePath[] }> {
+  return get('/api/route-paths?modes=subway,rail', signal);
 }
 
 export function fetchArrivals(
