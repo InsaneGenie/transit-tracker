@@ -284,6 +284,33 @@ function otherStopsData(lines: RouteLine[]): GeoJSON.FeatureCollection {
   };
 }
 
+/**
+ * One feature per station to name. Lines that share a station (the 2 and 3 in Harlem, say) each have
+ * their own stop there, so naming every stop named the station once per drawn line.
+ */
+function stationNamesData(...collections: GeoJSON.FeatureCollection[]): GeoJSON.FeatureCollection {
+  const named: GeoJSON.Feature<GeoJSON.Point>[] = [];
+  for (const f of collections.flatMap((c) => c.features) as GeoJSON.Feature<GeoJSON.Point>[]) {
+    const name = f.properties?.name;
+    if (!name) continue;
+    const [lon, lat] = f.geometry.coordinates;
+    // The same name a few hundred metres away is the same station, even where each line's platform sits apart.
+    const seen = named.some(
+      (n) =>
+        n.properties?.name === name &&
+        Math.abs(n.geometry.coordinates[0] - lon) < 0.004 &&
+        Math.abs(n.geometry.coordinates[1] - lat) < 0.003,
+    );
+    if (!seen) named.push(f);
+  }
+  return { type: 'FeatureCollection', features: named };
+}
+
+/** The names of the open line's stations, then those of the picked lines' ones it doesn't share. */
+function drawnStationNames(state: Pick<LayerState, 'routeLine' | 'otherLines'>): GeoJSON.FeatureCollection {
+  return stationNamesData(routeLineData(state.routeLine).stops, otherStopsData(state.otherLines));
+}
+
 /** Station names other than the picked station's, which already has its own label below its ring. */
 function stationNamesFilter(station: Station | null): ExpressionSpecification {
   return ['!=', ['get', 'name'], station?.name ? tidyStopName(station.name) : ''];
@@ -415,6 +442,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('chosen-station', { type: 'geojson', data: stationData(state.station, stationColor(state)) });
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
+  map.addSource('station-names', { type: 'geojson', data: drawnStationNames(state) });
 
   // Every line's route, when switched on, under everything else.
   map.addLayer({
@@ -498,26 +526,24 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   });
   // Station names, once zoomed in to street level. They give way to each other (and to the picked
   // station's own name) rather than pile up, so a crowded stretch shows the ones that fit.
-  for (const source of ['other-stops', 'route-stops']) {
-    map.addLayer({
-      id: `${source}-names`,
-      type: 'symbol',
-      source,
-      minzoom: STATION_NAMES_MIN_ZOOM,
-      filter: stationNamesFilter(state.station),
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Bold'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], STATION_NAMES_MIN_ZOOM, 10.5, 16, 12.5],
-        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
-        'text-radial-offset': 0.7,
-        'text-justify': 'auto',
-        'text-max-width': 8,
-        'text-padding': 4,
-      },
-      paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 1.5 },
-    });
-  }
+  map.addLayer({
+    id: 'station-names',
+    type: 'symbol',
+    source: 'station-names',
+    minzoom: STATION_NAMES_MIN_ZOOM,
+    filter: stationNamesFilter(state.station),
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], STATION_NAMES_MIN_ZOOM, 10.5, 16, 12.5],
+      'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+      'text-radial-offset': 0.7,
+      'text-justify': 'auto',
+      'text-max-width': 8,
+      'text-padding': 4,
+    },
+    paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 1.5 },
+  });
   // A wheelchair badge at the top right of each accessible station, from about the zoom where streets show.
   for (const source of ['other-stops', 'route-stops', 'selected-stops', 'chosen-station']) {
     const picked = source === 'chosen-station';
@@ -896,6 +922,7 @@ export function MapView(props: Props) {
     const line = routeLineData(routeLine);
     (mapRef.current?.getSource('route-lines') as GeoJSONSource | undefined)?.setData(line.path);
     (mapRef.current?.getSource('route-stops') as GeoJSONSource | undefined)?.setData(line.stops);
+    (mapRef.current?.getSource('station-names') as GeoJSONSource | undefined)?.setData(drawnStationNames(state.current));
   }, [routeLine]);
 
   // Show the whole of a line opened on its own, in the part of the map the panel doesn't cover.
@@ -938,6 +965,7 @@ export function MapView(props: Props) {
     state.current.otherLines = otherLines;
     (mapRef.current?.getSource('other-lines') as GeoJSONSource | undefined)?.setData(linesData(otherLines));
     (mapRef.current?.getSource('other-stops') as GeoJSONSource | undefined)?.setData(otherStopsData(otherLines));
+    (mapRef.current?.getSource('station-names') as GeoJSONSource | undefined)?.setData(drawnStationNames(state.current));
   }, [otherLines]);
 
   // Mark the picked station and bring it to the middle of the uncovered map.
@@ -945,9 +973,7 @@ export function MapView(props: Props) {
     state.current.station = station;
     const map = mapRef.current;
     (map?.getSource('chosen-station') as GeoJSONSource | undefined)?.setData(stationData(station, stationColor(state.current)));
-    for (const layer of ['other-stops-names', 'route-stops-names']) {
-      if (map?.getLayer(layer)) map.setFilter(layer, stationNamesFilter(station));
-    }
+    if (map?.getLayer('station-names')) map.setFilter('station-names', stationNamesFilter(station));
     for (const layer of STATION_ACCESS_LAYERS) {
       if (map?.getLayer(layer)) map.setFilter(layer, accessFilter(station));
     }
