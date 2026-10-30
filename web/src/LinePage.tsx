@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { AccessIcon } from './AccessIcon';
 import { AlertList } from './AlertList';
 import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { CloseButton } from './CloseButton';
@@ -114,7 +115,10 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
                   <button className="strip-station" disabled={s.lat === undefined || s.lon === undefined} onClick={() => onStation(s)}>
                     <span className="strip-dot" />
                     <span className="strip-text">
-                      <span className="strip-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                      <span className="stop-title">
+                        <span className="strip-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                        <AccessIcon stop={s} />
+                      </span>
                       <Transfers lines={transferLines(s.transfers, routes)} />
                     </span>
                   </button>

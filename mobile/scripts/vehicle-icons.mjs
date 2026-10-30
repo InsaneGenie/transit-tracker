@@ -1,9 +1,10 @@
 // Renders the vehicle pictures in web/src/vehicleIcons.ts to the white PNGs the app tints per line
-// (mobile/assets/vehicles). Run again after changing a picture:
+// (mobile/assets/vehicles), and the wheelchair in web/src/accessibility.ts. Run again after changing a picture:
 //   node --experimental-strip-types mobile/scripts/vehicle-icons.mjs
 // Needs Playwright with Chromium (npx playwright install chromium).
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { WHEELCHAIR_GLYPH } from '../../web/src/accessibility.ts';
 import { MODE_GLYPHS } from '../../web/src/vehicleIcons.ts';
 
 const require = createRequire(import.meta.url);
@@ -14,7 +15,7 @@ const SIZE = 16;
 const browser = await chromium.launch();
 for (const scale of [1, 2, 3]) {
   const page = await browser.newPage({ deviceScaleFactor: scale, viewport: { width: SIZE, height: SIZE } });
-  for (const [mode, d] of Object.entries(MODE_GLYPHS)) {
+  for (const [mode, d] of Object.entries({ ...MODE_GLYPHS, wheelchair: WHEELCHAIR_GLYPH })) {
     await page.setContent(
       `<body style="margin:0;background:transparent">` +
         `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 24 24" style="display:block">` +

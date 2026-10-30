@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
+import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
 import { SheetHandle, type Sheet } from './PanelSheet';
@@ -98,6 +99,7 @@ export function LinePanel({
               <Text style={[styles.titleText, { color: c.text }]} numberOfLines={1}>
                 {station.name ? tidyStopName(station.name) : 'Station'}
               </Text>
+              <AccessLine stop={station} color={c.muted} />
               {stationTransfers.length > 0 ? (
                 <Transfers lines={stationTransfers} muted={c.muted} onPick={onLine} />
               ) : (
@@ -128,9 +130,11 @@ export function LinePanel({
                 >
                   <View style={[styles.stopDot, { borderColor: color }]} />
                   <View style={styles.stopText}>
-                    <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
-                      {s.name ? tidyStopName(s.name) : s.stopId}
-                    </Text>
+                    <WithAccess stop={s}>
+                      <Text style={[styles.stopName, styles.shrink, { color: c.text }]} numberOfLines={1}>
+                        {s.name ? tidyStopName(s.name) : s.stopId}
+                      </Text>
+                    </WithAccess>
                     <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
                   </View>
                 </Pressable>
