@@ -80,12 +80,14 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
 
     const v = entity.vehicle;
     if (!v) continue;
-    const tripId = v.trip?.tripId || undefined;
+    // Metro-North sends the trip update and the vehicle in one entity, the vehicle under its train number
+    // rather than the trip id, so the entity's trip update says which trip it is.
+    const tripId = tu?.trip?.tripId || v.trip?.tripId || undefined;
     if (v.position && (v.position.latitude || v.position.longitude)) {
       gps.push({
         vehicleId: v.vehicle?.id || v.vehicle?.label || entity.id,
         tripId,
-        routeId: v.trip?.routeId || undefined,
+        routeId: v.trip?.routeId || tu?.trip?.routeId || undefined,
         lat: v.position.latitude,
         lon: v.position.longitude,
         bearing: v.position.bearing ?? undefined,
@@ -105,6 +107,8 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
     const trip = trips.get(tripId);
     if (trip) Object.assign(trip, { ...s, vehicleId: trip.vehicleId ?? s.vehicleId });
   }
+  // LIRR leaves the route off its vehicles, though their trip updates carry it.
+  for (const g of gps) g.routeId ??= g.tripId ? trips.get(g.tripId)?.routeId : undefined;
 
   return { fetchedAt, gps, trips: [...trips.values()] };
 }

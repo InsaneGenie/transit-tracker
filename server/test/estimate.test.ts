@@ -52,7 +52,7 @@ describe('estimatePosition', () => {
           `r2,C,10:00:00,10:00:00,1\nr2,B,10:03:00,10:03:00,2\nr2,A,10:05:00,10:05:00,3\n` +
           `r3,C,11:00:00,11:00:00,1\nr3,B,11:03:00,11:03:00,2\nr3,A,11:05:00,11:05:00,3\n`,
       };
-      return name in extra ? files(name) && Readable.from([gtfs[name] + extra[name]]) : files(name);
+      return name in extra ? Readable.from([gtfs[name] + extra[name]]) : files(name);
     });
     expect(index.segments.get('1|B')?.fromStopId).toBe('C');
     const pos = estimatePosition(
@@ -64,6 +64,42 @@ describe('estimatePosition', () => {
       index,
     );
     expect(pos!.lon).toBeGreaterThan(-73.95); // on the dog-leg, not cutting straight from A to B
+  });
+
+  it('keeps a train at its first stop until it leaves, instead of out on the line heading in', async () => {
+    const index = await indexPromise;
+    // The usual way into B is from A, but a trip that starts at B lists B with only a departure time.
+    const starts = trip([{ stopId: 'B', departure: T + 60 }, { stopId: 'C', arrival: T + 200 }]);
+    expect(estimatePosition(starts, T, index)).toMatchObject({ stopId: 'B', status: 'STOPPED_AT', lat: 40.79 });
+    expect(estimatePosition(starts, T - 3600, index)).toBeNull();
+    // A feed that keeps passed stops lists a running train's earlier stops, so a first stop ahead is its start.
+    const kept = trip([{ stopId: 'B', arrival: T + 60, departure: T + 60 }]);
+    expect(estimatePosition(kept, T, index, true)).toMatchObject({ stopId: 'B', status: 'STOPPED_AT' });
+    expect(estimatePosition(kept, T, index)?.status).toBe('IN_TRANSIT_TO');
+  });
+
+  it("follows another line's track when a train is rerouted onto it", async () => {
+    // Route 2 runs D -> C, D being off route 1, along a shape that dog-legs east. Nothing is scheduled
+    // into D, so only the track itself says how a train rerouted from C to D gets there.
+    const index = await buildStaticIndex((name) => {
+      const extra: Record<string, string> = {
+        'stops.txt': `D,Delta,40.77,-73.95\n`,
+        'routes.txt': `2,2,Test Other,00933C\n`,
+        'trips.txt': `2,o1,wk,s3\n`,
+        'shapes.txt': `s3,0,40.77,-73.95\ns3,1,40.77,-73.94\ns3,2,40.78,-73.94\ns3,3,40.78,-73.95\n`,
+        'stop_times.txt': `o1,D,09:00:00,09:00:00,1\no1,C,09:03:00,09:03:00,2\n`,
+      };
+      return name in extra ? Readable.from([gtfs[name] + extra[name]]) : files(name);
+    });
+    const pos = estimatePosition(
+      trip([
+        { stopId: 'C', departure: T - 60 },
+        { stopId: 'D', arrival: T + 60 },
+      ]),
+      T,
+      index,
+    );
+    expect(pos!.lon).toBeGreaterThan(-73.95); // on route 2's dog-leg, not straight down from C
   });
 
   it('holds a train at a stop while it dwells', async () => {
