@@ -68,6 +68,7 @@ export const GUIDE: GuideSection[] = [
       'The location button takes the map to where you are.',
       'The map turns dark after sunset.',
       'If the map stays empty at first, give it a minute; the server may be waking up.',
+      'Found a bug or have an idea? Report a bug or send feedback, at the end of this guide, opens an email to us.',
     ],
   },
 ];

@@ -975,6 +975,22 @@ button {
   color: var(--muted);
 }
 
+.guide-feedback p {
+  margin: 0 0 8px;
+}
+
+.guide-feedback a:not(.chip) {
+  color: inherit;
+}
+
+.guide-feedback-button {
+  width: 100%;
+  margin-bottom: 8px;
+  justify-content: center;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .guide-done {
   margin: 18px 0 4px;
   width: 100%;
