@@ -15,7 +15,7 @@ import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accessOf } from '../web/src/accessibility';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from '../web/src/panelHistory';
-import { colorFor, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { colorFor, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
   fetchAlertSummary,
@@ -453,10 +453,13 @@ function TransitMap() {
     };
   }, [active]);
 
+  // Each vehicle and when an update last listed it, so one missing from a single update doesn't blink.
+  const lastSeen = useRef(new Map<string, { vehicle: Vehicle; at: number }>());
   // Vehicles on screen, fetched again whenever the map stops moving and then on a timer.
   useEffect(() => {
     if (!active) return;
     if (zoom < VEHICLE_MIN_ZOOM) {
+      lastSeen.current.clear();
       setVehicles([]);
       setStatus('zoomedOut');
       return;
@@ -465,8 +468,9 @@ function TransitMap() {
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
       try {
-        const { vehicles } = await fetchVehicles(boundsOf(region), controller.signal);
-        setVehicles(vehicles);
+        const bounds = boundsOf(region);
+        const { vehicles } = await fetchVehicles(bounds, controller.signal);
+        setVehicles(holdMissing(vehicles, lastSeen.current, bounds, Date.now()));
         setStatus('live');
       } catch {
         if (controller.signal.aborted) return;

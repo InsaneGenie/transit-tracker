@@ -438,6 +438,20 @@ describe('API', () => {
   let close: (() => void) | undefined;
   afterEach(() => close?.());
 
+  it('says it is not ready until schedules and first positions are in', async () => {
+    const { store } = makeStore({ TEST_BUS_KEY: 'k' });
+    const server = createApiServer(store, () => T).listen(0);
+    close = () => server.close();
+    const health = () => fetch(`http://localhost:${(server.address() as AddressInfo).port}/api/health`);
+    expect((await health()).status).toBe(503);
+    await store.loadStatic();
+    expect((await health()).status).toBe(503);
+    await store.pollAll();
+    const res = await health();
+    expect(res.status).toBe(200);
+    expect((await res.json()).ready).toBe(true);
+  });
+
   it('filters vehicles by map bounds and mode', async () => {
     const { store } = makeStore({ TEST_BUS_KEY: 'k' });
     await store.loadStatic();

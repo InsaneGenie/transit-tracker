@@ -4,6 +4,7 @@ import {
   colorFor,
   facingWay,
   formatEta,
+  holdMissing,
   interpolate,
   legendGroups,
   sameStation,
@@ -165,5 +166,26 @@ describe('facingWay', () => {
   it('reverses it for a vehicle heading back, even a street over', () => {
     const back = [{ stopId: 'x', lat: 40.03, lon: -73.999 }, { stopId: 'y', lat: 40.011, lon: -73.999 }];
     expect(facingWay(line, back).map((s) => s.stopId)).toEqual(['s3', 's2', 's1', 's0']);
+  });
+});
+
+describe('holdMissing', () => {
+  const bounds: [number, number, number, number] = [-74.1, 40.6, -73.8, 40.9];
+
+  it('keeps a vehicle left out of one update where it was, for a while', () => {
+    const seen = new Map();
+    const a = v({ id: 'a' });
+    const b = v({ id: 'b' });
+    expect(holdMissing([a, b], seen, bounds, 0)).toEqual([a, b]);
+    expect(holdMissing([a], seen, bounds, 3_000)).toEqual([a, b]);
+    expect(holdMissing([a, b], seen, bounds, 6_000)).toEqual([a, b]);
+    expect(holdMissing([a], seen, bounds, 17_000)).toEqual([a]);
+  });
+
+  it('lets go of a held vehicle outside the map', () => {
+    const seen = new Map();
+    const a = v({ id: 'a' });
+    holdMissing([a], seen, bounds, 0);
+    expect(holdMissing([], seen, [-73, 41, -72, 42], 1_000)).toEqual([]);
   });
 });

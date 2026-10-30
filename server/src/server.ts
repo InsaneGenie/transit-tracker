@@ -8,6 +8,13 @@ import type { Bbox, VehicleStore } from './store.js';
 /** The built map (`npm run build` in web/), served alongside the API so the whole site is one service. */
 const WEB_DIR = path.resolve(import.meta.dirname, '../../web/dist');
 
+/**
+ * How long a new server says it isn't ready while it loads schedules. Render sends no traffic to a new
+ * deploy until it is ready, so the old one keeps serving instead of the two taking turns, which made
+ * trains blink in and out. Past this it says ready anyway, so a slow load never fails the deploy.
+ */
+const READY_WAIT_MS = 10 * 60 * 1000;
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -57,6 +64,7 @@ export function createApiServer(
   webDir = WEB_DIR,
   alerts?: AlertStore,
 ): Server {
+  const started = Date.now();
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const send = (status: number, body: unknown) => {
@@ -126,7 +134,8 @@ export function createApiServer(
 
     if (url.pathname === '/api/health') {
       const alertStatus = alerts && { updatedAt: alerts.updatedAt, lastError: alerts.lastError };
-      return send(200, { feeds: store.status(), ...(alertStatus && { alerts: alertStatus }) });
+      const ready = store.ready() || Date.now() - started > READY_WAIT_MS;
+      return send(ready ? 200 : 503, { ready, feeds: store.status(), ...(alertStatus && { alerts: alertStatus }) });
     }
 
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });

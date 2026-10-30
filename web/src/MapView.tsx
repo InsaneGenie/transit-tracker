@@ -25,7 +25,7 @@ import {
 } from './api';
 import type { Theme } from './theme';
 import { Transfers } from './VehiclePanel';
-import { colorFor, interpolate, routeKey, sameStation, tidyStopName, toFeatureCollection, transferLines } from './vehicles';
+import { colorFor, holdMissing, interpolate, routeKey, sameStation, tidyStopName, toFeatureCollection, transferLines } from './vehicles';
 import { GLYPH_SCALE, MODE_GLYPHS, MODE_SHAPES, shapePath } from './vehicleIcons';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
@@ -694,6 +694,8 @@ export function MapView(props: Props) {
     let lastFrame = 0;
     let frame = 0;
     let showing = false;
+    // Each vehicle and when an update last listed it, so one missing from a single update doesn't blink.
+    const lastSeen = new Map<string, { vehicle: Vehicle; at: number }>();
     let controller: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -720,6 +722,7 @@ export function MapView(props: Props) {
         // Too far out to show vehicles: stop fetching until the user zooms in.
         showing = false;
         shown = new Map();
+        lastSeen.clear();
         target = [];
         cancelAnimationFrame(frame);
         setVehicles([]);
@@ -731,7 +734,8 @@ export function MapView(props: Props) {
       const zoom = map.getZoom();
       try {
         // Only what's on screen; anything off screen is left alone until it scrolls into view.
-        const { vehicles } = await fetchVehicles(boundsOf(map), controller.signal);
+        const bounds = boundsOf(map);
+        const vehicles = holdMissing((await fetchVehicles(bounds, controller.signal)).vehicles, lastSeen, bounds, Date.now());
         showing = true;
         state.current.latest = vehicles;
         // Glide from wherever the dots are drawn right now.
