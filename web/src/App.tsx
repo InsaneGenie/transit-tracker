@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { accessOf } from './accessibility';
 import { worstSeverity } from './alerts';
-import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchLineCounts, fetchRouteLines, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
+import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchLineCounts, fetchRouteLines, fetchRoutePaths, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type RoutePath, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
 import { Guide } from './Guide';
 import { LinePage } from './LinePage';
 import { LinePanel } from './LinePanel';
@@ -16,6 +16,7 @@ const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
+const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 
@@ -26,6 +27,15 @@ function savedKeys(key: string): string[] {
     return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+/** Whether every line's route was drawn last time. */
+function savedAllRoutes(): boolean {
+  try {
+    return localStorage.getItem(ALL_ROUTES_KEY) === '1';
+  } catch {
+    return false;
   }
 }
 
@@ -82,6 +92,33 @@ function useRouteLine(key: string | null): RouteLine | null {
     };
   }, [key]);
   return line;
+}
+
+/** Every subway and rail line's route, loaded the first time they are asked for. */
+function useAllRoutes(on: boolean): RoutePath[] {
+  const [lines, setLines] = useState<RoutePath[]>([]);
+  const loaded = lines.length > 0;
+  useEffect(() => {
+    if (!on || loaded) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRoutePaths(controller.signal)
+        .then((r) => {
+          setLines(r.lines);
+          // Schedules can still be loading; ask again until both kinds of line are there.
+          if (new Set(r.lines.map((l) => l.mode)).size < 2) timer = setTimeout(load, 15_000);
+        })
+        .catch((err: Error) => {
+          if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [on, loaded]);
+  return lines;
 }
 
 /** Alerts change every few minutes at most. */
@@ -160,6 +197,8 @@ export function App() {
   // A train or bus picked on a line's page, for the map to go to.
   const [goTo, setGoTo] = useState<{ lon: number; lat: number; at: number } | null>(null);
   const [guideOpen, setGuideOpen] = useState(() => !guideSeen());
+  // Every line's route drawn on the map, without opening Lines.
+  const [allRoutesOn, setAllRoutesOn] = useState(savedAllRoutes);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
@@ -187,6 +226,7 @@ export function App() {
 
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
   useEffect(() => save(HIDDEN_ROUTES_KEY, JSON.stringify(hiddenRoutes)), [hiddenRoutes]);
+  useEffect(() => save(ALL_ROUTES_KEY, allRoutesOn ? '1' : ''), [allRoutesOn]);
 
   // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
@@ -279,6 +319,13 @@ export function App() {
     const byKey = new Map([...drawn, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
   }, [filterRoutes, hiddenRoutes, transferRoutes, viewLine, detail]);
+
+  // Every line's route, for the kinds of vehicle shown. A line opened on its own is shown alone.
+  const everyRoute = useAllRoutes(allRoutesOn);
+  const allRoutes = useMemo(
+    () => (allRoutesOn && !(viewLine && !detail) ? everyRoute.filter((l) => modes.includes(l.mode)) : []),
+    [allRoutesOn, everyRoute, modes, viewLine, detail],
+  );
 
   // Stations tapped on the map arrive without their transfers; the line or the stop list knows them.
   const pickStation = (stop: Omit<Station, 'at' | 'transfers'>) => {
@@ -461,6 +508,23 @@ export function App() {
     </button>
   );
 
+  // Beside the kinds of vehicle on wider screens; on phones it sits under the map buttons with the guide's.
+  const routesButton = (className: string) => (
+    <button
+      className={className}
+      aria-pressed={allRoutesOn}
+      aria-label="Show every line's route"
+      title="Show every line's route"
+      onClick={() => setAllRoutesOn((on) => !on)}
+    >
+      <svg className="routes-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <path d="M2 13 C6 13 5 3 9 3 S12 8 14 8" />
+        <path d="M2 6 C5 6 8 11 14 12" />
+      </svg>
+      <span className="routes-label">Routes</span>
+    </button>
+  );
+
   const toggle = (mode: Mode) =>
     setModes((m) => (m.includes(mode) ? m.filter((x) => x !== mode) : [...m, mode]));
 
@@ -473,6 +537,7 @@ export function App() {
         routeLine={detail ? routeLine : viewRoute}
         focusLine={viewLine?.atStation ? null : viewRoute}
         otherLines={otherLines}
+        allRoutes={allRoutes}
         station={station}
         routes={routesByKey}
         onStation={pickStation}
@@ -505,6 +570,7 @@ export function App() {
               {MODE_LABELS[mode]}
             </button>
           ))}
+          {routesButton('chip chip-routes')}
           <button
             className={`chip chip-lines${linesOpen ? ' chip-active' : ''}`}
             aria-expanded={linesOpen}
@@ -555,6 +621,7 @@ export function App() {
       )}
 
       {helpButton('help-float')}
+      {routesButton('routes-float')}
       {guideOpen && <Guide onClose={closeGuide} />}
 
       <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">

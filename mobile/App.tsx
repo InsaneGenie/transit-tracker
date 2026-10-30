@@ -21,6 +21,7 @@ import {
   fetchArrivals,
   fetchLineCounts,
   fetchRouteLines,
+  fetchRoutePaths,
   fetchRoutes,
   fetchVehicleDetail,
   fetchVehicles,
@@ -31,6 +32,7 @@ import {
   type Mode,
   type RouteInfo,
   type RouteLine,
+  type RoutePath,
   type ServiceAlert,
   type Station,
   type UpcomingStop,
@@ -56,6 +58,7 @@ const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
+const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
@@ -153,6 +156,33 @@ function useRouteLine(key: string | null, active: boolean): RouteLine | null {
     };
   }, [key, active]);
   return line;
+}
+
+/** Every subway and rail line's route, loaded the first time they are asked for. */
+function useAllRoutes(on: boolean, active: boolean): RoutePath[] {
+  const [lines, setLines] = useState<RoutePath[]>([]);
+  const loaded = lines.length > 0;
+  useEffect(() => {
+    if (!on || !active || loaded) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      fetchRoutePaths(controller.signal)
+        .then((r) => {
+          setLines(r.lines);
+          // Schedules can still be loading; ask again until both kinds of line are there.
+          if (new Set(r.lines.map((l) => l.mode)).size < 2) timer = setTimeout(load, 15_000);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [on, active, loaded]);
+  return lines;
 }
 
 /** Alerts change every few minutes at most. */
@@ -259,6 +289,8 @@ function TransitMap() {
   const [linePage, setLinePage] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
+  // Every line's route drawn on the map, without opening Lines.
+  const [allRoutesOn, setAllRoutesOn] = useState(false);
   const [region, setRegion] = useState<Region>(NEW_YORK);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
@@ -282,6 +314,9 @@ function TransitMap() {
         .catch(() => {});
     void restore(LINES_KEY, setLines);
     void restore(HIDDEN_ROUTES_KEY, setHiddenRoutes);
+    AsyncStorage.getItem(ALL_ROUTES_KEY)
+      .then((saved) => setAllRoutesOn(saved === '1'))
+      .catch(() => {});
   }, []);
   // On the first launch, ask which lines they ride, then show the guide. People who already saw the
   // guide had the app before the question was added, so they are not asked.
@@ -311,6 +346,10 @@ function TransitMap() {
   const changeHiddenRoutes = (next: string[]) => {
     setHiddenRoutes(next);
     AsyncStorage.setItem(HIDDEN_ROUTES_KEY, JSON.stringify(next)).catch(() => {});
+  };
+  const toggleAllRoutes = () => {
+    setAllRoutesOn(!allRoutesOn);
+    AsyncStorage.setItem(ALL_ROUTES_KEY, allRoutesOn ? '' : '1').catch(() => {});
   };
   const changeLines = (next: string[]) => {
     setLines(next);
@@ -524,6 +563,28 @@ function TransitMap() {
     const byKey = new Map([...drawn, ...transferRoutes].map((l) => [l.key, l]));
     return [...byKey.values()];
   }, [filterRoutes, hiddenRoutes, transferRoutes, viewLine, detail]);
+
+  // Every line's route, for the kinds of vehicle shown. A line opened on its own is shown alone. They
+  // are made once per change, since there are a lot of them.
+  const everyRoute = useAllRoutes(allRoutesOn, active);
+  const allRouteLines = useMemo(() => {
+    if (!allRoutesOn || (viewLine && !detail)) return null;
+    return everyRoute
+      .filter((l) => modes.includes(l.mode))
+      .flatMap((line) => {
+        const color = colorFor({ routeColor: line.color, mode: line.mode });
+        return line.paths.map((path, i) => (
+          <Polyline
+            key={`route-all-${line.key}-${i}`}
+            coordinates={latLngs(path)}
+            strokeColor={`${color}99`}
+            strokeWidth={2}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ));
+      });
+  }, [allRoutesOn, everyRoute, modes, viewLine, detail]);
 
   // Pick a station from the stop list or the map and bring it to the middle. Stations on the line and in
   // the stop list have different ids for the same place (127 and 127N), so look its transfers up by place.
@@ -907,6 +968,8 @@ function TransitMap() {
             userInterfaceStyle={dark ? 'dark' : 'light'}
             mapPadding={{ top: insets.top + 96, right: 0, bottom: bottomPad, left: sideLeft }}
           >
+            {/* Every line's route, when switched on, under everything else. */}
+            {allRouteLines}
             {/* Lines picked in Lines and the picked station's transfers, under the tapped vehicle's own line. */}
             {/* A vehicle's line sits faintly behind its path ahead; a line open on its own is drawn solid. */}
             {[...otherLines.filter((l) => l.key !== ownLine?.key), ...(ownLine ? [ownLine] : [])].flatMap((line) => {
@@ -1110,6 +1173,26 @@ function TransitMap() {
 
         {(wide || !(anyPanel && panelHeight > halfPanel + 1)) && (
           <Pressable
+            onPress={toggleAllRoutes}
+            accessibilityRole="switch"
+            accessibilityLabel="Show every line's route"
+            accessibilityState={{ checked: allRoutesOn }}
+            style={[
+              styles.routesButton,
+              { backgroundColor: allRoutesOn ? c.accent : c.chip, bottom: bottomPad + 16 + 44 + 10 },
+            ]}
+          >
+            <View style={styles.routesIcon}>
+              {['#EE352E', '#00933C', '#0039A6'].map((color) => (
+                <View key={color} style={[styles.routesStripe, { backgroundColor: allRoutesOn ? '#ffffff' : color }]} />
+              ))}
+            </View>
+            <Text style={[styles.chipText, { color: allRoutesOn ? '#ffffff' : c.text }]}>Routes</Text>
+          </Pressable>
+        )}
+
+        {(wide || !(anyPanel && panelHeight > halfPanel + 1)) && (
+          <Pressable
             onPress={locate}
             disabled={locating}
             accessibilityRole="button"
@@ -1244,6 +1327,22 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
   },
+  routesButton: {
+    position: 'absolute',
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  routesIcon: { width: 14, height: 14, justifyContent: 'space-between', transform: [{ rotate: '-30deg' }] },
+  routesStripe: { height: 2.5, borderRadius: 1.25 },
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
   transferTag: { maxWidth: TRANSFER_TAG_WIDTH, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },

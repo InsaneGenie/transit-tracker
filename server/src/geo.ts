@@ -120,3 +120,34 @@ export function nearestOnPath(p: LatLon, path: [number, number][]): LatLon & { m
   }
   return best;
 }
+
+/**
+ * A path ([lon, lat] pairs) with the points that bend it less than `meters` left out
+ * (Douglas-Peucker), so it looks the same on the map with far fewer points.
+ */
+export function simplifyPath(path: [number, number][], meters: number): [number, number][] {
+  if (path.length < 3) return path;
+  const kx = toRad(1) * EARTH_RADIUS_M * Math.cos(toRad(path[0][1]));
+  const ky = toRad(1) * EARTH_RADIUS_M;
+  const keep = new Uint8Array(path.length);
+  keep[0] = keep[path.length - 1] = 1;
+  const stack: [number, number][] = [[0, path.length - 1]];
+  while (stack.length) {
+    const [first, last] = stack.pop()!;
+    const [ax, ay] = [path[first][0] * kx, path[first][1] * ky];
+    const [dx, dy] = [path[last][0] * kx - ax, path[last][1] * ky - ay];
+    const len2 = dx * dx + dy * dy;
+    let farthest = -1;
+    let most = meters;
+    for (let i = first + 1; i < last; i++) {
+      const [px, py] = [path[i][0] * kx - ax, path[i][1] * ky - ay];
+      const t = len2 > 0 ? Math.min(1, Math.max(0, (px * dx + py * dy) / len2)) : 0;
+      const off = Math.hypot(px - dx * t, py - dy * t);
+      if (off > most) [farthest, most] = [i, off];
+    }
+    if (farthest < 0) continue;
+    keep[farthest] = 1;
+    stack.push([first, farthest], [farthest, last]);
+  }
+  return path.filter((_, i) => keep[i]);
+}

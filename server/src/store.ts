@@ -1,5 +1,5 @@
 import { estimatePosition, shapeBetween, trackBetween } from './estimate.js';
-import { distanceMeters, nearestOnPath, Polyline, type LatLon } from './geo.js';
+import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
@@ -57,6 +57,12 @@ export interface RouteLine {
   /** The stations it calls at, when the schedule says (subway and rail; bus schedules are read without stop times). */
   stops: UpcomingStop[];
 }
+
+/** How far a line drawn with every other may stray from its schedule's path, in meters. */
+const ROUTE_PATH_DETAIL_M = 4;
+
+/** A line's path alone. */
+export type RoutePath = Omit<RouteLine, 'stops'>;
 
 /** A vehicle on its way to a station, with where it is now. */
 export interface Arrival {
@@ -475,6 +481,25 @@ export class VehicleStore {
       return line ? [line] : [];
     });
   }
+
+  /** The path of every line of these kinds, without stations, for drawing all of them at once. */
+  routePaths(modes: Mode[]): RoutePath[] {
+    const keys = this.routes()
+      .filter((r) => modes.includes(r.mode))
+      .map((r) => r.key);
+    return this.routeLines(keys).map((line) => {
+      // Drawn thin and all at once, they need far less detail than one line on its own.
+      let path = this.pathCache.get(line.key);
+      if (!path) {
+        const { key, mode, color, paths } = line;
+        path = { key, mode, color, paths: paths.map((p) => simplifyPath(p, ROUTE_PATH_DETAIL_M)) };
+        this.pathCache.set(key, path);
+      }
+      return path;
+    });
+  }
+
+  private pathCache = new Map<string, RoutePath>();
 
   private lineCache = new Map<string, RouteLine>();
 

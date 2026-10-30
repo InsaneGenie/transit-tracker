@@ -18,6 +18,7 @@ import {
   type Mode,
   type RouteInfo,
   type RouteLine,
+  type RoutePath,
   type UpcomingStop,
   type Vehicle,
   type VehicleDetail,
@@ -83,6 +84,8 @@ interface Props {
   focusLine: RouteLine | null;
   /** Routes drawn under the tapped vehicle's line: lines picked in the Lines tab and the picked station's transfers. */
   otherLines: RouteLine[];
+  /** Every line's route, drawn faintly under all the others when the Routes switch is on. */
+  allRoutes: RoutePath[];
   /** The picked station, marked on the map and brought to the middle. */
   station: Station | null;
   /** Every line by key, to show the lines you can change to at a station. */
@@ -228,7 +231,7 @@ function vehicleFilter(modes: Mode[], lines: string[] | null, selectedId: string
   return ['all', ...parts];
 }
 
-function linesData(lines: RouteLine[]): GeoJSON.FeatureCollection {
+function linesData(lines: RoutePath[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: lines.map((l) => ({
@@ -385,6 +388,7 @@ interface LayerState {
   vehicles: GeoJSON.FeatureCollection;
   routeLine: RouteLine | null;
   otherLines: RouteLine[];
+  allRoutes: RoutePath[];
   station: Station | null;
   selected: GeoJSON.FeatureCollection;
   modes: Mode[];
@@ -403,6 +407,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('vehicles', { type: 'geojson', data: state.vehicles, maxzoom: 12, buffer: 32 });
   map.addSource('selected-vehicle', { type: 'geojson', data: state.selected });
   const line = routeLineData(state.routeLine);
+  map.addSource('all-routes', { type: 'geojson', data: linesData(state.allRoutes) });
   map.addSource('other-lines', { type: 'geojson', data: linesData(state.otherLines) });
   map.addSource('other-stops', { type: 'geojson', data: otherStopsData(state.otherLines) });
   map.addSource('route-lines', { type: 'geojson', data: line.path });
@@ -411,6 +416,14 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
 
+  // Every line's route, when switched on, under everything else.
+  map.addLayer({
+    id: 'all-routes',
+    type: 'line',
+    source: 'all-routes',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.5, 15, 3.5], 'line-opacity': 0.6 },
+  });
   // Picked lines and the picked station's transfers, under the tapped vehicle's own line.
   map.addLayer({
     id: 'other-lines',
@@ -606,7 +619,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, routeLine, focusLine, otherLines, station, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLine, focusLine, otherLines, allRoutes, station, selectedId, detail, following } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -617,6 +630,7 @@ export function MapView(props: Props) {
     vehicles: EMPTY,
     routeLine,
     otherLines,
+    allRoutes,
     station,
     selected: EMPTY,
     modes,
@@ -914,6 +928,11 @@ export function MapView(props: Props) {
     // Long lines don't fit on a phone at a zoom where vehicles show; stay close enough to see them.
     if (camera) map.easeTo({ ...camera, zoom: Math.max(camera.zoom ?? VEHICLE_MIN_ZOOM, VEHICLE_MIN_ZOOM + 0.5), duration: 600 });
   }, [focusLine]);
+
+  useEffect(() => {
+    state.current.allRoutes = allRoutes;
+    (mapRef.current?.getSource('all-routes') as GeoJSONSource | undefined)?.setData(linesData(allRoutes));
+  }, [allRoutes]);
 
   useEffect(() => {
     state.current.otherLines = otherLines;
