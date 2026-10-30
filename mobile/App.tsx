@@ -46,7 +46,7 @@ import { LinePanel } from './src/LinePanel';
 import { LinesScreen } from './src/LinesScreen';
 import { LinesSheet } from './src/LinesSheet';
 import { ModeIcon } from './src/ModeIcon';
-import { LinesDrawer } from './src/LinesDrawer';
+import { DRAWER_LOW, LinesDrawer } from './src/LinesDrawer';
 import { PanelSheet, type Sheet } from './src/PanelSheet';
 import { boundsOf, GLIDE_MIN_ZOOM, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { SidePanel } from './src/SidePanel';
@@ -274,6 +274,8 @@ function TransitMap() {
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   // The Lines sheet over the map: pulled up, and how tall it rests to show your lines.
   const [linesUp, setLinesUp] = useState(false);
+  // Pushed all the way down to a thin bar, for more map.
+  const [linesDown, setLinesDown] = useState(false);
   const [peekHeight, setPeekHeight] = useState(160);
   // The line whose own page is open in the Lines sheet.
   const [linePage, setLinePage] = useState<string | null>(null);
@@ -809,7 +811,9 @@ function TransitMap() {
     lastPeek.current = h;
     setPeekHeight(h);
   };
-  const bottomPad = wide ? insets.bottom : anyPanel ? panelPad + insets.bottom : linesPeek;
+  const linesLow = DRAWER_LOW + insets.bottom;
+  const linesStop = linesUp || linePage !== null ? 'full' : linesDown ? 'low' : 'peek';
+  const bottomPad = wide ? insets.bottom : anyPanel ? panelPad + insets.bottom : linesDown ? linesLow : linesPeek;
   // The line drawn boldest, with its stations: the vehicle's own, or the line open on its own.
   const ownLine = panelOpen ? routeLine : lineOpen ? viewRoute : null;
   const ownColor = panelOpen
@@ -1274,12 +1278,14 @@ function TransitMap() {
             </SidePanel>
           ) : (
             <LinesDrawer
+              low={linesLow}
               peek={linesPeek}
               full={height - insets.top - 8}
-              expanded={linesUp || linePage !== null}
-              onExpandedChange={(up) => {
-                setLinesUp(up);
-                if (!up) setLinePage(null);
+              stop={linesStop}
+              onStopChange={(stop) => {
+                setLinesUp(stop === 'full');
+                setLinesDown(stop === 'low');
+                if (stop !== 'full') setLinePage(null);
               }}
               dark={dark}
               bottomInset={insets.bottom}
