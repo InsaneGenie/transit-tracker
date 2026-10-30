@@ -1,4 +1,5 @@
 import { CloseButton } from './CloseButton';
+import { FEEDBACK_EMAIL, feedbackMailto } from './feedback';
 import { GUIDE } from './guide';
 
 /** How to use the map, opened from the toolbar's "?" and shown once on a first visit. */
@@ -23,6 +24,16 @@ export function Guide({ onClose }: { onClose: () => void }) {
             </ul>
           </section>
         ))}
+        <section className="guide-feedback">
+          <h3>Feedback</h3>
+          <p className="muted small">Found a bug, or have an idea? Tell us; it opens an email that's ready to send.</p>
+          <a className="chip guide-feedback-button" href={feedbackMailto({ from: 'Website', device: navigator.userAgent })}>
+            Report a bug or send feedback
+          </a>
+          <p className="muted small">
+            No email app? Write to <a href={`mailto:${FEEDBACK_EMAIL}`}>{FEEDBACK_EMAIL}</a>.
+          </p>
+        </section>
         <button className="chip guide-done" onClick={onClose}>
           Got it
         </button>

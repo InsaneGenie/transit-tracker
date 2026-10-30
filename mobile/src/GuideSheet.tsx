@@ -1,11 +1,22 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FEEDBACK_EMAIL, feedbackMailto } from '../../web/src/feedback';
 import { GUIDE } from '../../web/src/guide';
+import app from '../app.json';
 import { palette } from './theme';
 
 interface Props {
   visible: boolean;
   dark: boolean;
   onClose: () => void;
+}
+
+/** Opens Mail with the feedback form filled in, or shows the address when there is no mail app. */
+function sendFeedback() {
+  const device = `${Platform.OS === 'ios' && Platform.isPad ? 'iPad' : 'iPhone'}, iOS ${Platform.Version}`;
+  const url = feedbackMailto({ from: `iPhone app ${app.expo.version}`, device });
+  Linking.openURL(url).catch(() =>
+    Alert.alert('No email app', `Write to ${FEEDBACK_EMAIL} with what happened or what you'd like to see.`),
+  );
 }
 
 /** How to use the map, opened from the toolbar's "?" and shown once on the first launch. */
@@ -34,6 +45,19 @@ export function GuideSheet({ visible, dark, onClose }: Props) {
               ))}
             </View>
           ))}
+          <View>
+            <Text style={[styles.h3, { color: c.muted }]}>Feedback</Text>
+            <Text style={[styles.pointText, { color: c.text }]}>
+              Found a bug, or have an idea? Tell us; it opens an email that's ready to send.
+            </Text>
+            <Pressable
+              onPress={sendFeedback}
+              accessibilityRole="button"
+              style={[styles.feedback, { borderColor: c.accent }]}
+            >
+              <Text style={[styles.feedbackText, { color: c.accent }]}>Report a bug or send feedback</Text>
+            </Pressable>
+          </View>
           <Pressable onPress={onClose} accessibilityRole="button" style={[styles.gotIt, { backgroundColor: c.accent }]}>
             <Text style={styles.gotItText}>Got it</Text>
           </Pressable>
@@ -54,6 +78,8 @@ const styles = StyleSheet.create({
   point: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   bullet: { fontSize: 15, lineHeight: 21 },
   pointText: { flex: 1, fontSize: 15, lineHeight: 21 },
+  feedback: { alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, marginTop: 12 },
+  feedbackText: { fontSize: 16, fontWeight: '600' },
   gotIt: { alignItems: 'center', paddingVertical: 13, borderRadius: 12 },
   gotItText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
 });
