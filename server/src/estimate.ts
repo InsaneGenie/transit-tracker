@@ -19,9 +19,64 @@ const shapesBetween = new WeakMap<StaticIndex, Map<string, string | undefined>>(
 const ON_SHAPE_METERS = 300;
 
 /**
- * A shape that runs past both stops: the first of `preferred` that does, else one of the route's own.
- * The usual shape for a hop is tallied by the stop it leads to, from either direction, so it can
- * belong to trains running the other way (or from another terminal) and miss `from` entirely.
+ * The same for another line's shape, which a train only takes when it is rerouted. Tighter, since in
+ * Midtown another line's track can pass within a block of both stations.
+ */
+const ON_OTHER_SHAPE_METERS = 100;
+
+/** Grid cell size for finding shapes near a stop, in degrees (about 330 m north-south, 250 m east-west). */
+const CELL_DEG = 0.003;
+const cellKey = (lat: number, lon: number) => `${Math.floor(lat / CELL_DEG)}|${Math.floor(lon / CELL_DEG)}`;
+
+const grids = new WeakMap<StaticIndex, Map<string, Set<string>>>();
+const stopDistances = new WeakMap<StaticIndex, Map<string, Map<string, number>>>();
+
+/**
+ * How far each shape passing within about ON_SHAPE_METERS of a stop comes to it, in meters. Shapes are
+ * found through a grid of the cells their points fall in, so a stop never scans every shape. Cached.
+ */
+function shapesNearStop(index: StaticIndex, stopId: string): Map<string, number> {
+  let grid = grids.get(index);
+  if (!grid) {
+    grids.set(index, (grid = new Map()));
+    for (const [id, shape] of index.shapes) {
+      for (let i = 0; i < shape.size; i++) {
+        const p = shape.point(i);
+        const key = cellKey(p.lat, p.lon);
+        let ids = grid.get(key);
+        if (!ids) grid.set(key, (ids = new Set()));
+        ids.add(id);
+      }
+    }
+  }
+  let cache = stopDistances.get(index);
+  if (!cache) stopDistances.set(index, (cache = new Map()));
+  let near = cache.get(stopId);
+  if (!near) {
+    near = new Map();
+    const stop = index.stops.get(stopId);
+    if (stop) {
+      const candidates = new Set<string>();
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          for (const id of grid.get(cellKey(stop.lat + dy * CELL_DEG, stop.lon + dx * CELL_DEG)) ?? []) candidates.add(id);
+        }
+      }
+      for (const id of candidates) {
+        const shape = index.shapes.get(id)!;
+        near.set(id, distanceMeters(shape.point(shape.nearestIndex(stop)), stop));
+      }
+    }
+    cache.set(stopId, near);
+  }
+  return near;
+}
+
+/**
+ * A shape that runs past both stops: the first of `preferred` that does, else one of the route's own,
+ * else (for a train rerouted onto another line's track) any line's. The usual shape for a hop is
+ * tallied by the stop it leads to, from either direction, so it can belong to trains running the
+ * other way (or from another terminal) and miss `from` entirely.
  */
 export function shapeBetween(
   index: StaticIndex,
@@ -36,18 +91,21 @@ export function shapeBetween(
   if (cache.has(key)) return cache.get(key);
   const from = index.stops.get(fromStopId);
   const to = index.stops.get(toStopId);
-  const passes = (shapeId: string | undefined): shapeId is string => {
-    const shape = shapeId ? index.shapes.get(shapeId) : undefined;
-    if (!shape || !from || !to) return false;
-    return [from, to].every((stop) => distanceMeters(shape.point(shape.nearestIndex(stop)), stop) <= ON_SHAPE_METERS);
-  };
-  // Of the route's own, the shortest way between the two, so a shape that loops off elsewhere loses.
-  const length = (shapeId: string) => index.shapes.get(shapeId)!.slice(from!, to!).length;
-  const found =
-    preferred.find(passes) ??
-    [...((routeId && index.routeShapes.get(routeId)) || [])]
-      .filter(passes)
-      .reduce<string | undefined>((best, id) => (best === undefined || length(id) < length(best) ? id : best), undefined);
+  let found: string | undefined;
+  if (from && to) {
+    const nearFrom = shapesNearStop(index, fromStopId);
+    const nearTo = shapesNearStop(index, toStopId);
+    const passes = (shapeId: string | undefined, meters = ON_SHAPE_METERS): shapeId is string =>
+      shapeId !== undefined && (nearFrom.get(shapeId) ?? Infinity) <= meters && (nearTo.get(shapeId) ?? Infinity) <= meters;
+    // Of several, the shortest way between the two, so a shape that loops off elsewhere loses.
+    const length = (shapeId: string) => index.shapes.get(shapeId)!.slice(from, to).length;
+    const shortest = (ids: string[]) =>
+      ids.reduce<string | undefined>((best, id) => (best === undefined || length(id) < length(best) ? id : best), undefined);
+    found =
+      preferred.find((id) => passes(id)) ??
+      shortest([...((routeId && index.routeShapes.get(routeId)) || [])].filter((id) => passes(id))) ??
+      shortest([...nearFrom.keys()].filter((id) => passes(id, ON_OTHER_SHAPE_METERS)));
+  }
   cache.set(key, found);
   return found;
 }
@@ -72,7 +130,12 @@ export function trackBetween(index: StaticIndex, fromStopId: string, toStopId: s
  * Places a trip on the map from its predicted stop times. It finds the next stop, works out when the
  * train left the stop before it, and moves it that fraction of the way along the track between them.
  */
-export function estimatePosition(trip: TripState, now: number, index: StaticIndex): EstimatedPosition | null {
+export function estimatePosition(
+  trip: TripState,
+  now: number,
+  index: StaticIndex,
+  keepsPastStops = false,
+): EstimatedPosition | null {
   const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > now);
   if (nextIdx === -1) return null;
   const next = trip.stops[nextIdx];
@@ -83,6 +146,12 @@ export function estimatePosition(trip: TripState, now: number, index: StaticInde
   const atNext = { lat: nextStop.lat, lon: nextStop.lon, stopId: next.stopId, status: 'STOPPED_AT' as const };
   if (arriveNext <= now) return atNext; // dwelling: arrived, not yet departed
   if (trip.status === 'STOPPED_AT' && trip.statusStopId === next.stopId) return atNext;
+
+  // Not left its first stop yet: a stop with only a departure time is where a trip starts, and in a feed
+  // that keeps the stops a train has passed, so is the first one listed. Inventing a stop before it
+  // would show the train out on the line heading in.
+  const atOrigin = nextIdx === 0 && (keepsPastStops || next.arrival === undefined);
+  if (atOrigin) return arriveNext - now <= NOT_STARTED_SECONDS ? atNext : null;
 
   // Where it came from: the previous stop in the feed if it is still listed, else the usual previous stop.
   let fromStopId: string | undefined;

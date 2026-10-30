@@ -160,6 +160,12 @@ const AT_STATION_M = 80;
 /** How long the count of vehicles on each line is reused, in seconds. */
 const COUNTS_MAX_AGE_S = 20;
 
+/** A GPS fix older than this loses to the trip's predicted times, which are newer, in seconds. */
+const OLD_FIX_S = 3 * 60;
+
+/** A GPS fix this old, with no predicted times to fall back on, is dropped, in seconds. */
+const STALE_FIX_S = 10 * 60;
+
 /** Margin around the requested area when deciding which trips are worth estimating, in degrees (~3 km). */
 const ESTIMATE_MARGIN = 0.03;
 
@@ -302,7 +308,18 @@ export class VehicleStore {
       const base = { feed: config.id, agency: config.agency, mode: config.mode };
       const route = (id?: string) => (id ? index?.routes.get(id) : undefined);
 
-      for (const g of snapshot.gps) {
+      // The LIRR keeps listing a train's last fix for hours after its trip ends, so trains parked out of
+      // service, and fixes too old to trust, are left out.
+      // A feed whose schedule skipped travel times (buses) can't estimate, so it keeps older fixes.
+      const trips = new Map(snapshot.trips.map((t) => [t.tripId, t]));
+      const canEstimate = config.staticDetail !== 'stops';
+      const live = snapshot.gps.filter((g) => {
+        const trip = g.tripId ? trips.get(g.tripId) : undefined;
+        if (trip && !trip.stops.some((s) => (s.departure ?? s.arrival ?? 0) > now)) return false;
+        const age = g.timestamp ? now - g.timestamp : 0;
+        return age <= (trip && canEstimate ? OLD_FIX_S : STALE_FIX_S);
+      });
+      for (const g of live) {
         if (bbox && !inside(bbox, g.lat, g.lon)) continue;
         const r = route(g.routeId);
         out.push({
@@ -322,7 +339,7 @@ export class VehicleStore {
       }
 
       if (!index) continue;
-      const tracked = new Set(snapshot.gps.map((g) => g.tripId));
+      const tracked = new Set(live.map((g) => g.tripId));
       for (const trip of snapshot.trips) {
         if (tracked.has(trip.tripId)) continue; // its GPS position is already listed
         if (bbox) {
@@ -330,7 +347,7 @@ export class VehicleStore {
           const stop = next && index.stops.get(next.stopId);
           if (!stop || !inside(bbox, stop.lat, stop.lon, ESTIMATE_MARGIN)) continue;
         }
-        const pos = estimatePosition(trip, now, index);
+        const pos = estimatePosition(trip, now, index, config.keepsPastStops);
         if (!pos || (bbox && !inside(bbox, pos.lat, pos.lon))) continue;
         const r = route(trip.routeId);
         out.push({

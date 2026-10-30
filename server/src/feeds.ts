@@ -15,6 +15,11 @@ export interface FeedConfig {
   staticDetail?: 'full' | 'stops';
   /** Realtime ids carry an agency prefix the schedule lacks, like `MTA NYCT_M15` for route `M15`. */
   agencyPrefixedIds?: boolean;
+  /**
+   * Trip updates keep the stops a train has already passed (the subway's drop them), so a trip whose
+   * first listed stop is still ahead has not left its first stop yet.
+   */
+  keepsPastStops?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -44,6 +49,7 @@ export const FEEDS: FeedConfig[] = [
     mode: 'rail',
     realtimeUrls: [`${MTA_RT}lirr%2Fgtfs-lirr`],
     staticUrls: [`${MTA_STATIC}gtfslirr.zip`],
+    keepsPastStops: true,
     pollSeconds: 30,
   },
   {
@@ -52,6 +58,7 @@ export const FEEDS: FeedConfig[] = [
     mode: 'rail',
     realtimeUrls: [`${MTA_RT}mnr%2Fgtfs-mnr`],
     staticUrls: [`${MTA_STATIC}gtfsmnr.zip`],
+    keepsPastStops: true,
     pollSeconds: 30,
   },
   {

@@ -76,6 +76,37 @@ describe('snapshotFromFeed', () => {
   });
 });
 
+describe('snapshotFromFeed rail quirks', () => {
+  it("matches a Metro-North vehicle, listed under its train number, to its entity's trip", () => {
+    const snap = snapshotFromFeed(
+      decodeFeed(
+        encodeFeed([
+          {
+            id: '1392',
+            tripUpdate: { trip: { tripId: '3248407', routeId: '3' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: T + 90 } }] },
+            vehicle: { trip: { tripId: '1392' }, vehicle: { id: '1392' }, position: { latitude: 40.785, longitude: -73.95 } },
+          },
+        ]),
+      ),
+      T,
+    );
+    expect(snap.gps[0]).toMatchObject({ vehicleId: '1392', tripId: '3248407', routeId: '3' });
+  });
+
+  it("takes an LIRR vehicle's route from its trip update", () => {
+    const snap = snapshotFromFeed(
+      decodeFeed(
+        encodeFeed([
+          { id: 't', tripUpdate: { trip: { tripId: 'GO_1', routeId: '9' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: T + 90 } }] } },
+          { id: 'v', vehicle: { trip: { tripId: 'GO_1' }, vehicle: { id: '7' }, position: { latitude: 40.785, longitude: -73.95 } } },
+        ]),
+      ),
+      T,
+    );
+    expect(snap.gps[0]).toMatchObject({ tripId: 'GO_1', routeId: '9' });
+  });
+});
+
 describe('VehicleStore', () => {
   it('skips feeds whose API key is missing', async () => {
     const { store, requested } = makeStore();
@@ -200,6 +231,37 @@ describe('VehicleStore.detail', () => {
     const detail = store.detail('test-train:7', T)!;
     expect(detail.vehicle.source).toBe('gps');
     expect(detail.upcoming.map((u) => u.name)).toEqual(['Charlie']);
+  });
+});
+
+describe('VehicleStore GPS fixes', () => {
+  const storeFor = (entities: Parameters<typeof encodeFeed>[0]) =>
+    new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(encodeFeed(entities)), T), () => indexPromise);
+
+  it('leaves out a train still reporting a fix after its trip has ended', async () => {
+    const store = storeFor([
+      { id: 't', tripUpdate: { trip: { tripId: 'tD', routeId: '1' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: T - 600 } }] } },
+      { id: 'v', vehicle: { trip: { tripId: 'tD' }, vehicle: { id: '8' }, position: { latitude: 40.78, longitude: -73.95 }, timestamp: T - 30 } },
+    ]);
+    await store.loadStatic();
+    await store.pollAll();
+    expect(store.vehicles(T)).toEqual([]);
+  });
+
+  it('estimates a train whose fix is too old, and drops an old fix with nothing to estimate from', async () => {
+    const store = storeFor([
+      { id: 't', tripUpdate: { trip: { tripId: 'tE', routeId: '1' }, stopTimeUpdate: [
+        { stopId: 'B', arrival: { time: T - 100 }, departure: { time: T - 90 } },
+        { stopId: 'C', arrival: { time: T + 90 } },
+      ] } },
+      { id: 'v', vehicle: { trip: { tripId: 'tE' }, vehicle: { id: '9' }, position: { latitude: 40.8, longitude: -73.95 }, timestamp: T - 20 * 60 } },
+      { id: 'w', vehicle: { trip: { tripId: 'gone' }, vehicle: { id: '10' }, position: { latitude: 40.8, longitude: -73.95 }, timestamp: T - 20 * 60 } },
+    ]);
+    await store.loadStatic();
+    await store.pollAll();
+    const vehicles = store.vehicles(T);
+    expect(vehicles).toHaveLength(1);
+    expect(vehicles[0]).toMatchObject({ tripId: 'tE', source: 'estimated', lat: expect.closeTo(40.785, 3) });
   });
 });
 

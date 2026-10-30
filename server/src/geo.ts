@@ -58,10 +58,14 @@ export class Polyline {
   }
 
   nearestIndex(p: LatLon): number {
+    // Flat squared distances rank points the same as true ones over a city, without any trig per point.
+    const kx = Math.cos(toRad(p.lat));
     let best = 0;
     let bestDist = Infinity;
     for (let i = 0; i < this.size; i++) {
-      const d = distanceMeters(this.point(i), p);
+      const dy = this.coords[i * 2] - p.lat;
+      const dx = (this.coords[i * 2 + 1] - p.lon) * kx;
+      const d = dx * dx + dy * dy;
       if (d < bestDist) {
         bestDist = d;
         best = i;
