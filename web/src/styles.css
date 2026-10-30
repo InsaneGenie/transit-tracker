@@ -654,6 +654,24 @@ button {
   height: 8px;
 }
 
+.stop-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.access-icon {
+  flex: none;
+}
+
+.access-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
 .stop-name {
   min-width: 0;
   overflow: hidden;

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { accessOf } from '../web/src/accessibility';
 import { colorFor, displayName, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
@@ -103,6 +104,8 @@ const OTHER_STOPS_MIN_ZOOM = 12;
 const MAX_OTHER_STOPS = 200;
 /** Station names appear beside the drawn stations from this zoom, at most this many at once. */
 const STATION_NAMES_MIN_ZOOM = 13.5;
+/** Accessible stations get their wheelchair symbol from this zoom. */
+const ACCESS_MIN_ZOOM = 13;
 const MAX_STATION_NAMES = 60;
 /** Each name's box is this wide; longer names are cut short. */
 const STATION_NAME_WIDTH = 150;
@@ -533,7 +536,7 @@ function TransitMap() {
       ...(detail?.upcoming ?? []),
     ].find((s) => s.transfers && sameStation(s, stop));
     setFollowing(false);
-    setStation({ stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: known?.transfers });
+    setStation({ stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: known?.transfers, ...accessOf(stop) });
     mapRef.current?.animateCamera({ center: { latitude: stop.lat, longitude: stop.lon } }, { duration: 600 });
   };
 
@@ -564,7 +567,7 @@ function TransitMap() {
   const openLineStation = (key: string, stop: UpcomingStop) => {
     if (stop.lat === undefined || stop.lon === undefined) return;
     setFollowing(false);
-    openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
+    openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers, ...accessOf(stop) });
   };
 
   // From a line's page in the Lines sheet: the line on the map, at one of its stations when one is given.
@@ -573,7 +576,7 @@ function TransitMap() {
     setLinePage(null);
     if (stop?.lat !== undefined && stop.lon !== undefined) {
       setFollowing(false);
-      openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers });
+      openLine(key, { stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: stop.transfers, ...accessOf(stop) });
     } else {
       openLine(key);
     }
@@ -771,6 +774,8 @@ function TransitMap() {
     return out;
   }, [zoom, region, mapWidth, mapHeight, stationDots, otherStops, anyPanel, station]);
 
+  const showAccess = zoom >= ACCESS_MIN_ZOOM;
+
   // Station dots keep the same tap handlers from one update to the next, so they aren't redrawn each time.
   const stopTaps = useRef({ pickStation, openLineStation });
   stopTaps.current = { pickStation, openLineStation };
@@ -934,12 +939,14 @@ function TransitMap() {
             {/* Stations of the picked lines: tapping one opens that line there. */}
             {otherStops.map(({ line, stop }) => (
               <StopMarker
-                key={`other-stop-${line.key}-${stop.stopId}-${dark ? 'd' : 'l'}`}
+                // A marker's view is only drawn once, so it is made again when the symbol comes or goes.
+                key={`other-stop-${line.key}-${stop.stopId}-${dark ? 'd' : 'l'}${showAccess && stop.access ? '-a' : ''}`}
                 stop={stop}
                 lineKey={line.key}
                 color={colorFor({ routeColor: line.color, mode: line.mode })}
                 background={c.card}
                 small
+                showAccess={showAccess}
                 onPress={onOtherStop}
               />
             ))}
@@ -948,11 +955,12 @@ function TransitMap() {
               .filter((s) => s.lat !== undefined && s.lon !== undefined)
               .map((s) => (
                 <StopMarker
-                  key={`stop-${ownLine?.key ?? ''}-${s.stopId}-${dark ? 'd' : 'l'}`}
+                  key={`stop-${ownLine?.key ?? ''}-${s.stopId}-${dark ? 'd' : 'l'}${showAccess && s.access ? '-a' : ''}`}
                   stop={s}
                   lineKey={ownLine?.key ?? ''}
                   color={ownColor}
                   background={c.card}
+                  showAccess={showAccess}
                   onPress={onOwnStop}
                 />
               ))}

@@ -11,6 +11,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { ACCESS_BLUE, WHEELCHAIR_GLYPH } from './accessibility';
 import {
   fetchVehicles,
   type Bounds,
@@ -43,6 +44,8 @@ export const VEHICLE_MIN_ZOOM = 10;
 const ARROW_MIN_ZOOM = 12;
 /** Station names appear beside the drawn lines' stations from this zoom. */
 const STATION_NAMES_MIN_ZOOM = 13;
+/** Accessible stations get their wheelchair badge from this zoom. */
+const ACCESS_MIN_ZOOM = 12;
 /** How often the tapped vehicle is refreshed; it glides across each interval so it never stops. */
 export const SELECTED_POLL_MS = 3000;
 /** Gliding is only visible up close; further out, dots jump once per update, which costs far less. */
@@ -62,7 +65,11 @@ function glideFrameMsFor(zoom: number): number {
 export type MapInfo = { count: number; error?: string; zoomedOut?: boolean };
 
 /** A station picked on the map or in the stop list; `at` makes picking the same one twice re-center it. */
-export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[]; at: number };
+export type Station = Pick<UpcomingStop, 'stopId' | 'name' | 'transfers' | 'access' | 'accessNote'> & {
+  lon: number;
+  lat: number;
+  at: number;
+};
 
 interface Props {
   theme: Theme;
@@ -160,9 +167,37 @@ function vehicleIcon(mode: Mode, color: string, ink: string, outline: string): I
   return ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
+/** The wheelchair badge beside accessible stations, outlined in the map's background color. */
+const ACCESS_PREFIX = 'access|';
+const ACCESS_PX = 16;
+
+function accessImage(outline: string): ImageData {
+  const ratio = 2;
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  ctx.canvas.width = ctx.canvas.height = ACCESS_PX * ratio;
+  ctx.scale(ratio, ratio);
+  const badge = new Path2D();
+  badge.roundRect(1, 1, ACCESS_PX - 2, ACCESS_PX - 2, 3.5);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = outline;
+  ctx.stroke(badge);
+  ctx.fillStyle = ACCESS_BLUE;
+  ctx.fill(badge);
+  const g = ACCESS_PX * 0.68;
+  ctx.translate((ACCESS_PX - g) / 2, (ACCESS_PX - g) / 2);
+  ctx.scale(g / 24, g / 24);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill(new Path2D(WHEELCHAIR_GLYPH));
+  return ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+}
+
 /** Icons are made the first time a mode and color is shown; the id carries everything needed to draw it. */
 function addMissingVehicleIcon(map: MapLibreMap, id: string) {
   if (map.hasImage(id)) return;
+  if (id.startsWith(ACCESS_PREFIX)) {
+    map.addImage(id, accessImage(id.slice(ACCESS_PREFIX.length)), { pixelRatio: 2 });
+    return;
+  }
   if (id.startsWith(ARROW_PREFIX)) {
     const [color, outline] = id.slice(ARROW_PREFIX.length).split('|');
     map.addImage(id, arrowImage(color, outline), { pixelRatio: 2 });
@@ -172,6 +207,12 @@ function addMissingVehicleIcon(map: MapLibreMap, id: string) {
   const [mode, color, ink, outline] = id.slice(ICON_PREFIX.length).split('|');
   if (!(mode in MODE_SHAPES)) return;
   map.addImage(id, vehicleIcon(mode as Mode, color, ink, outline), { pixelRatio: 2 });
+}
+
+/** A tapped station's accessibility, back from the strings its map feature keeps. */
+function accessProps({ access, accessNote }: { access: string; accessNote: string }): Pick<Station, 'access' | 'accessNote'> {
+  if (access !== 'full' && access !== 'partial') return {};
+  return { access, ...(accessNote && { accessNote }) };
 }
 
 function boundsOf(map: MapLibreMap): Bounds {
@@ -220,6 +261,8 @@ function stopFeatures(stops: UpcomingStop[], color: string): GeoJSON.FeatureColl
           name: s.name ? tidyStopName(s.name) : '',
           // Feature properties hold flat values, so the transfers travel as one string.
           transfers: s.transfers?.join(' ') ?? '',
+          access: s.access ?? '',
+          accessNote: s.accessNote ?? '',
         },
       })),
   };
@@ -242,6 +285,14 @@ function otherStopsData(lines: RouteLine[]): GeoJSON.FeatureCollection {
 function stationNamesFilter(station: Station | null): ExpressionSpecification {
   return ['!=', ['get', 'name'], station?.name ? tidyStopName(station.name) : ''];
 }
+
+/** Accessible stations, but not the picked one, which has its badge beside its ring instead. */
+function accessFilter(station: Station | null): ExpressionSpecification {
+  return ['all', ['!=', ['get', 'access'], ''], stationNamesFilter(station)];
+}
+
+/** The badge layers of the drawn stations, which leave out the picked station's. */
+const STATION_ACCESS_LAYERS = ['other-stops-access', 'route-stops-access', 'selected-stops-access'];
 
 function stationData(station: Station | null, color: string): GeoJSON.FeatureCollection {
   if (!station) return EMPTY;
@@ -452,6 +503,27 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
         'text-padding': 4,
       },
       paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 1.5 },
+    });
+  }
+  // A wheelchair badge at the top right of each accessible station, from about the zoom where streets show.
+  for (const source of ['other-stops', 'route-stops', 'selected-stops', 'chosen-station']) {
+    const picked = source === 'chosen-station';
+    map.addLayer({
+      id: `${source}-access`,
+      type: 'symbol',
+      source,
+      minzoom: picked ? 0 : ACCESS_MIN_ZOOM,
+      filter: picked ? ['!=', ['get', 'access'], ''] : accessFilter(state.station),
+      layout: {
+        'icon-image': ACCESS_PREFIX + outline,
+        'icon-size': picked ? 1 : ['interpolate', ['linear'], ['zoom'], ACCESS_MIN_ZOOM, 0.75, 15, 1],
+        'icon-anchor': 'bottom-left',
+        // Clear of the dot, or of the picked station's ring.
+        'icon-offset': picked ? [9, -9] : [2, -2],
+        'icon-allow-overlap': true,
+        // Station names keep clear of it.
+        'icon-ignore-placement': false,
+      },
     });
   }
   addVehicleLayers(map, 'vehicle', 'vehicles', outline, ring, vehicleFilter(state.modes, state.lines, state.selectedId), VEHICLE_MIN_ZOOM, 6);
@@ -689,16 +761,22 @@ export function MapView(props: Props) {
       const stop = hit ? undefined : map.queryRenderedFeatures(box, { layers: STATION_LAYERS })[0];
       if (stop?.geometry.type === 'Point') {
         const [lon, lat] = stop.geometry.coordinates;
-        const { stopId, name } = stop.properties as { stopId: string; name: string };
-        callbacks.current.onStation({ stopId, name: name || undefined, lon, lat });
+        const { stopId, name, ...access } = stop.properties as { stopId: string; name: string; access: string; accessNote: string };
+        callbacks.current.onStation({ stopId, name: name || undefined, lon, lat, ...accessProps(access) });
         return;
       }
       // A station of a picked line: open that line at the station.
       const other = hit ? undefined : map.queryRenderedFeatures(box, { layers: ['other-stops'] })[0];
       if (other?.geometry.type === 'Point') {
         const [lon, lat] = other.geometry.coordinates;
-        const { stopId, name, line } = other.properties as { stopId: string; name: string; line: string };
-        callbacks.current.onLineStation(line, { stopId, name: name || undefined, lon, lat });
+        const { stopId, name, line, ...access } = other.properties as {
+          stopId: string;
+          name: string;
+          line: string;
+          access: string;
+          accessNote: string;
+        };
+        callbacks.current.onLineStation(line, { stopId, name: name || undefined, lon, lat, ...accessProps(access) });
         return;
       }
       // The tapped vehicle's own line: show all of its stations.
@@ -850,6 +928,9 @@ export function MapView(props: Props) {
     (map?.getSource('chosen-station') as GeoJSONSource | undefined)?.setData(stationData(station, stationColor(state.current)));
     for (const layer of ['other-stops-names', 'route-stops-names']) {
       if (map?.getLayer(layer)) map.setFilter(layer, stationNamesFilter(station));
+    }
+    for (const layer of STATION_ACCESS_LAYERS) {
+      if (map?.getLayer(layer)) map.setFilter(layer, accessFilter(station));
     }
     if (!map || !station) return;
     map.easeTo({

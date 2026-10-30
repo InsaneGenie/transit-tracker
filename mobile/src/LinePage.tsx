@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from '../../web/src/vehicles';
 import { towards } from '../../web/src/lines';
+import { WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { LineBadge, vehicleCount } from './LineBadge';
@@ -166,9 +167,11 @@ export function LinePage({
                 >
                   <View style={[styles.stationDot, { borderColor: color, backgroundColor: c.card }]} />
                   <View style={styles.stationText}>
-                    <Text style={[styles.stationName, { color: c.text }]} numberOfLines={1}>
-                      {s.name ? tidyStopName(s.name) : s.stopId}
-                    </Text>
+                    <WithAccess stop={s}>
+                      <Text style={[styles.stationName, styles.shrink, { color: c.text }]} numberOfLines={1}>
+                        {s.name ? tidyStopName(s.name) : s.stopId}
+                      </Text>
+                    </WithAccess>
                     <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
                   </View>
                 </Pressable>
@@ -199,6 +202,7 @@ export function LinePage({
 }
 
 const styles = StyleSheet.create({
+  shrink: { flexShrink: 1 },
   page: { flex: 1 },
   back: { alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 8 },
   backText: { fontSize: 17 },
