@@ -27,6 +27,7 @@ const bus: FeedConfig = {
   agency: 'Test Bus',
   mode: 'bus',
   realtimeUrls: ['https://example.test/bus'],
+  bearingFromEast: true,
   apiKeyEnv: 'TEST_BUS_KEY',
   pollSeconds: 30,
 };
@@ -44,7 +45,7 @@ const busFeed = encodeFeed([
     vehicle: {
       vehicle: { id: 'MTA_1234' },
       trip: { tripId: 'bt', routeId: 'M15' },
-      position: { latitude: 40.75, longitude: -73.97, bearing: 90 },
+      position: { latitude: 40.75, longitude: -73.97, bearing: 30 }, // 30° counter-clockwise from east
       timestamp: T,
     },
   },
@@ -127,7 +128,7 @@ describe('VehicleStore', () => {
 
     const vehicles = store.vehicles(T);
     expect(vehicles).toHaveLength(2);
-    expect(vehicles.find((v) => v.mode === 'bus')).toMatchObject({ source: 'gps', routeId: 'M15', bearing: 90 });
+    expect(vehicles.find((v) => v.mode === 'bus')).toMatchObject({ source: 'gps', routeId: 'M15', bearing: 60 });
     expect(vehicles.find((v) => v.mode === 'subway')).toMatchObject({
       id: 'test-train:tA',
       source: 'estimated',

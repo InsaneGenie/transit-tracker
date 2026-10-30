@@ -24,6 +24,11 @@ export interface FeedConfig {
    * first listed stop is still ahead has not left its first stop yet.
    */
   keepsPastStops?: boolean;
+  /**
+   * Vehicle bearings are degrees counter-clockwise from east (SIRI's convention, which Bus Time keeps in its
+   * GTFS-Realtime feed) rather than GTFS-Realtime's clockwise from north.
+   */
+  bearingFromEast?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -75,6 +80,7 @@ export const FEEDS: FeedConfig[] = [
     staticUrls: ['gtfs_bx', 'gtfs_b', 'gtfs_m', 'gtfs_q', 'gtfs_si', 'gtfs_busco'].map((z) => `${MTA_STATIC}${z}.zip`),
     staticDetail: 'stops',
     agencyPrefixedIds: true,
+    bearingFromEast: true,
     apiKeyEnv: 'MTA_BUSTIME_KEY',
     pollSeconds: 30,
   },
