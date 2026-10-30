@@ -1,10 +1,10 @@
-import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
 export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
-export type Station = { stopId: string; name?: string; lon: number; lat: number; transfers?: string[] };
+export type Station = Pick<UpcomingStop, 'stopId' | 'name' | 'transfers' | 'access' | 'accessNote'> & { lon: number; lat: number };
 
 /** The live data server. The app uses the same one as the website. */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://transit-tracker-vbfs.onrender.com').replace(/\/$/, '');

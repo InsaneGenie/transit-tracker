@@ -9,6 +9,7 @@ import {
   tidyStopName,
   transferLines,
 } from '../../web/src/vehicles';
+import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
 import { SheetHandle, type Sheet } from './PanelSheet';
@@ -251,6 +252,7 @@ export function VehiclePanel({
                 <Text style={[styles.titleText, { color: c.text }]} numberOfLines={1}>
                   {station.name ? tidyStopName(station.name) : 'Station'}
                 </Text>
+                <AccessLine stop={station} color={c.muted} />
                 {stationTransfers.length > 0 ? (
                   <Transfers lines={transferLines(stationTransfers, routes)} muted={c.muted} onPick={onLine} />
                 ) : (
@@ -302,9 +304,11 @@ export function VehiclePanel({
                 >
                   <View style={[styles.stopDot, { borderColor: color }, i === 0 && { backgroundColor: color }]} />
                   <View style={styles.stopText}>
-                    <Text style={[styles.stopName, { color: c.text }]} numberOfLines={1}>
-                      {s.name ? tidyStopName(s.name) : s.stopId}
-                    </Text>
+                    <WithAccess stop={s}>
+                      <Text style={[styles.stopName, styles.shrink, { color: c.text }]} numberOfLines={1}>
+                        {s.name ? tidyStopName(s.name) : s.stopId}
+                      </Text>
+                    </WithAccess>
                     <Transfers lines={transferLines(s.transfers, routes)} muted={c.muted} />
                   </View>
                   <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
@@ -389,6 +393,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.5 },
   stopText: { flex: 1, gap: 3 },
   stopName: { fontSize: 14 },
+  shrink: { flexShrink: 1 },
   transfers: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   transfersPick: { gap: 8, marginTop: 2 },
   bulletPick: { minWidth: 26, height: 26, borderRadius: 13 },

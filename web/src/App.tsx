@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { accessOf } from './accessibility';
 import { worstSeverity } from './alerts';
 import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchLineCounts, fetchRouteLines, fetchRoutePaths, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type RoutePath, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
 import { Guide } from './Guide';
@@ -448,7 +449,15 @@ export function App() {
   const showLineOnMap = (key: string, stop?: UpcomingStop) => {
     setLinesOpen(false);
     if (stop?.lat !== undefined && stop.lon !== undefined) {
-      openLine(key, { stopId: stop.stopId, name: stop.name, lon: stop.lon, lat: stop.lat, transfers: stop.transfers, at: Date.now() });
+      openLine(key, {
+        stopId: stop.stopId,
+        name: stop.name,
+        lon: stop.lon,
+        lat: stop.lat,
+        transfers: stop.transfers,
+        ...accessOf(stop),
+        at: Date.now(),
+      });
     } else {
       openLine(key);
     }
@@ -629,7 +638,7 @@ export function App() {
           alerts={panelAlerts}
           backLabel={viewLine.back?.label}
           onBack={closeLine}
-          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
+          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}
           onArrival={(id) => {
             keepStation.current = true;
             select(id);
@@ -662,7 +671,7 @@ export function App() {
           }}
           onLine={(key) => openLine(key)}
           onShowTransfers={setShowTransfers}
-          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat! })}
+          onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}
           onClose={() => select(null)}
         />
       )}

@@ -48,6 +48,7 @@ export const GUIDE: GuideSection[] = [
       'The colored badges are the lines you can change to there. Show transfer lines draws them on the map.',
       'Tap a transfer badge to see that line on its own. Back returns you to where you were.',
       'Stations of your lines can be tapped too; that line opens at the station.',
+      'A blue wheelchair symbol marks a station that is accessible, with step-free access from the street to the trains. Its card says when only some platforms are, such as one direction only. Every MTA bus is accessible, so bus stops aren’t marked.',
     ],
   },
   {

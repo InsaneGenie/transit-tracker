@@ -2,7 +2,8 @@ import { estimatePosition, shapeBetween, trackBetween } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
-import { loadStaticIndex, type StaticIndex } from './static-gtfs.js';
+import { applyStationAccess, loadStationAccess } from './accessibility.js';
+import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
 
 export interface Vehicle {
   id: string;
@@ -32,6 +33,10 @@ export interface UpcomingStop {
   time?: number;
   /** Other lines that call here, as legend keys (`${feed}:${routeId}`). */
   transfers?: string[];
+  /** Step-free from the street to the trains: every platform, or only some of them. */
+  access?: Access;
+  /** What a partly accessible station's step-free route reaches, like "only toward Manhattan". */
+  accessNote?: string;
 }
 
 export interface VehicleDetail {
@@ -230,6 +235,26 @@ function alongPaths<T extends { lat?: number; lon?: number }>(stops: T[], paths:
 
 export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 
+/** A feed's schedule, with which stations are accessible when that comes from elsewhere. */
+async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
+  const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail);
+  if (config.accessibilityUrl) {
+    try {
+      applyStationAccess(index, await loadStationAccess(config.id, config.accessibilityUrl));
+    } catch (err) {
+      // The map still works without it; stations just aren't marked.
+      console.warn(`${config.id}: no station accessibility (${(err as Error).message})`);
+    }
+  }
+  return index;
+}
+
+/** A stop's accessibility, for the API. */
+function accessOf(stop: { access?: Access; accessNote?: string } | undefined) {
+  if (!stop?.access) return {};
+  return { access: stop.access, ...(stop.accessNote && { accessNote: stop.accessNote }) };
+}
+
 export class VehicleStore {
   private feeds: FeedState[];
   private timers: NodeJS.Timeout[] = [];
@@ -238,8 +263,7 @@ export class VehicleStore {
     configs: FeedConfig[],
     env: Record<string, string | undefined> = process.env,
     private fetcher: Fetcher = (url) => fetchFeed(url, AbortSignal.timeout(15_000)),
-    private loadIndex: (config: FeedConfig) => Promise<StaticIndex> = (c) =>
-      loadStaticIndex(c.id, c.staticUrls!, c.staticDetail),
+    private loadIndex: (config: FeedConfig) => Promise<StaticIndex> = loadWithAccess,
   ) {
     this.feeds = configs.map((config) => ({
       config,
@@ -395,6 +419,7 @@ export class VehicleStore {
         lon: stop?.lon,
         time: s.arrival ?? s.departure,
         transfers: index && this.transferKeys(feed, index, s.stopId, vehicle.routeId),
+        ...accessOf(stop),
       };
     });
 
@@ -502,7 +527,7 @@ export class VehicleStore {
       if (!stop) return [];
       const transfers = this.transferKeys(feed, index, id, routeId);
       const place = ontoPaths({ lat: stop.lat, lon: stop.lon }, paths);
-      return [{ stopId: id, name: stop.name, ...place, ...(transfers && { transfers }) }];
+      return [{ stopId: id, name: stop.name, ...place, ...(transfers && { transfers }), ...accessOf(stop) }];
     });
     // Stops-only schedules list a route's stops in order already.
     const ordered = feed.config.staticDetail === 'stops' ? stops : alongPaths(stops, paths);

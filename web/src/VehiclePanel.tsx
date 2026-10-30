@@ -1,4 +1,5 @@
 import { Fragment, type CSSProperties, type Ref } from 'react';
+import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, UpcomingStop, VehicleDetail } from './api';
 import { CloseButton } from './CloseButton';
@@ -188,6 +189,7 @@ export function VehiclePanel({
           <div className="station-card-top">
             <div className="station-card-text">
               <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
+              <AccessLine stop={station} />
               {stationTransfers.length > 0 ? (
                 <Transfers lines={transferLines(stationTransfers, routes)} onPick={onLine} />
               ) : (
@@ -227,7 +229,10 @@ export function VehiclePanel({
                 >
                   <span className="stop-dot" />
                   <span className="stop-text">
-                    <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                    <span className="stop-title">
+                      <span className="stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</span>
+                      <AccessIcon stop={s} />
+                    </span>
                     <Transfers lines={transferLines(s.transfers, routes)} />
                   </span>
                   <span className="eta">{formatEta(s.time)}</span>

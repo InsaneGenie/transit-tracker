@@ -1,3 +1,5 @@
+import { SUBWAY_STATIONS_URL } from './accessibility.js';
+
 export type Mode = 'subway' | 'bus' | 'rail';
 
 export interface FeedConfig {
@@ -13,6 +15,8 @@ export interface FeedConfig {
    * (it means reading every scheduled stop time) for feeds whose vehicles all report GPS.
    */
   staticDetail?: 'full' | 'stops';
+  /** Where to learn which stations are accessible, when the schedule doesn't say (see accessibility.ts). */
+  accessibilityUrl?: string;
   /** Realtime ids carry an agency prefix the schedule lacks, like `MTA NYCT_M15` for route `M15`. */
   agencyPrefixedIds?: boolean;
   /**
@@ -41,6 +45,7 @@ export const FEEDS: FeedConfig[] = [
     mode: 'subway',
     realtimeUrls: subwayGroups.map((g) => `${MTA_RT}nyct%2F${g}`),
     staticUrls: [`${MTA_STATIC}gtfs_subway.zip`],
+    accessibilityUrl: SUBWAY_STATIONS_URL,
     pollSeconds: 20,
   },
   {

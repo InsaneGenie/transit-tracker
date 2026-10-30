@@ -27,6 +27,10 @@ export interface UpcomingStop {
   time?: number;
   /** Other lines that call here, as `RouteInfo` keys. */
   transfers?: string[];
+  /** Step-free from the street to the trains: every platform, or only some of them. */
+  access?: 'full' | 'partial';
+  /** What a partly accessible station's step-free route reaches, like "only toward Manhattan". */
+  accessNote?: string;
 }
 
 export interface VehicleDetail {
