@@ -1,6 +1,6 @@
 {
   "name": "transit-tracker-mobile",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

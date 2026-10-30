@@ -1,6 +1,7 @@
 import {
   GeolocateControl,
   Map as MapLibreMap,
+  Marker,
   NavigationControl,
   type ExpressionSpecification,
   setWorkerUrl,
@@ -8,10 +9,21 @@ import {
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { useEffect, useRef, type RefObject } from 'react';
-import { fetchVehicles, type Bounds, type Mode, type RouteLine, type UpcomingStop, type Vehicle, type VehicleDetail } from './api';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  fetchVehicles,
+  type Bounds,
+  type Mode,
+  type RouteInfo,
+  type RouteLine,
+  type UpcomingStop,
+  type Vehicle,
+  type VehicleDetail,
+} from './api';
 import type { Theme } from './theme';
-import { colorFor, interpolate, routeKey, tidyStopName, toFeatureCollection } from './vehicles';
+import { Transfers } from './VehiclePanel';
+import { colorFor, interpolate, routeKey, sameStation, tidyStopName, toFeatureCollection, transferLines } from './vehicles';
 import { GLYPH_SCALE, MODE_GLYPHS, MODE_SHAPES, shapePath } from './vehicleIcons';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
@@ -66,6 +78,8 @@ interface Props {
   otherLines: RouteLine[];
   /** The picked station, marked on the map and brought to the middle. */
   station: Station | null;
+  /** Every line by key, to show the lines you can change to at a station. */
+  routes: Map<string, RouteInfo>;
   onStation: (station: Omit<Station, 'at'>) => void;
   /** A station of one of `otherLines` was tapped. */
   onLineStation: (line: string, station: Omit<Station, 'at' | 'transfers'>) => void;
@@ -200,7 +214,13 @@ function stopFeatures(stops: UpcomingStop[], color: string): GeoJSON.FeatureColl
       .map((s) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [s.lon!, s.lat!] },
-        properties: { color, stopId: s.stopId, name: s.name ? tidyStopName(s.name) : '' },
+        properties: {
+          color,
+          stopId: s.stopId,
+          name: s.name ? tidyStopName(s.name) : '',
+          // Feature properties hold flat values, so the transfers travel as one string.
+          transfers: s.transfers?.join(' ') ?? '',
+        },
       })),
   };
 }
@@ -535,6 +555,9 @@ export function MapView(props: Props) {
     latest: [],
     easeUntil: 0,
   });
+  // The station under the pointer, and the tags drawn beside it and the picked station.
+  const [hovered, setHovered] = useState<HoveredStation | null>(null);
+  const [tags] = useState(() => ({ hover: stationTag('station-tag-hover'), picked: stationTag('station-tag-picked') }));
   // The tapped vehicle's glide: from where it was drawn to its newest reported position.
   const glide = useRef<{ from?: Vehicle; to?: Vehicle; start: number }>({ start: 0 });
 
@@ -689,6 +712,32 @@ export function MapView(props: Props) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
+    // Pointing at a station names it and the lines you can change to there. Touch screens have no
+    // hover; tapping a station picks it, and the picked station shows its transfers below its name.
+    const canHover = matchMedia('(hover: hover) and (pointer: fine)').matches;
+    map.on('mousemove', (e) => {
+      if (!canHover) return;
+      const layers = [...STATION_LAYERS, 'other-stops'].filter((l) => map.getLayer(l));
+      const box: [[number, number], [number, number]] = [
+        [e.point.x - 6, e.point.y - 6],
+        [e.point.x + 6, e.point.y + 6],
+      ];
+      const f = layers.length ? map.queryRenderedFeatures(box, { layers })[0] : undefined;
+      if (f?.geometry.type !== 'Point') {
+        setHovered(null);
+        return;
+      }
+      const [lon, lat] = f.geometry.coordinates;
+      const { stopId, name, transfers } = f.properties as { stopId: string; name: string; transfers?: string };
+      setHovered((prev) =>
+        prev?.stopId === stopId && prev.lon === lon && prev.lat === lat
+          ? prev
+          : { stopId, name, lon, lat, transfers: transfers ? transfers.split(' ') : [] },
+      );
+    });
+    map.on('mouseout', () => setHovered(null));
+    map.on('movestart', () => setHovered(null));
+
     // The drawn line is only tappable while its vehicle is open.
     for (const layer of ROUTE_LAYERS) {
       map.on('mouseenter', layer, () => {
@@ -866,6 +915,61 @@ export function MapView(props: Props) {
     }
   }, [following, selectedId]);
 
-  return <div ref={container} className="map" />;
+  // Transfers of the station under the pointer, in a tag above it. The picked station has its own below.
+  const hoverShown = hovered && !(station && sameStation(station, hovered)) ? hovered : null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !hoverShown) return;
+    tags.hover.setLngLat([hoverShown.lon, hoverShown.lat]).addTo(map);
+    return () => void tags.hover.remove();
+  }, [hoverShown?.lon, hoverShown?.lat]);
+
+  // The picked station's transfers, under its name, so they show on the map as well as in the panel.
+  const pickedLines = station ? transferLines(station.transfers, props.routes) : [];
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !station || !pickedLines.length) return;
+    tags.picked.setLngLat([station.lon, station.lat]).addTo(map);
+    return () => void tags.picked.remove();
+  }, [station, pickedLines.length > 0]);
+
+  const hoverLines = hoverShown ? transferLines(hoverShown.transfers, props.routes) : [];
+  return (
+    <>
+      <div ref={container} className="map" />
+      {hoverShown &&
+        createPortal(
+          <div className="station-tag">
+            {hoverShown.name && <strong className="station-tag-name">{hoverShown.name}</strong>}
+            {hoverLines.length ? (
+              <Transfers lines={hoverLines} />
+            ) : (
+              <span className="muted small">No transfers here</span>
+            )}
+          </div>,
+          tags.hover.getElement(),
+        )}
+      {pickedLines.length > 0 &&
+        createPortal(
+          <div className="station-tag">
+            <Transfers lines={pickedLines} />
+          </div>,
+          tags.picked.getElement(),
+        )}
+    </>
+  );
+}
+
+type HoveredStation = { stopId: string; name: string; lon: number; lat: number; transfers: string[] };
+
+/**
+ * A tag beside a station, drawn by the page rather than the map so it can hold line badges. The picked
+ * station's goes below its name; the pointed-at station's goes above its dot. It lets taps through.
+ */
+function stationTag(className: string): Marker {
+  const element = document.createElement('div');
+  element.className = className;
+  const below = className === 'station-tag-picked';
+  return new Marker({ element, anchor: below ? 'top' : 'bottom', offset: below ? [0, 38] : [0, -10] });
 }
 

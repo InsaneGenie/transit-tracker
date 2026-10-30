@@ -45,6 +45,7 @@ export const GUIDE: GuideSection[] = [
       'Tap a stop in the list, or a station on the map, to bring it to the middle of the map.',
       'Its card lists the vehicles of that line on their way there, in both directions. Tap one to jump to it.',
       'The colored badges are the lines you can change to there. Show transfer lines draws them on the map.',
+      'The lines you can change to also show on the map, under the picked station’s name. On a computer, point at any station to see them.',
       'Tap a transfer badge to see that line on its own. Back returns you to where you were.',
       'Stations of your lines can be tapped too; that line opens at the station.',
     ],

@@ -48,7 +48,7 @@ import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHI
 import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
-import { VehiclePanel } from './src/VehiclePanel';
+import { Transfers, VehiclePanel } from './src/VehiclePanel';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
@@ -58,6 +58,8 @@ const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
+/** The picked station's transfers sit under its name in a box this wide. */
+const TRANSFER_TAG_WIDTH = 220;
 // From this wide (an iPad, or a big iPhone window), panels go down the left side instead of along the bottom.
 const WIDE_MIN_WIDTH = 700;
 /** How often the tapped vehicle is refreshed. */
@@ -104,6 +106,25 @@ const STATION_NAMES_MIN_ZOOM = 13.5;
 const MAX_STATION_NAMES = 60;
 /** Each name's box is this wide; longer names are cut short. */
 const STATION_NAME_WIDTH = 150;
+
+/**
+ * How tall the picked station's transfers are once their badges wrap: subway bullets are 18 pt across,
+ * other lines a swatch and their name, 4 pt apart, inside 4 pt of padding.
+ */
+function transferTagHeight(lines: RouteInfo[]): number {
+  const room = TRANSFER_TAG_WIDTH - 12;
+  let rows = 1;
+  let x = 0;
+  for (const r of lines) {
+    const w = r.mode === 'subway' ? Math.max(18, r.name.length * 7 + 8) : 16 + r.name.length * 6.5;
+    if (x > 0 && x + w > room) {
+      rows++;
+      x = 0;
+    }
+    x += w + 4;
+  }
+  return rows * 22 + 8;
+}
 
 /** A line's whole route with its stations. Retries while the server may still be starting. */
 function useRouteLine(key: string | null, active: boolean): RouteLine | null {
@@ -349,6 +370,11 @@ function TransitMap() {
     () => transferLines(station?.transfers, routesByKey).map((r) => r.key),
     [station, routesByKey],
   );
+  // The picked station's transfers as drawn on the map, with the height their badges wrap to.
+  const pickedTag = useMemo(() => {
+    const lines = transferLines(station?.transfers, routesByKey);
+    return lines.length ? { lines, height: transferTagHeight(lines) } : null;
+  }, [station, routesByKey]);
 
   // Their whole routes, when asked for.
   useEffect(() => {
@@ -978,6 +1004,27 @@ function TransitMap() {
                 </View>
               </Marker>
             )}
+            {/* The lines you can change to there, under its name, so they show on the map and not only in the
+                panel. A fixed-size marker too, sized from the badges it holds. */}
+            {anyPanel && station && pickedTag && (
+              <Marker
+                key={`station-transfers-${station.stopId}-${stationTransfers.join(',')}-${dark ? 'd' : 'l'}`}
+                coordinate={{ latitude: station.lat, longitude: station.lon }}
+                centerOffset={{ x: 0, y: 14 + 4 + STATION_LABEL_HEIGHT + 4 + pickedTag.height / 2 }}
+                tracksViewChanges={false}
+                zIndex={3}
+              >
+                <View
+                  collapsable={false}
+                  style={{ width: TRANSFER_TAG_WIDTH, height: pickedTag.height, alignItems: 'center' }}
+                  pointerEvents="none"
+                >
+                  <View style={[styles.transferTag, { backgroundColor: c.chip }]}>
+                    <Transfers lines={pickedTag.lines} muted={c.text} />
+                  </View>
+                </View>
+              </Marker>
+            )}
             {markers.map((v) => {
               const isSelected = v.id === selectedId;
               return (
@@ -1191,6 +1238,7 @@ const styles = StyleSheet.create({
   },
   locateIcon: { fontSize: 18, transform: [{ rotate: '-45deg' }] },
   stationRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 3 },
+  transferTag: { maxWidth: TRANSFER_TAG_WIDTH, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },
   // A fixed-size box, so the marker's size is known before the text is laid out.
   stationLabel: { width: 180, height: STATION_LABEL_HEIGHT, alignItems: 'center', justifyContent: 'center' },
   // Fixed size for the same reason; the text starts at its left edge, next to the dot.

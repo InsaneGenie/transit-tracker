@@ -465,6 +465,7 @@ export function App() {
         focusLine={viewLine?.atStation ? null : viewRoute}
         otherLines={otherLines}
         station={station}
+        routes={routesByKey}
         onStation={pickStation}
         onLineStation={openLineStation}
         onRouteLine={openOwnLine}
