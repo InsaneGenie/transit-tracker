@@ -855,12 +855,16 @@ function TransitMap() {
       const name = tidyStopName(stop.name);
       // The picked station already has its name under its ring.
       if (anyPanel && station?.name && name === tidyStopName(station.name)) continue;
+      // Lines that share a station each have their own stop there; name it once, even where their platforms sit apart.
+      const named = out.some(
+        (o) => o.name === name && Math.abs(o.stop.lon! - stop.lon!) < 0.004 && Math.abs(o.stop.lat! - stop.lat!) < 0.003,
+      );
+      if (named) continue;
       const at = toScreen(stop);
       // The name starts just right of the dot.
       const box = { x: at.x + 7, y: at.y - 8, w: Math.min(name.length * 6.5 + 4, STATION_NAME_WIDTH), h: 16 };
       const hits = (b: (typeof placed)[number]) =>
         box.x < b.x + b.w + 4 && b.x < box.x + box.w + 4 && box.y < b.y + b.h && b.y < box.y + box.h;
-      // Also keeps a station shared by two drawn lines from being named twice.
       if (placed.some(hits)) continue;
       placed.push(box);
       out.push({ stop, name });
