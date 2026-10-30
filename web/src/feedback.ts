@@ -1,5 +1,5 @@
 /** Feedback and bug reports, shared by the website and the app: they open an email to us, already filled in. */
-export const FEEDBACK_EMAIL = 'stevenlai551@gmail.com';
+export const FEEDBACK_EMAIL = 'stevenlai441@gmail.com';
 
 export interface FeedbackContext {
   /** Where it was sent from, such as "Website" or "iPhone app 1.0.29". */
