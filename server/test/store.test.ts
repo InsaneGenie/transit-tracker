@@ -266,6 +266,55 @@ describe('VehicleStore GPS fixes', () => {
   });
 });
 
+describe('VehicleStore estimated trains', () => {
+  // Train tF heading from B to C, a three-minute hop, due at C at each poll's time in turn.
+  function delayedTrain(arrivals: number[]) {
+    let poll = 0;
+    const store = new VehicleStore(
+      [train],
+      {},
+      async () => {
+        const at = arrivals[Math.min(poll++, arrivals.length - 1)];
+        const entity = { id: 't', tripUpdate: { trip: { tripId: 'tF', routeId: '1' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: at } }] } };
+        return snapshotFromFeed(decodeFeed(encodeFeed([entity])), T);
+      },
+      () => indexPromise,
+    );
+    return store;
+  }
+  const latOf = (store: VehicleStore, now: number) => store.vehicles(now).find((v) => v.id === 'test-train:tF')?.lat;
+
+  it('waits where it was shown when a delay would put it back, then carries on', async () => {
+    const store = delayedTrain([T + 90, T + 150]);
+    await store.loadStatic();
+    await store.pollAll();
+    const shown = latOf(store, T)!;
+    expect(shown).toBeCloseTo(40.785, 3); // halfway from B to C
+    await store.pollAll(); // a minute late now: estimated a fifth of the way from B
+    expect(latOf(store, T + 10)).toBe(shown);
+    expect(latOf(store, T + 130)).toBeLessThan(shown); // past where it waited, heading south to C
+  });
+
+  it('does not go back to the stop it left', async () => {
+    const store = delayedTrain([T + 90, T + 400]);
+    await store.loadStatic();
+    await store.pollAll();
+    const shown = latOf(store, T)!;
+    await store.pollAll(); // now due to leave B in 40 s
+    expect(latOf(store, T + 10)).toBe(shown);
+  });
+
+  it('goes with the new times once they have stayed behind for two minutes', async () => {
+    const store = delayedTrain([T + 90, T + 400]);
+    await store.loadStatic();
+    await store.pollAll();
+    const shown = latOf(store, T)!;
+    await store.pollAll();
+    expect(latOf(store, T + 10)).toBe(shown);
+    expect(latOf(store, T + 140)).toBeCloseTo(40.79, 3); // back at B
+  });
+});
+
 describe('VehicleStore.arrivals', () => {
   it('lists the vehicles coming to a station both ways, soonest first', async () => {
     const feed = encodeFeed([

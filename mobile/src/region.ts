@@ -28,6 +28,9 @@ export const MAX_MARKERS = 300;
 /** Line names appear on the dots from this zoom. */
 export const LABEL_MIN_ZOOM = 14;
 
+/** Vehicles glide between updates from this zoom; further out there are too many dots to move smoothly. */
+export const GLIDE_MIN_ZOOM = 13;
+
 /** Closer in, there are fewer vehicles on screen and each one's movement is visible, so update more often. */
 export function pollMsFor(zoom: number): number {
   return zoom >= 15 ? 2000 : zoom >= 13 ? 3000 : 5000;
