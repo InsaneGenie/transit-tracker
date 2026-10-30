@@ -2,6 +2,7 @@ import type { CSSProperties, Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, UpcomingStop } from './api';
+import { BackButton } from './BackButton';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
@@ -18,7 +19,7 @@ interface Props {
   arrivals: ArrivalDirection[] | null;
   /** Delays and service changes on the line; null while loading. */
   alerts: ServiceAlert[] | null;
-  /** Where Back goes, e.g. "A train"; no Back button without it. */
+  /** Where Back goes, e.g. "the A train"; no Back button without it. */
   backLabel?: string;
   onBack: () => void;
   onStop: (stop: UpcomingStop) => void;
@@ -40,6 +41,7 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
   return (
     <aside ref={ref} className="panel" aria-label={`${name} line`} style={{ '--route': color } as CSSProperties}>
       <div className="sheet-handle" aria-hidden="true" />
+      {backLabel && <BackButton label={backLabel} onClick={onBack} />}
       <header className="panel-header">
         <span className="badge" style={{ background: color, color: textColorFor(color) }}>
           {name}
@@ -53,11 +55,6 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
 
       <div className="panel-meta">
         <p className="muted small">Every station and {noun} on this line</p>
-        {backLabel && (
-          <button className="chip follow" onClick={onBack}>
-            Back to {backLabel}
-          </button>
-        )}
       </div>
 
       <AlertList alerts={alerts} routes={routes} empty="No delays or service changes on this line right now." />

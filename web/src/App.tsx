@@ -8,9 +8,10 @@ import { LinePanel } from './LinePanel';
 import { LinesScreen } from './LinesScreen';
 import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
+import { pushStep, stepLabel, type PanelStep, type ViewLine } from './panelHistory';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
-import { displayName, facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
+import { facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
@@ -55,18 +56,6 @@ function save(key: string, value: string) {
     // Private browsing or storage turned off; the setting just won't be remembered.
   }
 }
-
-/**
- * A line opened from a station's transfers or one of its stations on the map. `back` is the vehicle and
- * station it was opened from; `atStation` keeps the map on the tapped station instead of the whole line.
- */
-type ViewLine = {
-  key: string;
-  back?: { vehicleId: string; label: string; station: Station | null };
-  atStation?: boolean;
-  /** The stops ahead of the vehicle it was opened from, so its stations read in that vehicle's direction. */
-  ahead?: UpcomingStop[];
-};
 
 /** A line's whole route with its stations. Retries while the server may still be starting. */
 function useRouteLine(key: string | null): RouteLine | null {
@@ -231,8 +220,10 @@ export function App() {
   // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
   const routeLine = useRouteLine(selectedLine);
-  // A line opened from a station's transfers, and where Back returns to.
+  // A line opened from a station's transfers or one of its stations.
   const [viewLine, setViewLine] = useState<ViewLine | null>(null);
+  // What the panel showed before each tap in it, for Back.
+  const [history, setHistory] = useState<PanelStep<Station>[]>([]);
   const viewRoute = useRouteLine(viewLine?.key ?? null);
   // Its stations listed the way the vehicle it was opened from is going.
   const listedRoute = useMemo(
@@ -333,6 +324,7 @@ export function App() {
       (s) => s.transfers && sameStation(s, stop),
     );
     setFollowing(false);
+    if (!station || !sameStation(station, stop)) remember();
     setStation({ ...stop, transfers: known?.transfers, at: Date.now() });
   };
 
@@ -364,16 +356,63 @@ export function App() {
     if (id && guideOpen && window.matchMedia('(max-width: 640px)').matches) closeGuide();
   };
 
-  // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
+  // What the panel shows now, to come back to.
+  const here = (): PanelStep<Station> | null => {
+    if (selectedId) {
+      if (detail?.vehicle.id !== selectedId) return null;
+      return { vehicleId: selectedId, line: viewLine, station, label: stepLabel({ vehicle: detail.vehicle }, station) };
+    }
+    if (!viewLine) return null;
+    const label = stepLabel({ lineKey: viewLine.key, info: routesByKey.get(viewLine.key) }, station);
+    return { vehicleId: null, line: viewLine, station, label };
+  };
+  // Called before anything in a panel shows something else.
+  const remember = () => setHistory((h) => pushStep(h, here()));
+
+  // Back: show the panel as it was before the last tap.
+  const goBack = () => {
+    const step = history[history.length - 1];
+    if (!step) return;
+    setHistory(history.slice(0, -1));
+    setViewLine(step.line);
+    setShowTransfers(false);
+    if (step.vehicleId && step.vehicleId === selectedId) {
+      setStation(step.station && { ...step.station, at: Date.now() });
+    } else if (step.vehicleId) {
+      select(step.vehicleId);
+      // Show the station it was picked at, not the vehicle; with no station, follow the vehicle again.
+      if (step.station) {
+        setFollowing(false);
+        setRestoreStation(step.station);
+      }
+    } else {
+      // Closing the vehicle would otherwise drop the station being put back.
+      if (step.station && selectedId) keepStation.current = true;
+      select(null);
+      setStation(step.station && { ...step.station, at: Date.now() });
+    }
+  };
+
+  // Closing a panel closes everything Back could go to as well.
+  const closePanels = () => {
+    setHistory([]);
+    setViewLine(null);
+    setStation(null);
+    select(null);
+  };
+
+  // A vehicle tapped on the map or in a station's arrivals; Back returns to what the panel showed.
+  const openVehicle = (id: string, keepStationPicked = false) => {
+    if (id === selectedId) return;
+    remember();
+    keepStation.current = keepStationPicked;
+    select(id);
+  };
+
+  // Show a transfer line on its own. Back returns to what the panel showed before.
   const openLine = (key: string, at?: Station, ahead?: UpcomingStop[]) => {
-    const back = detail
-      ? {
-          vehicleId: detail.vehicle.id,
-          label: `the ${displayName(detail.vehicle.routeName ?? detail.vehicle.routeId ?? '')} ${detail.vehicle.mode === 'bus' ? 'bus' : 'train'}`,
-          station,
-        }
-      : viewLine?.back;
-    setViewLine({ key, back, atStation: Boolean(at), ahead });
+    remember();
+    setViewLine({ key, atStation: Boolean(at), ahead });
     setStation(at ?? null);
     setShowTransfers(false);
     // Closing the vehicle would otherwise drop the station just picked.
@@ -390,20 +429,6 @@ export function App() {
   const openLineStation = (key: string, stop: Omit<Station, 'at' | 'transfers'>) => {
     const known = otherLines.find((l) => l.key === key)?.stops.find((s) => s.stopId === stop.stopId);
     openLine(key, { ...stop, transfers: known?.transfers, at: Date.now() });
-  };
-
-  const closeLine = () => {
-    const back = viewLine?.back;
-    setViewLine(null);
-    setStation(null);
-    if (back) {
-      select(back.vehicleId);
-      // Show the station it was opened from, not the vehicle; with no station, follow the vehicle again.
-      if (back.station) {
-        setFollowing(false);
-        setRestoreStation(back.station);
-      }
-    }
   };
 
   // Once the vehicle's panel is back, pick its station again, so the map centers it beside the panel.
@@ -466,6 +491,7 @@ export function App() {
   // A train or bus picked on a line's page: the map goes to it, with its card open.
   const showVehicleOnMap = ({ vehicle }: LineVehicle) => {
     setLinesOpen(false);
+    remember();
     setViewLine(null);
     setStation(null);
     select(vehicle.id);
@@ -546,7 +572,7 @@ export function App() {
         selectedId={selectedId}
         detail={detail}
         following={following}
-        onSelect={select}
+        onSelect={(id) => (id ? openVehicle(id) : detail && closePanels())}
         onFollowChange={setFollowing}
         onUpdate={setInfo}
         panelRef={panelRef}
@@ -637,18 +663,12 @@ export function App() {
           station={station}
           arrivals={arrivals}
           alerts={panelAlerts}
-          backLabel={viewLine.back?.label}
-          onBack={closeLine}
+          backLabel={history[history.length - 1]?.label}
+          onBack={goBack}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}
-          onArrival={(id) => {
-            keepStation.current = true;
-            select(id);
-          }}
+          onArrival={(id) => openVehicle(id, true)}
           onLine={(key) => openLine(key)}
-          onClose={() => {
-            setViewLine(null);
-            setStation(null);
-          }}
+          onClose={closePanels}
         />
       )}
 
@@ -665,15 +685,13 @@ export function App() {
           showTransfers={showTransfers}
           arrivals={arrivals}
           alerts={panelAlerts}
-          onArrival={(id) => {
-            if (id === selectedId) return;
-            keepStation.current = true;
-            select(id);
-          }}
+          backLabel={history[history.length - 1]?.label}
+          onBack={goBack}
+          onArrival={(id) => openVehicle(id, true)}
           onLine={(key) => openLine(key)}
           onShowTransfers={setShowTransfers}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}
-          onClose={() => select(null)}
+          onClose={closePanels}
         />
       )}
     </div>

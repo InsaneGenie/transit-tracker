@@ -12,6 +12,7 @@ import {
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
+import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { palette } from './theme';
 
@@ -47,6 +48,9 @@ interface Props {
   onAllStations: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
+  /** Where Back goes, e.g. "the 5 line"; no Back button without it. */
+  backLabel?: string;
+  onBack: () => void;
   onClose: () => void;
 }
 
@@ -184,6 +188,8 @@ export function VehiclePanel({
   onFollow,
   onAllStations,
   onStop,
+  backLabel,
+  onBack,
   onClose,
 }: Props) {
   const c = palette(dark);
@@ -200,6 +206,7 @@ export function VehiclePanel({
       {/* Dragging anywhere above the list moves the panel up or down. */}
       <View {...sheet?.grab}>
         <SheetHandle sheet={sheet} color={c.border} />
+        {backLabel && <BackButton label={backLabel} dark={dark} onPress={onBack} />}
         <View style={styles.header}>
           <View style={[styles.badge, { backgroundColor: color }]}>
             <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>

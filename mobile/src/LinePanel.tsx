@@ -3,6 +3,7 @@ import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStop
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
+import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { palette } from './theme';
 import { Arrivals, panelStyles as styles, Transfers } from './VehiclePanel';
@@ -65,6 +66,7 @@ export function LinePanel({
       {/* Dragging anywhere above the list moves the panel up or down. */}
       <View {...sheet?.grab}>
         <SheetHandle sheet={sheet} color={c.border} />
+        {backLabel && <BackButton label={backLabel} dark={dark} onPress={onBack} />}
         <View style={styles.header}>
           <View style={[styles.badge, { backgroundColor: color }]}>
             <Text style={[styles.badgeText, { color: textColorFor(color) }]}>{name}</Text>
@@ -82,11 +84,6 @@ export function LinePanel({
 
         <View style={styles.meta}>
           <Text style={[styles.muted, { color: c.muted }]}>Every station and {noun} on this line</Text>
-          {backLabel && (
-            <Pressable onPress={onBack} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
-              <Text style={[styles.followText, { color: c.text }]}>Back to {backLabel}</Text>
-            </Pressable>
-          )}
         </View>
       </View>
 

@@ -14,7 +14,8 @@ import {
 import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accessOf } from '../web/src/accessibility';
-import { colorFor, displayName, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { pushStep, stepLabel, type PanelStep, type ViewLine } from '../web/src/panelHistory';
+import { colorFor, facingWay, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
   fetchAlertSummary,
@@ -90,17 +91,6 @@ type ShownDetail = VehicleDetail & { loading?: boolean };
 
 type Status = 'connecting' | 'live' | 'error' | 'zoomedOut';
 
-/**
- * A line opened from a station's transfers or one of its stations on the map. `back` is the vehicle and
- * station it was opened from; `atStation` keeps the map on the tapped station instead of the whole line.
- */
-type ViewLine = {
-  key: string;
-  back?: { vehicleId: string; label: string; station: Station | null };
-  atStation?: boolean;
-  /** The stops ahead of the vehicle it was opened from, so its stations read in that vehicle's direction. */
-  ahead?: UpcomingStop[];
-};
 /** Picked lines' stations show from this zoom; further out they would crowd the map. */
 const OTHER_STOPS_MIN_ZOOM = 12;
 /** The most of their stations drawn at once, since every one is a native view. */
@@ -360,8 +350,10 @@ function TransitMap() {
   // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
   const routeLine = useRouteLine(selectedLine, active);
-  // A line opened from a station's transfers, and where Back returns to.
+  // A line opened from a station's transfers or one of its stations.
   const [viewLine, setViewLine] = useState<ViewLine | null>(null);
+  // What the panel showed before each tap in it, for Back.
+  const [history, setHistory] = useState<PanelStep<Station>[]>([]);
   const viewRoute = useRouteLine(viewLine?.key ?? null, active);
   // Its stations listed the way the vehicle it was opened from is going.
   const listedRoute = useMemo(
@@ -597,20 +589,70 @@ function TransitMap() {
       ...(detail?.upcoming ?? []),
     ].find((s) => s.transfers && sameStation(s, stop));
     setFollowing(false);
+    if (!station || !sameStation(station, stop)) remember();
     setStation({ stopId: stop.stopId, name: stop.name, lat: stop.lat, lon: stop.lon, transfers: known?.transfers, ...accessOf(stop) });
     mapRef.current?.animateCamera({ center: { latitude: stop.lat, longitude: stop.lon } }, { duration: 600 });
   };
 
-  // Show a transfer line on its own. Back returns to the vehicle and station it was opened from.
+  // What the panel shows now, to come back to.
+  const here = (): PanelStep<Station> | null => {
+    if (selectedId) {
+      if (detail?.vehicle.id !== selectedId) return null;
+      return { vehicleId: selectedId, line: viewLine, station, label: stepLabel({ vehicle: detail.vehicle }, station) };
+    }
+    if (!viewLine) return null;
+    const label = stepLabel({ lineKey: viewLine.key, info: routesByKey.get(viewLine.key) }, station);
+    return { vehicleId: null, line: viewLine, station, label };
+  };
+  // Called before anything in a panel shows something else.
+  const remember = () => setHistory((h) => pushStep(h, here()));
+
+  // Back: show the panel as it was before the last tap.
+  const goBack = () => {
+    const step = history[history.length - 1];
+    if (!step) return;
+    setHistory(history.slice(0, -1));
+    setViewLine(step.line);
+    setShowTransfers(false);
+    const at = step.station;
+    if (step.vehicleId && step.vehicleId !== selectedId) {
+      select(step.vehicleId);
+      // Show the station it was picked at, not the vehicle; with no station, follow the vehicle again.
+      if (at) {
+        setFollowing(false);
+        setRestoreStation(at);
+      }
+      return;
+    }
+    // Closing the vehicle would otherwise drop the station being put back.
+    if (!step.vehicleId) {
+      if (at && selectedId) keepStation.current = true;
+      select(null);
+    }
+    setStation(at);
+    if (at) mapRef.current?.animateCamera({ center: { latitude: at.lat, longitude: at.lon } }, { duration: 600 });
+  };
+
+  // Closing a panel closes everything Back could go to as well.
+  const closePanels = () => {
+    setHistory([]);
+    setViewLine(null);
+    setStation(null);
+    select(null);
+  };
+
+  // A vehicle tapped on the map or in a station's arrivals; Back returns to what the panel showed.
+  const openVehicle = (id: string, keepStationPicked = false) => {
+    if (id === selectedId) return;
+    remember();
+    keepStation.current = keepStationPicked;
+    select(id);
+  };
+
+  // Show a transfer line on its own. Back returns to what the panel showed before.
   const openLine = (key: string, at?: Station, ahead?: UpcomingStop[]) => {
-    const back = detail
-      ? {
-          vehicleId: detail.vehicle.id,
-          label: `the ${displayName(detail.vehicle.routeName ?? detail.vehicle.routeId ?? '')} ${detail.vehicle.mode === 'bus' ? 'bus' : 'train'}`,
-          station,
-        }
-      : viewLine?.back;
-    setViewLine({ key, back, atStation: Boolean(at), ahead });
+    remember();
+    setViewLine({ key, atStation: Boolean(at), ahead });
     setStation(at ?? null);
     setShowTransfers(false);
     // Closing the vehicle would otherwise drop the station just picked.
@@ -647,6 +689,7 @@ function TransitMap() {
   const showVehicleOnMap = ({ vehicle }: LineVehicle) => {
     setLinesUp(false);
     setLinePage(null);
+    remember();
     setViewLine(null);
     setStation(null);
     select(vehicle.id, vehicle);
@@ -656,26 +699,8 @@ function TransitMap() {
     );
   };
 
-  const closeViewLine = () => {
-    setViewLine(null);
-    setStation(null);
-  };
-
   // Once the vehicle's panel is back, pick its station again and bring it into view beside the panel.
   const [restoreStation, setRestoreStation] = useState<Station | null>(null);
-  const closeLine = () => {
-    const back = viewLine?.back;
-    setViewLine(null);
-    setStation(null);
-    if (back) {
-      select(back.vehicleId);
-      // Show the station it was opened from, not the vehicle; with no station, follow the vehicle again.
-      if (back.station) {
-        setFollowing(false);
-        setRestoreStation(back.station);
-      }
-    }
-  };
   useEffect(() => {
     if (!restoreStation || !detail) return;
     setStation(restoreStation);
@@ -838,8 +863,10 @@ function TransitMap() {
   const showAccess = zoom >= ACCESS_MIN_ZOOM;
 
   // Station dots keep the same tap handlers from one update to the next, so they aren't redrawn each time.
-  const stopTaps = useRef({ pickStation, openLineStation });
-  stopTaps.current = { pickStation, openLineStation };
+  const stopTaps = useRef({ pickStation, openLineStation, openVehicle });
+  stopTaps.current = { pickStation, openLineStation, openVehicle };
+  // Kept the same between renders, so the vehicle markers aren't redrawn.
+  const onVehiclePress = useCallback((id: string) => stopTaps.current.openVehicle(id), []);
   const onOwnStop = useCallback((stop: UpcomingStop) => stopTaps.current.pickStation(stop), []);
   const onOtherStop = useCallback(
     (stop: UpcomingStop, key: string) => stopTaps.current.openLineStation(key, stop),
@@ -876,14 +903,12 @@ function TransitMap() {
         onShowTransfers={setShowTransfers}
         arrivals={arrivals}
         alerts={panelAlerts}
-        onArrival={(id) => {
-          if (id === selectedId) return;
-          keepStation.current = true;
-          select(id);
-        }}
+        backLabel={history[history.length - 1]?.label}
+        onBack={goBack}
+        onArrival={(id) => openVehicle(id, true)}
         onLine={(key) => openLine(key)}
         onStop={pickStation}
-        onClose={() => select(null)}
+        onClose={closePanels}
       />
     );
   const linePanel = (sheet?: Sheet) =>
@@ -896,17 +921,14 @@ function TransitMap() {
         station={station}
         arrivals={arrivals}
         alerts={panelAlerts}
-        backLabel={viewLine.back?.label}
+        backLabel={history[history.length - 1]?.label}
         dark={dark}
         bottomInset={wide ? 0 : insets.bottom}
-        onBack={closeLine}
+        onBack={goBack}
         onStop={pickStation}
-        onArrival={(id) => {
-          keepStation.current = true;
-          select(id);
-        }}
+        onArrival={(id) => openVehicle(id, true)}
         onLine={(key) => openLine(key)}
-        onClose={closeViewLine}
+        onClose={closePanels}
       />
     );
   const linesContent = linePage ? (
@@ -946,7 +968,7 @@ function TransitMap() {
   );
 
   const onMapPress = (e: MapPressEvent) => {
-    if (e.nativeEvent.action !== 'marker-press') select(null);
+    if (e.nativeEvent.action !== 'marker-press' && detail) closePanels();
   };
 
   return (
@@ -1107,7 +1129,7 @@ function TransitMap() {
                   labelled={labelled || isSelected}
                   selected={isSelected}
                   dark={dark}
-                  onPress={select}
+                  onPress={onVehiclePress}
                 />
               );
             })}
@@ -1212,7 +1234,7 @@ function TransitMap() {
               {vehiclePanel()}
             </SidePanel>
           ) : (
-            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={() => select(null)}>
+            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closePanels}>
               {vehiclePanel}
             </PanelSheet>
           ))}
@@ -1224,7 +1246,7 @@ function TransitMap() {
               {linePanel()}
             </SidePanel>
           ) : (
-            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closeViewLine}>
+            <PanelSheet half={halfPanel} full={fullPanel} onHeight={setPanelHeight} onClose={closePanels}>
               {linePanel}
             </PanelSheet>
           ))}
