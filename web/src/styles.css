@@ -1687,3 +1687,14 @@ button {
 :root[data-theme='dark'] .maplibregl-ctrl-attrib a {
   color: var(--ink);
 }
+
+.panel-back {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: -4px 0 6px -6px;
+  overflow: hidden;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

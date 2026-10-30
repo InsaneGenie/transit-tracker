@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, UpcomingStop, VehicleDetail } from './api';
+import { BackButton } from './BackButton';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
@@ -32,6 +33,9 @@ interface Props {
   onAllStations: () => void;
   /** Tapping a stop in the list brings it into view. */
   onStop: (stop: UpcomingStop) => void;
+  /** Where Back goes, e.g. "the 5 line"; no Back button without it. */
+  backLabel?: string;
+  onBack: () => void;
   onClose: () => void;
   ref?: Ref<HTMLElement>;
 }
@@ -137,6 +141,8 @@ export function VehiclePanel({
   onFollow,
   onAllStations,
   onStop,
+  backLabel,
+  onBack,
   onClose,
   ref,
 }: Props) {
@@ -155,6 +161,7 @@ export function VehiclePanel({
   return (
     <aside ref={ref} className="panel" aria-label="Vehicle details" style={{ '--route': color } as CSSProperties}>
       <div className="sheet-handle" aria-hidden="true" />
+      {backLabel && <BackButton label={backLabel} onClick={onBack} />}
       <header className="panel-header">
         <span className="badge" style={{ background: color, color: textColorFor(color) }}>
           {name}
