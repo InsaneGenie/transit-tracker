@@ -213,6 +213,13 @@ export function App() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  // A line just added to My lines always gets its route drawn, even if it was switched off before.
+  const changeLines = (next: string[]) => {
+    const added = next.filter((k) => !lines.includes(k));
+    if (added.length) setHiddenRoutes((h) => h.filter((k) => !added.includes(k)));
+    setLines(next);
+  };
+
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
   useEffect(() => save(HIDDEN_ROUTES_KEY, JSON.stringify(hiddenRoutes)), [hiddenRoutes]);
   useEffect(() => save(ALL_ROUTES_KEY, allRoutesOn ? '1' : ''), [allRoutesOn]);
@@ -625,7 +632,7 @@ export function App() {
               starred={lines.includes(linePage)}
               onBack={() => setLinePage(null)}
               onClose={() => setLinesOpen(false)}
-              onStar={() => setLines((l) => (l.includes(linePage) ? l.filter((k) => k !== linePage) : [...l, linePage]))}
+              onStar={() => changeLines(lines.includes(linePage) ? lines.filter((k) => k !== linePage) : [...lines, linePage])}
               onShowOnMap={() => showLineOnMap(linePage)}
               onStation={(s) => showLineOnMap(linePage, s)}
               onVehicle={showVehicleOnMap}
@@ -637,7 +644,7 @@ export function App() {
               hiddenRoutes={hiddenRoutes}
               alertSummary={alertSummary}
               counts={lineCounts}
-              onChange={setLines}
+              onChange={changeLines}
               onHiddenRoutesChange={setHiddenRoutes}
               onOpen={setLinePage}
               onClose={() => setLinesOpen(false)}

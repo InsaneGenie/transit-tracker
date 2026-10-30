@@ -342,6 +342,9 @@ function TransitMap() {
     AsyncStorage.setItem(ALL_ROUTES_KEY, allRoutesOn ? '' : '1').catch(() => {});
   };
   const changeLines = (next: string[]) => {
+    // A line just added to My lines always gets its route drawn, even if it was switched off before.
+    const added = next.filter((k) => !lines.includes(k));
+    if (added.some((k) => hiddenRoutes.includes(k))) changeHiddenRoutes(hiddenRoutes.filter((k) => !added.includes(k)));
     setLines(next);
     AsyncStorage.setItem(LINES_KEY, JSON.stringify(next)).catch(() => {});
   };
