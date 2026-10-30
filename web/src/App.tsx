@@ -9,6 +9,7 @@ import { LinesScreen } from './LinesScreen';
 import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from './panelHistory';
+import { TESTFLIGHT_URL } from './testflight';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
 import { facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
@@ -18,6 +19,7 @@ const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
+const APP_INVITE_CLOSED_KEY = 'transit-tracker:app-invite-closed';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 
@@ -46,6 +48,15 @@ function guideSeen(): boolean {
     return localStorage.getItem(GUIDE_SEEN_KEY) !== null;
   } catch {
     return true;
+  }
+}
+
+/** The invite to the iPhone app stays away once closed. */
+function appInviteClosed(): boolean {
+  try {
+    return localStorage.getItem(APP_INVITE_CLOSED_KEY) !== null;
+  } catch {
+    return false;
   }
 }
 
@@ -186,6 +197,7 @@ export function App() {
   // A train or bus picked on a line's page, for the map to go to.
   const [goTo, setGoTo] = useState<{ lon: number; lat: number; at: number } | null>(null);
   const [guideOpen, setGuideOpen] = useState(() => !guideSeen());
+  const [appInviteOpen, setAppInviteOpen] = useState(() => !appInviteClosed());
   // Every line's route drawn on the map, without opening Lines.
   const [allRoutesOn, setAllRoutesOn] = useState(savedAllRoutes);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -515,6 +527,10 @@ export function App() {
     setLinesOpen((o) => !o);
     if (guideOpen) closeGuide();
   };
+  const closeAppInvite = () => {
+    setAppInviteOpen(false);
+    save(APP_INVITE_CLOSED_KEY, '1');
+  };
   const openGuide = () => {
     setGuideOpen(true);
     setLinesOpen(false);
@@ -660,6 +676,18 @@ export function App() {
       <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
       </div>
+
+      {/* Kept out of the way of the guide and the cards, which sit along the bottom on phones. */}
+      {appInviteOpen && !guideOpen && !linesOpen && !detail && !viewLine && !station && (
+        <div className="app-invite" role="note">
+          <a href={TESTFLIGHT_URL} target="_blank" rel="noopener" onClick={closeAppInvite}>
+            Try the iPhone app beta
+          </a>
+          <button className="app-invite-close" aria-label="Close" title="Close" onClick={closeAppInvite}>
+            ×
+          </button>
+        </div>
+      )}
 
       {!detail && viewLine && (
         <LinePanel

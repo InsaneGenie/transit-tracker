@@ -74,6 +74,7 @@ button {
 /* Floating cards over the map. */
 .toolbar,
 .status,
+.app-invite,
 .panel,
 .legend {
   background: var(--surface);
@@ -1010,6 +1011,52 @@ button {
   display: none;
 }
 
+/* A small invite to the iPhone app's beta, at the bottom of the map until it is closed. */
+
+.app-invite {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-invite a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.app-invite a:hover {
+  text-decoration: underline;
+}
+
+.app-invite-close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.app-invite-close:hover {
+  color: var(--ink);
+}
+
 /* The Lines panel along the right of the map, with a page for each line in it. */
 
 .lines-panel {
@@ -1606,6 +1653,13 @@ button {
   .status {
     left: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  /* Above the vehicle count, which takes the bottom left. */
+  .app-invite {
+    left: 10px;
+    bottom: calc(46px + env(safe-area-inset-bottom));
+    transform: none;
   }
 
   .panel,
