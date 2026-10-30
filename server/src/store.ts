@@ -361,7 +361,7 @@ export class VehicleStore {
           tripId: g.tripId,
           lat: g.lat,
           lon: g.lon,
-          bearing: g.bearing,
+          bearing: g.bearing !== undefined && config.bearingFromEast ? (450 - g.bearing) % 360 : g.bearing,
           stopId: g.stopId,
           stopName: g.stopId ? index?.stops.get(g.stopId)?.name : undefined,
           source: 'gps',
