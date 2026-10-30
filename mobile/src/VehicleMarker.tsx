@@ -4,6 +4,7 @@ import { Marker } from 'react-native-maps';
 import { colorFor, displayName, textColorFor } from '../../web/src/vehicles';
 import { AccessIcon } from './AccessIcon';
 import type { UpcomingStop, Vehicle } from './api';
+import { useGlide } from './glide';
 import { GLYPHS, ModeIcon } from './ModeIcon';
 
 interface Props {
@@ -11,11 +12,14 @@ interface Props {
   labelled: boolean;
   selected: boolean;
   dark: boolean;
+  /** How long to glide to each new position, in ms; 0 jumps. */
+  glideMs: number;
   onPress: (id: string) => void;
 }
 
 /** The vehicle's mode icon in its line's color, or a tag with the line's name too when zoomed in. */
-export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, selected, dark, onPress }: Props) {
+export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, selected, dark, glideMs, onPress }: Props) {
+  const coordinate = useGlide(vehicle.lat, vehicle.lon, glideMs);
   const color = colorFor(vehicle);
   const ink = textColorFor(color);
   const label = displayName(vehicle.routeName ?? vehicle.routeId ?? '');
@@ -43,7 +47,7 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, labelled, se
   return (
     <Marker
       identifier={vehicle.id}
-      coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }}
+      coordinate={coordinate}
       anchor={{ x: 0.5, y: 0.5 }}
       // Redrawing a marker's view is the expensive part; once its picture is in, ours only changes when its props do.
       tracksViewChanges={!drawn}
@@ -145,6 +149,7 @@ function sameDot(a: Props, b: Props): boolean {
     a.labelled === b.labelled &&
     a.selected === b.selected &&
     a.dark === b.dark &&
+    a.glideMs === b.glideMs &&
     a.onPress === b.onPress &&
     v.id === w.id &&
     v.lat === w.lat &&

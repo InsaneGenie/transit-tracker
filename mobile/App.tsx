@@ -48,7 +48,7 @@ import { LinesSheet } from './src/LinesSheet';
 import { ModeIcon } from './src/ModeIcon';
 import { LinesDrawer } from './src/LinesDrawer';
 import { PanelSheet, type Sheet } from './src/PanelSheet';
-import { boundsOf, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
+import { boundsOf, GLIDE_MIN_ZOOM, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
@@ -512,13 +512,19 @@ function TransitMap() {
     };
   }, [selectedId, active, select]);
 
-  // Follow the tapped vehicle. The map's bottom padding keeps it clear of the panel.
+  // Follow the tapped vehicle: go to it, then move along with it as it glides. The map's bottom padding
+  // keeps it clear of the panel.
+  const caughtUp = useRef(false);
   useEffect(() => {
-    if (!following || !detail || detail.vehicle.id !== selectedId) return;
+    if (!following || !detail || detail.vehicle.id !== selectedId) {
+      caughtUp.current = false;
+      return;
+    }
     mapRef.current?.animateCamera(
       { center: { latitude: detail.vehicle.lat, longitude: detail.vehicle.lon } },
-      { duration: 800 },
+      { duration: caughtUp.current && zoom >= GLIDE_MIN_ZOOM ? SELECTED_POLL_MS : 800 },
     );
+    caughtUp.current = true;
   }, [detail, following, selectedId]);
 
   // Reordering your lines changes none of the drawn ones, so it fetches nothing.
@@ -772,6 +778,8 @@ function TransitMap() {
   const markers = selected ? [...shown, selected].sort(byId) : shown;
 
   const labelled = zoom >= LABEL_MIN_ZOOM;
+  // Each vehicle glides to its new position over the time until the next one, so it never stops or jumps.
+  const glideMs = zoom >= GLIDE_MIN_ZOOM ? pollMsFor(zoom) : 0;
   const pathColor = detail ? colorFor(detail.vehicle) : undefined;
   const panelOpen = detail !== null && detail.vehicle.id === selectedId;
   // The line panel shows when a line is open on its own and no vehicle is.
@@ -1129,6 +1137,7 @@ function TransitMap() {
                   labelled={labelled || isSelected}
                   selected={isSelected}
                   dark={dark}
+                  glideMs={isSelected ? SELECTED_POLL_MS : glideMs}
                   onPress={onVehiclePress}
                 />
               );

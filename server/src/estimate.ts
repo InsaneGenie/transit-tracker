@@ -7,6 +7,10 @@ export interface EstimatedPosition extends LatLon {
   /** The stop the vehicle is at or heading to. */
   stopId: string;
   status: 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  /** How far along the way to `stopId` it is, from 0 just left the stop before to 1 there. */
+  along: number;
+  /** The stop it left, while between stops. */
+  fromStopId?: string;
 }
 
 /** Trips due to start further out than this are treated as not in service yet. */
@@ -143,7 +147,7 @@ export function estimatePosition(
   if (!nextStop) return null;
   const arriveNext = next.arrival ?? next.departure!;
 
-  const atNext = { lat: nextStop.lat, lon: nextStop.lon, stopId: next.stopId, status: 'STOPPED_AT' as const };
+  const atNext = { lat: nextStop.lat, lon: nextStop.lon, stopId: next.stopId, status: 'STOPPED_AT' as const, along: 1 };
   if (arriveNext <= now) return atNext; // dwelling: arrived, not yet departed
   if (trip.status === 'STOPPED_AT' && trip.statusStopId === next.stopId) return atNext;
 
@@ -174,7 +178,7 @@ export function estimatePosition(
   }
   if (now < leftFrom) {
     if (nextIdx === 0 && leftFrom - now > NOT_STARTED_SECONDS) return null;
-    return { lat: fromStop.lat, lon: fromStop.lon, stopId: fromStopId!, status: 'STOPPED_AT' };
+    return { lat: fromStop.lat, lon: fromStop.lon, stopId: fromStopId!, status: 'STOPPED_AT', along: 1 };
   }
 
   const shapeId = shapeBetween(index, trip.routeId, fromStopId!, next.stopId, [
@@ -190,5 +194,7 @@ export function estimatePosition(
     bearing: path.length > 0 ? point.bearing : bearingDegrees(fromStop, nextStop),
     stopId: next.stopId,
     status: 'IN_TRANSIT_TO',
+    along: Math.min(1, Math.max(0, fraction)),
+    fromStopId,
   };
 }

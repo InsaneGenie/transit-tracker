@@ -1,4 +1,4 @@
-import { estimatePosition, shapeBetween, trackBetween } from './estimate.js';
+import { estimatePosition, shapeBetween, trackBetween, type EstimatedPosition } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
@@ -177,6 +177,26 @@ const OLD_FIX_S = 3 * 60;
 /** A GPS fix this old, with no predicted times to fall back on, is dropped, in seconds. */
 const STALE_FIX_S = 10 * 60;
 
+/**
+ * A train placed from predicted times is kept from moving backward for this long, in seconds. A later
+ * prediction (a delay) puts it behind where it was shown, so it waits there for the new times to catch up
+ * instead of jumping back. Still behind after this, the earlier guess was wrong and the new one wins.
+ */
+const MAX_HOLD_S = 120;
+
+/** How long a train's progress is remembered after it was last placed, in seconds. */
+const PROGRESS_KEPT_S = 120;
+
+/** How far a placed train has got: the stop it is at or heading to, the stops it has left, and where it was shown. */
+interface Progress {
+  stopId: string;
+  along: number;
+  left: Set<string>;
+  shown: EstimatedPosition;
+  seen: number;
+  heldSince?: number;
+}
+
 /** Margin around the requested area when deciding which trips are worth estimating, in degrees (~3 km). */
 const ESTIMATE_MARGIN = 0.03;
 
@@ -258,6 +278,9 @@ function accessOf(stop: { access?: Access; accessNote?: string } | undefined) {
 export class VehicleStore {
   private feeds: FeedState[];
   private timers: NodeJS.Timeout[] = [];
+  /** Each estimated train's progress, by vehicle id, so it only ever moves forward. */
+  private progress = new Map<string, Progress>();
+  private progressSwept = 0;
 
   constructor(
     configs: FeedConfig[],
@@ -377,12 +400,14 @@ export class VehicleStore {
           const stop = next && index.stops.get(next.stopId);
           if (!stop || !inside(bbox, stop.lat, stop.lon, ESTIMATE_MARGIN)) continue;
         }
-        const pos = estimatePosition(trip, now, index, config.keepsPastStops);
+        const id = `${config.id}:${trip.tripId}`;
+        const estimate = estimatePosition(trip, now, index, config.keepsPastStops);
+        const pos = estimate && this.forwardOnly(id, estimate, now);
         if (!pos || (bbox && !inside(bbox, pos.lat, pos.lon))) continue;
         const r = route(trip.routeId);
         out.push({
           ...base,
-          id: `${config.id}:${trip.tripId}`,
+          id,
           routeId: trip.routeId,
           routeName: r?.shortName || r?.longName || trip.routeId,
           routeColor: r?.color,
@@ -397,7 +422,38 @@ export class VehicleStore {
         });
       }
     }
+    this.sweepProgress(now);
     return out;
+  }
+
+  /**
+   * The estimate, unless it is behind where the train was last shown: each new prediction can put a train
+   * a little ahead of or behind the last one, and going back made trains on the map lurch backward.
+   */
+  private forwardOnly(id: string, pos: EstimatedPosition, now: number): EstimatedPosition {
+    const p = this.progress.get(id);
+    if (!p || now - p.seen > PROGRESS_KEPT_S) {
+      this.progress.set(id, { stopId: pos.stopId, along: pos.along, left: new Set(pos.fromStopId ? [pos.fromStopId] : []), shown: pos, seen: now });
+      return pos;
+    }
+    p.seen = Math.max(p.seen, now);
+    const behind = p.left.has(pos.stopId) || (pos.stopId === p.stopId && pos.along < p.along);
+    if (behind) {
+      p.heldSince ??= now;
+      if (now - p.heldSince < MAX_HOLD_S) return p.shown;
+      p.left.clear();
+    } else if (pos.stopId !== p.stopId) {
+      p.left.add(p.stopId);
+    }
+    if (pos.fromStopId) p.left.add(pos.fromStopId);
+    Object.assign(p, { stopId: pos.stopId, along: pos.along, shown: pos, heldSince: undefined });
+    return pos;
+  }
+
+  private sweepProgress(now: number): void {
+    if (now - this.progressSwept < PROGRESS_KEPT_S) return;
+    this.progressSwept = now;
+    for (const [id, p] of this.progress) if (now - p.seen > PROGRESS_KEPT_S) this.progress.delete(id);
   }
 
   /** One vehicle with its remaining stops and the track ahead of it, for when it is tapped on the map. */
