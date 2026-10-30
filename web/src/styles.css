@@ -1689,6 +1689,8 @@ button {
 }
 
 .panel-back {
+  /* A full panel squeezes its children; this one keeps its height. */
+  flex: none;
   align-self: flex-start;
   max-width: 100%;
   margin: -4px 0 6px -6px;
