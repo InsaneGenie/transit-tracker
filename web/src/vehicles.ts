@@ -1,4 +1,4 @@
-import type { Mode, RouteInfo, Vehicle } from './api';
+import type { Bounds, Mode, RouteInfo, Vehicle } from './api';
 
 const MODE_COLORS: Record<Mode, string> = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb' };
 
@@ -52,6 +52,35 @@ export function interpolate(from: Map<string, Vehicle>, to: Vehicle[], t: number
     if (Math.abs(prev.lat - v.lat) + Math.abs(prev.lon - v.lon) > 0.05) return v;
     return { ...v, lat: prev.lat + (v.lat - prev.lat) * k, lon: prev.lon + (v.lon - prev.lon) * k };
   });
+}
+
+/** How long a vehicle left out of an update stays drawn where it was last seen. */
+export const MISSING_HOLD_MS = 10_000;
+
+/**
+ * The vehicles in an update, plus any seen in the last `holdMs` that it left out and that are still in
+ * `bounds`. A vehicle missing from one update is usually back in the next (a feed hiccup, or a newly
+ * deployed server that hasn't loaded yet answering in turn with the old one), and dropping it made it
+ * blink. `lastSeen` keeps each vehicle and when it was last listed, and is updated here.
+ */
+export function holdMissing(
+  latest: Vehicle[],
+  lastSeen: Map<string, { vehicle: Vehicle; at: number }>,
+  bounds: Bounds,
+  now: number,
+  holdMs = MISSING_HOLD_MS,
+): Vehicle[] {
+  for (const vehicle of latest) lastSeen.set(vehicle.id, { vehicle, at: now });
+  const listed = new Set(latest.map((v) => v.id));
+  const held: Vehicle[] = [];
+  const [west, south, east, north] = bounds;
+  for (const [id, { vehicle, at }] of lastSeen) {
+    if (now - at > holdMs) lastSeen.delete(id);
+    else if (!listed.has(id) && vehicle.lon >= west && vehicle.lon <= east && vehicle.lat >= south && vehicle.lat <= north) {
+      held.push(vehicle);
+    }
+  }
+  return held.length ? [...latest, ...held] : latest;
 }
 
 export function formatEta(time: number | undefined, now = Date.now() / 1000): string {

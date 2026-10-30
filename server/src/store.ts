@@ -741,6 +741,16 @@ export class VehicleStore {
     return keys?.length ? keys : undefined;
   }
 
+  /**
+   * Whether every feed has its schedule (or gave up on it) and a first set of positions. Before that the
+   * map would be missing every train whose position is worked out from the schedule.
+   */
+  ready(): boolean {
+    return this.feeds
+      .filter((f) => this.enabled(f))
+      .every((f) => f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError));
+  }
+
   status(): FeedStatus[] {
     return this.feeds.map((f) => ({
       id: f.config.id,
