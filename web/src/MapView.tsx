@@ -218,6 +218,11 @@ function otherStopsData(lines: RouteLine[]): GeoJSON.FeatureCollection {
   };
 }
 
+/** Station names other than the picked station's, which already has its own label below its ring. */
+function stationNamesFilter(station: Station | null): ExpressionSpecification {
+  return ['!=', ['get', 'name'], station?.name ? tidyStopName(station.name) : ''];
+}
+
 function stationData(station: Station | null, color: string): GeoJSON.FeatureCollection {
   if (!station) return EMPTY;
   return stopFeatures([station], color);
@@ -415,6 +420,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       type: 'symbol',
       source,
       minzoom: STATION_NAMES_MIN_ZOOM,
+      filter: stationNamesFilter(state.station),
       layout: {
         'text-field': ['get', 'name'],
         'text-font': ['Noto Sans Bold'],
@@ -477,7 +483,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
       'text-anchor': 'top',
       'text-offset': [0, 1.4],
       'text-allow-overlap': true,
-      // Takes its room from the other station names, so its own isn't shown twice.
+      // Other station names keep clear of it.
       'text-ignore-placement': false,
     },
     paint: { 'text-color': ring, 'text-halo-color': outline, 'text-halo-width': 2 },
@@ -793,6 +799,9 @@ export function MapView(props: Props) {
     state.current.station = station;
     const map = mapRef.current;
     (map?.getSource('chosen-station') as GeoJSONSource | undefined)?.setData(stationData(station, stationColor(state.current)));
+    for (const layer of ['other-stops-names', 'route-stops-names']) {
+      if (map?.getLayer(layer)) map.setFilter(layer, stationNamesFilter(station));
+    }
     if (!map || !station) return;
     map.easeTo({
       center: [station.lon, station.lat],
