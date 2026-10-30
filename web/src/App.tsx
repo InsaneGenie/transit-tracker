@@ -539,6 +539,7 @@ export function App() {
         otherLines={otherLines}
         allRoutes={allRoutes}
         station={station}
+        routes={routesByKey}
         onStation={pickStation}
         onLineStation={openLineStation}
         onRouteLine={openOwnLine}
