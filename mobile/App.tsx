@@ -730,6 +730,8 @@ function TransitMap() {
       if (stop.lat === undefined || stop.lon === undefined || !stop.name) continue;
       if (stop.lon < west || stop.lon > east || stop.lat < south || stop.lat > north) continue;
       const name = tidyStopName(stop.name);
+      // The picked station already has its name under its ring.
+      if (anyPanel && station?.name && name === tidyStopName(station.name)) continue;
       const at = toScreen(stop);
       // The name starts just right of the dot.
       const box = { x: at.x + 7, y: at.y - 8, w: Math.min(name.length * 6.5 + 4, STATION_NAME_WIDTH), h: 16 };
