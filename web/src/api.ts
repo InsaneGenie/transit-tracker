@@ -72,6 +72,9 @@ export interface RouteLine {
   stops: UpcomingStop[];
 }
 
+/** A line's path alone. Mirrors `RoutePath` in server/src/store.ts. */
+export type RoutePath = Omit<RouteLine, 'stops'>;
+
 /** Mirrors `Arrival` in server/src/store.ts. */
 export interface Arrival {
   vehicle: Vehicle;
@@ -128,6 +131,11 @@ export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[]
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+/** Every subway and rail line's path, for drawing all of them at once. */
+export function fetchRoutePaths(signal?: AbortSignal): Promise<{ lines: RoutePath[] }> {
+  return get('/api/route-paths?modes=subway,rail', signal);
 }
 
 export function fetchArrivals(
