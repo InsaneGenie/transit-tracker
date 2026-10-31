@@ -16,6 +16,12 @@ export interface EstimatedPosition extends LatLon {
 /** Trips due to start further out than this are treated as not in service yet. */
 const NOT_STARTED_SECONDS = 5 * 60;
 
+/**
+ * A train the feed said was standing in a station this recently is still there, in seconds. The subway
+ * confirms it every 10 to 15 seconds while the train is in the station.
+ */
+const IN_STATION_S = 20;
+
 const tracks = new WeakMap<StaticIndex, Map<string, Polyline>>();
 const shapesBetween = new WeakMap<StaticIndex, Map<string, string | undefined>>();
 
@@ -140,6 +146,15 @@ export function estimatePosition(
   index: StaticIndex,
   keepsPastStops = false,
 ): EstimatedPosition | null {
+  // Standing in a station the trip still lists: there, whatever its times say. Its departure time is often
+  // already past while it waits, which put it out on the track and then pulled it back each update.
+  const standing =
+    trip.status === 'STOPPED_AT' && (trip.statusAge ?? Infinity) <= IN_STATION_S
+      ? trip.stops.find((s) => s.stopId === trip.statusStopId && (s.departure ?? s.arrival) !== undefined)
+      : undefined;
+  const station = standing && index.stops.get(standing.stopId);
+  if (station) return { lat: station.lat, lon: station.lon, stopId: standing.stopId, status: 'STOPPED_AT', along: 1 };
+
   const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > now);
   if (nextIdx === -1) return null;
   const next = trip.stops[nextIdx];
@@ -195,6 +210,59 @@ export function estimatePosition(
     stopId: next.stopId,
     status: 'IN_TRANSIT_TO',
     along: Math.min(1, Math.max(0, fraction)),
+    fromStopId,
+  };
+}
+
+/** A vehicle due at its next stop this long before it reported a position nowhere near it is late, in meters. */
+const NEAR_STOP_M = 150;
+
+/** A position is moved on at most this long past when it was reported, in seconds. */
+const MAX_PROJECT_S = 3 * 60;
+
+/**
+ * Where a vehicle that reported its position at `fixTime` is likely to be `now`: moved on along `track`
+ * (the way from the reported position to its next stop) at the pace that gets it there at its predicted
+ * time, then waiting there until its predicted departure. Null when its times say nothing about it, so
+ * it stays where it reported. Feeds pass on positions 30 to 60 seconds old, in which a bus covers a block
+ * or two and a train far more. It goes no further than `maxMeters` from the reported position.
+ */
+export function projectFix(
+  fix: LatLon,
+  fixTime: number,
+  trip: TripState,
+  now: number,
+  index: StaticIndex,
+  track: (stopId: string, fromStopId?: string) => Polyline,
+  maxMeters = Infinity,
+): EstimatedPosition | null {
+  const at = Math.min(now, fixTime + MAX_PROJECT_S);
+  const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > fixTime);
+  if (nextIdx === -1 || at <= fixTime) return null;
+  const next = trip.stops[nextIdx];
+  const stop = index.stops.get(next.stopId);
+  if (!stop) return null;
+  const arrive = next.arrival ?? next.departure!;
+  const fromStopId = trip.stops[nextIdx - 1]?.stopId;
+  const atStop = { lat: stop.lat, lon: stop.lon, stopId: next.stopId, status: 'STOPPED_AT' as const, along: 1 };
+  if (arrive <= fixTime) {
+    // Due there already. Near it, it's waiting to leave; anywhere else it's running late, so the times are no guide.
+    return distanceMeters(fix, stop) <= NEAR_STOP_M ? { ...atStop, lat: fix.lat, lon: fix.lon } : null;
+  }
+  const path = track(next.stopId, fromStopId);
+  if (at >= arrive && path.length <= maxMeters) return atStop;
+  const fraction = Math.min((at - fixTime) / (arrive - fixTime), path.length > 0 ? maxMeters / path.length : 1);
+  const point = path.at(fraction);
+  const metersLeft = path.length * (1 - fraction);
+  return {
+    lat: point.lat,
+    lon: point.lon,
+    bearing: path.length > 0 ? point.bearing : undefined,
+    stopId: next.stopId,
+    status: 'IN_TRANSIT_TO',
+    // From how far it has left to go rather than the share of the way from this fix, so positions projected
+    // from an older and a newer fix compare.
+    along: 1 / (1 + metersLeft / 1000),
     fromStopId,
   };
 }

@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { estimatePosition } from '../src/estimate.js';
-import { nearestOnPath } from '../src/geo.js';
+import { estimatePosition, projectFix } from '../src/estimate.js';
+import { nearestOnPath, Polyline } from '../src/geo.js';
 import type { TripState } from '../src/realtime.js';
 import { buildStaticIndex } from '../src/static-gtfs.js';
 import { files, gtfs, indexPromise } from './fixtures.js';
@@ -16,6 +16,19 @@ const trip = (stops: TripState['stops'], extra: Partial<TripState> = {}): TripSt
 });
 
 describe('estimatePosition', () => {
+  it('keeps a train in the station while the feed says it is standing there, though its departure time has passed', async () => {
+    const index = await indexPromise;
+    const stops = [
+      { stopId: 'B', arrival: T - 60, departure: T - 30 },
+      { stopId: 'C', arrival: T + 120 },
+    ];
+    const standing = trip(stops, { status: 'STOPPED_AT', statusStopId: 'B', statusAge: 5 });
+    expect(estimatePosition(standing, T, index)).toMatchObject({ stopId: 'B', status: 'STOPPED_AT', lat: 40.79 });
+    // Not confirmed for a minute: it has left.
+    const left = trip(stops, { status: 'STOPPED_AT', statusStopId: 'B', statusAge: 60 });
+    expect(estimatePosition(left, T, index)).toMatchObject({ stopId: 'C', status: 'IN_TRANSIT_TO' });
+  });
+
   it('moves along the shape, not in a straight line', async () => {
     const index = await indexPromise;
     // Left A at T, due at B at T+120. Halfway along the dog-leg is its far corner.
@@ -144,5 +157,36 @@ describe('nearestOnPath', () => {
     expect(at.meters).toBeCloseTo(15, 0);
     expect(at.lat).toBeCloseTo(40.755, 6);
     expect(at.lon).toBeCloseTo(-73.98, 6);
+  });
+});
+
+describe('projectFix', () => {
+  // Reported at T between B and C, 0.005° (about 560 m) short of C.
+  const fix = { lat: 40.785, lon: -73.95 };
+  const C = { lat: 40.78, lon: -73.95 };
+  const track = () => new Polyline([fix, C]);
+
+  it('moves a reported position on toward the next stop, to be there when it is due', async () => {
+    const index = await indexPromise;
+    const due = trip([{ stopId: 'C', arrival: T + 60, departure: T + 80 }]);
+    expect(projectFix(fix, T, due, T + 30, index, track)).toMatchObject({ lat: expect.closeTo(40.7825, 4), stopId: 'C', status: 'IN_TRANSIT_TO' });
+    expect(projectFix(fix, T, due, T + 70, index, track)).toMatchObject({ lat: 40.78, status: 'STOPPED_AT' });
+    // A newer position nearer the stop counts as further along.
+    const nearer = projectFix({ lat: 40.782, lon: -73.95 }, T + 10, due, T + 10.1, index, () => new Polyline([{ lat: 40.782, lon: -73.95 }, C]))!;
+    expect(nearer.along).toBeGreaterThan(projectFix(fix, T, due, T + 10, index, track)!.along);
+  });
+
+  it('goes no further than it is allowed to', async () => {
+    const index = await indexPromise;
+    const pos = projectFix(fix, T, trip([{ stopId: 'C', arrival: T + 60 }]), T + 30, index, track, 111);
+    expect(pos!.lat).toBeCloseTo(40.784, 4);
+  });
+
+  it('leaves a late vehicle where it reported, and one at its stop there until it leaves', async () => {
+    const index = await indexPromise;
+    const late = trip([{ stopId: 'C', arrival: T - 10, departure: T + 20 }]);
+    expect(projectFix(fix, T, late, T + 30, index, track)).toBeNull();
+    const near = { lat: 40.7805, lon: -73.95 };
+    expect(projectFix(near, T, late, T + 10, index, track)).toMatchObject({ lat: 40.7805, status: 'STOPPED_AT', stopId: 'C' });
   });
 });
