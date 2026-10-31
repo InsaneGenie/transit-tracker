@@ -1,7 +1,7 @@
-import { estimatePosition, shapeBetween, trackBetween, type EstimatedPosition } from './estimate.js';
+import { estimatePosition, projectFix, shapeBetween, trackBetween, type EstimatedPosition } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
-import { fetchFeed, mergeSnapshots, type FeedSnapshot } from './realtime.js';
+import { fetchFeed, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
 import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
 
@@ -187,6 +187,42 @@ const MAX_HOLD_S = 120;
 /** How long a train's progress is remembered after it was last placed, in seconds. */
 const PROGRESS_KEPT_S = 120;
 
+/**
+ * Faster than this between two reported positions, in meters per second, the newer one is a glitch (Metro-North
+ * sometimes reports a train miles from where it was seconds before, then back again). About 155 mph for
+ * trains and 80 mph for buses.
+ */
+const MAX_SPEED: Record<Mode, number> = { subway: 70, rail: 70, bus: 35 };
+
+/** A position that looks like a glitch is believed once it has been reported this long, in seconds. */
+const GLITCH_TRUSTED_S = 90;
+
+/**
+ * A bus is moved on from its reported position no further than this many times as fast as it went between
+ * its last two, plus SLOW_BUS_SLACK_M. Its predicted times assume it keeps moving, which a bus stuck in
+ * traffic or waiting out a layover does not.
+ */
+const BUS_SPEED_SLACK = 1.5;
+const SLOW_BUS_SLACK_M = 20;
+
+/** How fast a bus is taken to be going before it has reported twice, in meters per second (about 20 mph). */
+const USUAL_BUS_SPEED = 9;
+
+/** A vehicle's reported position and when it was first reported there, in Unix seconds. */
+interface Sighting {
+  lat: number;
+  lon: number;
+  since: number;
+}
+
+/** What is known of a GPS vehicle's positions: the one shown, the one before, and a glitch on probation. */
+interface FixHistory {
+  current: Sighting;
+  previous?: Sighting;
+  doubtful?: Sighting;
+  seen: number;
+}
+
 /** How far a placed train has got: the stop it is at or heading to, the stops it has left, and where it was shown. */
 interface Progress {
   stopId: string;
@@ -281,6 +317,10 @@ export class VehicleStore {
   /** Each estimated train's progress, by vehicle id, so it only ever moves forward. */
   private progress = new Map<string, Progress>();
   private progressSwept = 0;
+  /** Each GPS vehicle's recent positions, by vehicle id. */
+  private fixes = new Map<string, FixHistory>();
+  /** Each GPS vehicle's way from its position to its next stop, by vehicle id, reused until either changes. */
+  private fixTracks = new Map<string, { key: string; track: Polyline; fromMeters?: number }>();
 
   constructor(
     configs: FeedConfig[],
@@ -373,18 +413,26 @@ export class VehicleStore {
         return age <= (trip && canEstimate ? OLD_FIX_S : STALE_FIX_S);
       });
       for (const g of live) {
-        if (bbox && !inside(bbox, g.lat, g.lon)) continue;
+        // Projected positions are within a few minutes' travel of the reported one.
+        if (bbox && !inside(bbox, g.lat, g.lon, ESTIMATE_MARGIN)) continue;
+        const id = `${config.id}:${g.vehicleId}`;
+        const fix = this.sighting(id, g, snapshot.fetchedAt, config.mode, now);
+        const trip = g.tripId ? trips.get(g.tripId) : undefined;
+        const moved = trip && index ? this.projectGps(id, fix, trip, now, index, config.mode) : null;
+        const pos = moved ?? fix.current;
+        if (bbox && !inside(bbox, pos.lat, pos.lon)) continue;
         const r = route(g.routeId);
+        const bearing = g.bearing !== undefined && config.bearingFromEast ? (450 - g.bearing) % 360 : g.bearing;
         out.push({
           ...base,
-          id: `${config.id}:${g.vehicleId}`,
+          id,
           routeId: g.routeId,
           routeName: r?.shortName || r?.longName || g.routeId,
           routeColor: r?.color,
           tripId: g.tripId,
-          lat: g.lat,
-          lon: g.lon,
-          bearing: g.bearing !== undefined && config.bearingFromEast ? (450 - g.bearing) % 360 : g.bearing,
+          lat: pos.lat,
+          lon: pos.lon,
+          bearing: moved?.status === 'IN_TRANSIT_TO' && moved.bearing !== undefined ? moved.bearing : bearing,
           stopId: g.stopId,
           stopName: g.stopId ? index?.stops.get(g.stopId)?.name : undefined,
           source: 'gps',
@@ -454,6 +502,89 @@ export class VehicleStore {
     if (now - this.progressSwept < PROGRESS_KEPT_S) return;
     this.progressSwept = now;
     for (const [id, p] of this.progress) if (now - p.seen > PROGRESS_KEPT_S) this.progress.delete(id);
+    for (const [id, f] of this.fixes) {
+      if (now - f.seen > PROGRESS_KEPT_S) {
+        this.fixes.delete(id);
+        this.fixTracks.delete(id);
+      }
+    }
+  }
+
+  /**
+   * A GPS vehicle's position history, updated with its latest report. A position counts from when it was
+   * first reported, since Metro-North stamps every position with the time the feed was published, however
+   * old. One too far from the last to have been driven in the time between is held back as a glitch until it
+   * has stood for GLITCH_TRUSTED_S.
+   */
+  private sighting(id: string, g: GpsVehicle, fetchedAt: number, mode: Mode, now: number): FixHistory {
+    const at = Math.min(g.timestamp ?? fetchedAt, fetchedAt);
+    const seen: Sighting = { lat: g.lat, lon: g.lon, since: at };
+    const same = (a?: Sighting) => a !== undefined && a.lat === g.lat && a.lon === g.lon;
+    let f = this.fixes.get(id);
+    if (!f) this.fixes.set(id, (f = { current: seen, seen: now }));
+    f.seen = Math.max(f.seen, now);
+    if (same(f.current) || at <= f.current.since) return f;
+    const reachable = (from: Sighting) => distanceMeters(from, seen) <= MAX_SPEED[mode] * Math.max(0, at - from.since);
+    if (same(f.doubtful)) {
+      // Still there: believed once it has stood long enough.
+      if (now - f.doubtful!.since < GLITCH_TRUSTED_S) return f;
+      Object.assign(f, { previous: undefined, current: f.doubtful, doubtful: undefined });
+    } else if (reachable(f.current)) {
+      Object.assign(f, { previous: f.current, current: seen, doubtful: undefined });
+    } else if (f.doubtful && reachable(f.doubtful)) {
+      // Two reports in a row that agree with each other: it really did move, and the one shown was wrong.
+      Object.assign(f, { previous: f.doubtful, current: seen, doubtful: undefined });
+    } else {
+      f.doubtful = seen;
+    }
+    return f;
+  }
+
+  /**
+   * Where a GPS vehicle is likely to be by now, moved on from its last reported position along its trip, and
+   * never back behind where it was last shown. Null to show it where it reported.
+   */
+  private projectGps(id: string, fix: FixHistory, trip: TripState, now: number, index: StaticIndex, mode: Mode): EstimatedPosition | null {
+    const { current, previous } = fix;
+    const tripShapeId = index.tripShapes.get(trip.tripId);
+    const tripShape = tripShapeId ? index.shapes.get(tripShapeId) : undefined;
+    const cached = (stopId: string, fromStopId?: string) => {
+      const key = `${current.lat},${current.lon}|${stopId}`;
+      const hit = this.fixTracks.get(id);
+      if (hit?.key === key) return hit;
+      const stop = index.stops.get(stopId)!;
+      let way = tripShape;
+      if (!way) {
+        const seg = index.segments.get(`${trip.routeId}|${stopId}`) ?? index.segments.get(`*|${stopId}`);
+        const from = fromStopId ?? seg?.fromStopId;
+        if (from && index.stops.has(from)) {
+          const shapeId = shapeBetween(index, trip.routeId, from, stopId, [seg?.fromStopId === from ? seg.shapeId : undefined]);
+          way = trackBetween(index, from, stopId, shapeId);
+        }
+      }
+      const entry = {
+        key,
+        track: way ? way.slice(current, stop) : new Polyline([current, stop]),
+        fromMeters: tripShape?.metersAlong(current),
+      };
+      this.fixTracks.set(id, entry);
+      return entry;
+    };
+    let maxMeters = Infinity;
+    if (mode === 'bus') {
+      const speed = previous
+        ? distanceMeters(previous, current) / Math.max(1, current.since - previous.since)
+        : USUAL_BUS_SPEED;
+      maxMeters = speed * BUS_SPEED_SLACK * (now - current.since) + SLOW_BUS_SLACK_M;
+    }
+    const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > current.since);
+    const next = trip.stops[nextIdx];
+    const fromMeters = next && index.stops.has(next.stopId) ? cached(next.stopId, trip.stops[nextIdx - 1]?.stopId).fromMeters : undefined;
+    const pos = projectFix(current, current.since, trip, now, index, (stopId, from) => cached(stopId, from).track, maxMeters, fromMeters);
+    // Along the trip's route, how far it has got is comparable whichever stop is next, so a newer report that
+    // makes a stop further back the next one can't pull it back either.
+    if (pos && fromMeters !== undefined) return this.forwardOnly(id, { ...pos, stopId: trip.tripId, fromStopId: undefined }, now);
+    return pos && this.forwardOnly(id, pos, now);
   }
 
   /** One vehicle with its remaining stops and the track ahead of it, for when it is tapped on the map. */

@@ -74,13 +74,49 @@ export class Polyline {
     return best;
   }
 
-  /** The part of this line between the points nearest to `from` and `to`, in travel order. */
+  /**
+   * Where along the line `p` is closest, as a point index plus the fraction of the way on to the next point,
+   * so a spot between two far-apart points falls between them rather than at either one.
+   */
+  measure(p: LatLon): number {
+    const kx = Math.cos(toRad(p.lat));
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < this.size; i++) {
+      const ay = this.coords[i * 2];
+      const ax = this.coords[i * 2 + 1] * kx;
+      let t = 0;
+      if (i + 1 < this.size) {
+        const dy = this.coords[i * 2 + 2] - ay;
+        const dx = this.coords[i * 2 + 3] * kx - ax;
+        const len = dx * dx + dy * dy;
+        t = len > 0 ? Math.min(1, Math.max(0, ((p.lon * kx - ax) * dx + (p.lat - ay) * dy) / len)) : 0;
+      }
+      const y = ay + (i + 1 < this.size ? (this.coords[i * 2 + 2] - ay) * t : 0) - p.lat;
+      const x = ax + (i + 1 < this.size ? (this.coords[i * 2 + 3] * kx - ax) * t : 0) - p.lon * kx;
+      const d = x * x + y * y;
+      if (d < bestDist) {
+        bestDist = d;
+        best = i + t;
+      }
+    }
+    return best;
+  }
+
+  /** How far along the line, in meters, it passes closest to `p`. */
+  metersAlong(p: LatLon): number {
+    const m = this.measure(p);
+    const i = Math.floor(m);
+    return i + 1 < this.size ? this.cumulative[i] + (this.cumulative[i + 1] - this.cumulative[i]) * (m - i) : this.cumulative[i];
+  }
+
+  /** The part of this line between where it passes closest to `from` and to `to`, in travel order. */
   slice(from: LatLon, to: LatLon): Polyline {
-    const i = this.nearestIndex(from);
-    const j = this.nearestIndex(to);
+    const i = this.measure(from);
+    const j = this.measure(to);
     const pts = [];
-    if (i <= j) for (let k = i; k <= j; k++) pts.push(this.point(k));
-    else for (let k = i; k >= j; k--) pts.push(this.point(k));
+    if (i <= j) for (let k = Math.floor(i) + 1; k < j; k++) pts.push(this.point(k));
+    else for (let k = Math.ceil(i) - 1; k > j; k--) pts.push(this.point(k));
     return new Polyline([from, ...pts, to]);
   }
 

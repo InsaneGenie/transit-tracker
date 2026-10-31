@@ -10,7 +10,7 @@ import { decodeFeed, snapshotFromFeed } from '../src/realtime.js';
 import { createApiServer } from '../src/server.js';
 import { VehicleStore } from '../src/store.js';
 import { buildStaticIndex, type GtfsFiles } from '../src/static-gtfs.js';
-import { encodeFeed, gtfs, indexPromise } from './fixtures.js';
+import { encodeFeed, files, gtfs, indexPromise } from './fixtures.js';
 
 const T = 1_700_000_000;
 
@@ -74,6 +74,16 @@ describe('snapshotFromFeed', () => {
 
     const busSnap = snapshotFromFeed(decodeFeed(busFeed), T);
     expect(busSnap.gps[0]).toMatchObject({ vehicleId: 'MTA_1234', routeId: 'M15', lat: expect.closeTo(40.75, 5) });
+  });
+});
+
+describe('snapshotFromFeed subway status', () => {
+  it('says how long before the feed was published a train was last seen at its station', () => {
+    const feed = encodeFeed([
+      { id: 't', tripUpdate: { trip: { tripId: 'tS' }, stopTimeUpdate: [{ stopId: 'B', arrival: { time: T - 30 } }] } },
+      { id: 'v', vehicle: { trip: { tripId: 'tS' }, stopId: 'B', currentStatus: 1, timestamp: T - 12 } },
+    ]);
+    expect(snapshotFromFeed(decodeFeed(feed), T).trips[0]).toMatchObject({ status: 'STOPPED_AT', statusStopId: 'B', statusAge: 12 });
   });
 });
 
@@ -213,9 +223,12 @@ describe('VehicleStore.detail', () => {
       ['Bravo', T + 60],
       ['Charlie', T + 240],
     ]);
-    // Starts at the train, follows the dog-leg into Bravo, then on to Charlie.
+    // Starts at the train, on the dog-leg's last stretch into Bravo, then on to Charlie. It is past the
+    // dog-leg's last corner, so the line isn't drawn back to it.
     expect(detail.path[0]).toEqual([detail.vehicle.lon, detail.vehicle.lat]);
-    expect(detail.path).toContainEqual([-73.94, 40.79]);
+    expect(detail.vehicle.lon).toBeLessThan(-73.94);
+    expect(detail.path).not.toContainEqual([-73.94, 40.79]);
+    expect(detail.path).toContainEqual([-73.95, 40.79]);
     expect(detail.path.at(-1)).toEqual([-73.95, 40.78]);
     expect(store.detail('nope', T)).toBeNull();
   });
@@ -263,6 +276,72 @@ describe('VehicleStore GPS fixes', () => {
     const vehicles = store.vehicles(T);
     expect(vehicles).toHaveLength(1);
     expect(vehicles[0]).toMatchObject({ tripId: 'tE', source: 'estimated', lat: expect.closeTo(40.785, 3) });
+  });
+});
+
+describe('VehicleStore GPS positions', () => {
+  // One feed per poll, in turn.
+  function storeOf(feeds: Parameters<typeof encodeFeed>[0][]) {
+    let poll = 0;
+    return new VehicleStore(
+      [train],
+      {},
+      async () => snapshotFromFeed(decodeFeed(encodeFeed(feeds[Math.min(poll++, feeds.length - 1)])), T),
+      () => indexPromise,
+    );
+  }
+  const at = (lat: number, timestamp: number, tripId = 'tG') => ({
+    id: 'v',
+    vehicle: { trip: { tripId }, vehicle: { id: '7' }, position: { latitude: lat, longitude: -73.95 }, timestamp },
+  });
+  const tripG = {
+    id: 't',
+    tripUpdate: { trip: { tripId: 'tG', routeId: '1' }, stopTimeUpdate: [
+      { stopId: 'B', arrival: { time: T - 100 }, departure: { time: T - 90 } },
+      { stopId: 'C', arrival: { time: T + 40 } },
+    ] },
+  };
+
+  it('moves a reported position on along the track toward the next stop', async () => {
+    const store = storeOf([[tripG, at(40.788, T - 40)]]);
+    await store.loadStatic();
+    await store.pollAll();
+    // Reported 40 s ago, due at C in 40 s: halfway there.
+    expect(store.vehicles(T)[0]).toMatchObject({ source: 'gps', lat: expect.closeTo(40.784, 4), bearing: expect.closeTo(180, 0) });
+  });
+
+  it("never pulls a bus back along its route when a newer report puts it behind where it was shown", async () => {
+    const busConfig: FeedConfig = { ...train, id: 'test-bus3', mode: 'bus', staticDetail: 'stops' };
+    // Trip t1 follows the dog-leg shape from A (40.80, -73.95) east, south, then west into B.
+    const report = (lon: number, timestamp: number, dueAtB: number) => [
+      { id: 'v', vehicle: { trip: { tripId: 't1' }, vehicle: { id: '5' }, position: { latitude: 40.8, longitude: lon }, timestamp } },
+      { id: 't', tripUpdate: { trip: { tripId: 't1', routeId: '1' }, stopTimeUpdate: [{ stopId: 'B', arrival: { time: dueAtB } }] } },
+    ];
+    let poll = 0;
+    const feeds = [report(-73.9475, T - 30, T + 30), report(-73.9474, T, T + 300)];
+    const store = new VehicleStore(
+      [busConfig],
+      {},
+      async () => snapshotFromFeed(decodeFeed(encodeFeed(feeds[Math.min(poll++, feeds.length - 1)])), T),
+      () => buildStaticIndex(files, 'stops'),
+    );
+    await store.loadStatic();
+    await store.pollAll();
+    const first = store.vehicles(T)[0];
+    expect(first.lon).toBeGreaterThan(-73.9475); // moved on east along the route
+    await store.pollAll(); // reported just 9 m on, and now late
+    expect(store.vehicles(T + 1)[0]).toMatchObject({ lat: first.lat, lon: first.lon });
+  });
+
+  it('ignores a position too far from the last to be real, until the next one agrees with it', async () => {
+    const store = storeOf([[at(40.79, T - 20, 'none')], [at(40.7, T - 10, 'none')], [at(40.6995, T, 'none')]]);
+    await store.loadStatic();
+    await store.pollAll();
+    expect(store.vehicles(T)[0].lat).toBeCloseTo(40.79, 5);
+    await store.pollAll(); // 10 km in 10 s
+    expect(store.vehicles(T)[0].lat).toBeCloseTo(40.79, 5);
+    await store.pollAll(); // then 55 m on from there
+    expect(store.vehicles(T)[0].lat).toBeCloseTo(40.6995, 4);
   });
 });
 

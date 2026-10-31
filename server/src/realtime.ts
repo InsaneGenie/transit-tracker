@@ -31,6 +31,11 @@ export interface TripState {
   /** From a position-less vehicle entity, which NYC subway feeds send. */
   status?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
   statusStopId?: string;
+  /**
+   * How long before the feed was published the status was last confirmed, in seconds. The subway's
+   * refreshes a train's STOPPED_AT every 10 to 15 seconds while it is in the station, then leaves it be.
+   */
+  statusAge?: number;
 }
 
 export interface FeedSnapshot {
@@ -59,7 +64,8 @@ export function decodeFeed(bytes: Uint8Array): FeedMessage {
 export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 1000): FeedSnapshot {
   const gps: GpsVehicle[] = [];
   const trips = new Map<string, TripState>();
-  const statuses = new Map<string, Pick<TripState, 'status' | 'statusStopId' | 'vehicleId'>>();
+  const statuses = new Map<string, Pick<TripState, 'status' | 'statusStopId' | 'statusAge' | 'vehicleId'>>();
+  const published = toNumber(message.header?.timestamp);
 
   for (const entity of message.entity) {
     const tu = entity.tripUpdate;
@@ -95,9 +101,11 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
         timestamp: toNumber(v.timestamp),
       });
     } else if (tripId) {
+      const at = toNumber(v.timestamp);
       statuses.set(tripId, {
         status: STATUS[v.currentStatus ?? 2],
         statusStopId: v.stopId || undefined,
+        statusAge: at !== undefined && published !== undefined ? Math.max(0, published - at) : undefined,
         vehicleId: v.vehicle?.id || v.vehicle?.label || undefined,
       });
     }

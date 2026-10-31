@@ -63,6 +63,8 @@ The free plan has 512 MB of memory; the server uses about 250 MB with every New 
 | LIRR, Metro-North | MTA GTFS-Realtime, no key needed | GPS when the feed has it, otherwise estimated |
 | MTA buses | MTA Bus Time positions and arrival predictions, free key in `MTA_BUSTIME_KEY` | GPS |
 
-Subway trains don't report GPS. The server takes each train's predicted arrival at its next stop, works out when it left the stop before, and places it that far along the real track shape from the MTA schedule. Positions are recalculated on every request, so trains keep moving between feed updates. Each vehicle has `"source": "gps"` or `"source": "estimated"` so the map can show the difference.
+Subway trains don't report GPS. The server takes each train's predicted arrival at its next stop, works out when it left the stop before, and places it that far along the real track shape from the MTA schedule. Positions are recalculated on every request, so trains keep moving between feed updates. While the feed says a train is standing in a station, it is shown there.
+
+GPS positions reach the map 30 to 60 seconds after they were taken, long enough for a bus to cover a block or two and a train far more. So a GPS vehicle with predicted arrival times is moved on from its last reported position along its route, at the pace that gets it to its next stop when it is due (a bus no faster than it has been moving, since predictions don't foresee traffic). A reported position too far from the last one to have been reached in the time between is treated as a glitch until the next report agrees with it. Each vehicle has `"source": "gps"` or `"source": "estimated"` so the map can show the difference.
 
 To add an agency, add an entry to `server/src/feeds.ts`.
