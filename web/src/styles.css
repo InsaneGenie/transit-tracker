@@ -1813,3 +1813,27 @@ button {
   color: var(--ink);
   font-weight: 600;
 }
+
+/* Share sits beside Close in a panel's header. */
+.share {
+  position: relative;
+  margin-right: 2px;
+}
+
+.share-copied {
+  color: var(--live);
+}
+
+.share-tip {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--surface-solid);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}

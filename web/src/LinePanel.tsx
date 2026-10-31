@@ -5,6 +5,8 @@ import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, UpcomingStop
 import { BackButton } from './BackButton';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
+import { shareTitle, shareUrl } from './share';
+import { ShareButton } from './ShareButton';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
 import { Arrivals, Transfers } from './VehiclePanel';
 
@@ -37,6 +39,8 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
   const noun = mode === 'bus' ? 'bus' : 'train';
   const stationTransfers = transferLines(station?.transfers, routes).filter((r) => r.key !== line?.key);
+  const key = info?.key ?? line?.key;
+  const stationName = station?.name ? tidyStopName(station.name) : undefined;
 
   return (
     <aside ref={ref} className="panel" aria-label={`${name} line`} style={{ '--route': color } as CSSProperties}>
@@ -50,6 +54,12 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
           <strong>{info?.longName || `${MODE_LABELS[mode]} ${name}`}</strong>
           <span className="muted">{info?.agency}</span>
         </div>
+        {key && (
+          <ShareButton
+            url={shareUrl(location.origin, { line: key, station: station?.stopId })}
+            title={shareTitle({ line: { name, mode }, station: stationName })}
+          />
+        )}
         <CloseButton onClick={onClose} />
       </header>
 
@@ -63,7 +73,7 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
         <section className="station-card" aria-label="Picked station">
           <div className="station-card-top">
             <div className="station-card-text">
-              <strong>{station.name ? tidyStopName(station.name) : 'Station'}</strong>
+              <strong>{stationName ?? 'Station'}</strong>
               <AccessLine stop={station} />
               {stationTransfers.length > 0 ? (
                 <Transfers lines={stationTransfers} onPick={onLine} />

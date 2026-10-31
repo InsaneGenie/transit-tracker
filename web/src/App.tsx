@@ -9,6 +9,7 @@ import { LinesScreen } from './LinesScreen';
 import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from './panelHistory';
+import { parseShare, withoutShare } from './share';
 import { TESTFLIGHT_URL } from './testflight';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
@@ -185,6 +186,9 @@ function useLineCounts(on: boolean): Record<string, number> | null {
   return counts;
 }
 
+/** The train, bus, line or station a shared link opened the site on. */
+const SHARED = parseShare(location.search);
+
 export function App() {
   const [modes, setModes] = useState<Mode[]>(ALL_MODES);
   const [lines, setLines] = useState<string[]>(() => savedKeys(LINES_KEY));
@@ -196,12 +200,15 @@ export function App() {
   const [linePage, setLinePage] = useState<string | null>(null);
   // A train or bus picked on a line's page, for the map to go to.
   const [goTo, setGoTo] = useState<{ lon: number; lat: number; at: number } | null>(null);
-  const [guideOpen, setGuideOpen] = useState(() => !guideSeen());
+  // A shared link goes straight to what it shows; the guide waits for the next visit.
+  const [guideOpen, setGuideOpen] = useState(() => !SHARED && !guideSeen());
   const [appInviteOpen, setAppInviteOpen] = useState(() => !appInviteClosed());
   // Every line's route drawn on the map, without opening Lines.
   const [allRoutesOn, setAllRoutesOn] = useState(savedAllRoutes);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [following, setFollowing] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(() => (SHARED && 'vehicle' in SHARED ? SHARED.vehicle : null));
+  const [following, setFollowing] = useState(() => Boolean(SHARED && 'vehicle' in SHARED));
+  // A shared vehicle's line, shown instead if the trip has ended; and the map goes to the vehicle once found.
+  const sharedVehicle = useRef(SHARED && 'vehicle' in SHARED ? SHARED : null);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [info, setInfo] = useState<MapInfo>({ count: 0 });
   // The station picked from the stop list or the map, shown and brought to the middle of the map.
@@ -240,10 +247,31 @@ export function App() {
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
   const routeLine = useRouteLine(selectedLine);
   // A line opened from a station's transfers or one of its stations.
-  const [viewLine, setViewLine] = useState<ViewLine | null>(null);
+  const [viewLine, setViewLine] = useState<ViewLine | null>(() =>
+    SHARED && !('vehicle' in SHARED) ? { key: SHARED.line, atStation: Boolean(SHARED.station) } : null,
+  );
+  // A shared station, picked once its line's stations have loaded.
+  const [sharedStation, setSharedStation] = useState(() => (SHARED && 'station' in SHARED ? SHARED.station : undefined));
   // What the panel showed before each tap in it, for Back.
   const [history, setHistory] = useState<PanelStep<Station>[]>([]);
   const viewRoute = useRouteLine(viewLine?.key ?? null);
+  useEffect(() => {
+    if (!sharedStation || !viewRoute || viewRoute.key !== viewLine?.key) return;
+    setSharedStation(undefined);
+    const stop = viewRoute.stops.find((s) => s.stopId === sharedStation);
+    if (stop?.lat === undefined || stop.lon === undefined) {
+      // Not a station of this line after all: show the whole line.
+      setViewLine({ key: viewRoute.key });
+      return;
+    }
+    setStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon, lat: stop.lat, transfers: stop.transfers, ...accessOf(stop), at: Date.now() });
+  }, [sharedStation, viewRoute, viewLine?.key]);
+
+  // Once a shared link is open, the address goes back to plain, so a reload starts fresh.
+  useEffect(() => {
+    if (SHARED) window.history.replaceState(null, '', withoutShare(location.href));
+  }, []);
+
   // Its stations listed the way the vehicle it was opened from is going.
   const listedRoute = useMemo(
     () => (viewRoute && viewLine?.ahead ? { ...viewRoute, stops: facingWay(viewRoute.stops, viewLine.ahead) } : viewRoute),
@@ -463,12 +491,24 @@ export function App() {
     setDetail(null);
     if (!selectedId) return;
     const controller = new AbortController();
+    const shared = sharedVehicle.current?.vehicle === selectedId ? sharedVehicle.current : null;
     const load = () =>
       fetchVehicleDetail(selectedId, controller.signal)
-        .then(setDetail)
+        .then((d) => {
+          setDetail(d);
+          if (shared) {
+            sharedVehicle.current = null;
+            setGoTo({ lon: d.vehicle.lon, lat: d.vehicle.lat, at: Date.now() });
+          }
+        })
         .catch((err: Error) => {
-          // The trip ended or left the feed.
-          if (err.name !== 'AbortError' && err.message.endsWith('404')) select(null);
+          if (err.name === 'AbortError' || !err.message.endsWith('404')) return;
+          // The trip ended or left the feed. A shared one shows its line instead.
+          select(null);
+          if (shared?.line && sharedVehicle.current === shared) {
+            sharedVehicle.current = null;
+            setViewLine({ key: shared.line });
+          }
         });
     void load();
     const timer = setInterval(load, SELECTED_POLL_MS);

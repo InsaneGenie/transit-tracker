@@ -1,10 +1,12 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
+import { ShareButton } from './ShareButton';
 import { palette } from './theme';
 import { Arrivals, panelStyles as styles, Transfers } from './VehiclePanel';
 
@@ -57,6 +59,7 @@ export function LinePanel({
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
   const noun = mode === 'bus' ? 'bus' : 'train';
   const stationTransfers = transferLines(station?.transfers, routes).filter((r) => r.key !== line?.key);
+  const key = info?.key ?? line?.key;
 
   return (
     <View
@@ -77,6 +80,13 @@ export function LinePanel({
             </Text>
             {info?.agency && <Text style={[styles.muted, { color: c.muted }]}>{info.agency}</Text>}
           </View>
+          {key && (
+            <ShareButton
+              url={shareUrl(SITE_URL, { line: key, station: station?.stopId })}
+              title={shareTitle({ line: { name, mode }, station: station?.name ? tidyStopName(station.name) : undefined })}
+              color={c.muted}
+            />
+          )}
           <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
             <Text style={[styles.close, { color: c.muted }]}>✕</Text>
           </Pressable>

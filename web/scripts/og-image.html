@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- The link preview picture, web/public/og-image.png (1200x630). To change it, edit this page and screenshot it at 1200x630 with Playwright: page.setViewportSize, page.goto, page.screenshot. -->
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0}
+body{width:1200px;height:630px;overflow:hidden;background:#0b1220;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;position:relative}
+svg.map{position:absolute;inset:0}
+.text{position:absolute;left:72px;top:190px;width:600px;color:#f8fafc}
+.brand{display:flex;align-items:center;gap:20px;margin-bottom:28px}
+.brand svg{width:84px;height:84px;flex:none}
+h1{white-space:nowrap;font-size:66px;line-height:1;margin:0;font-weight:800;letter-spacing:-1.5px}
+p{font-size:32px;line-height:1.3;margin:0 0 30px;color:#cbd5e1;font-weight:500}
+.chips{display:flex;gap:12px;flex-wrap:wrap}
+.chip{font-size:22px;font-weight:700;padding:9px 18px;border-radius:999px;background:rgba(255,255,255,.08);color:#e2e8f0;display:flex;align-items:center;gap:10px}
+.chip i{width:14px;height:14px;display:inline-block}
+.live{position:absolute;left:72px;top:72px;display:flex;align-items:center;gap:10px;color:#4ade80;font-size:22px;font-weight:800;letter-spacing:2px}
+.live i{width:14px;height:14px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 6px rgba(34,197,94,.25)}
+.fade{position:absolute;inset:0;background:linear-gradient(90deg,#0b1220 0%,#0b1220 46%,rgba(11,18,32,.6) 60%,rgba(11,18,32,0) 75%)}
+</style></head><body>
+<svg class="map" viewBox="0 0 1200 630">
+  <g fill="none" stroke="#1e293b" stroke-width="2">
+    <path d="M600 0 L1200 380"/><path d="M700 0 L1200 300"/><path d="M640 630 L1200 120"/><path d="M820 630 L1200 280"/><path d="M500 200 L1200 560"/><path d="M900 0 L1100 630"/><path d="M1020 0 L1180 630"/>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="12">
+    <path d="M560 40 C760 90 820 170 900 260 S1040 430 1220 470" stroke="#EE352E"/>
+    <path d="M620 -10 C760 160 860 230 960 300 S1080 420 1150 640" stroke="#00933C"/>
+    <path d="M480 560 C700 520 820 450 930 380 S1100 210 1220 160" stroke="#0039A6"/>
+    <path d="M700 640 C780 520 860 420 1000 360 S1150 330 1220 330" stroke="#FCCC0A"/>
+    <path d="M640 330 C800 330 900 300 1030 210 S1160 60 1210 20" stroke="#B933AD"/>
+    <path d="M560 200 C700 260 800 380 860 640" stroke="#FF6319"/>
+  </g>
+  <g stroke="#0b1220" stroke-width="4" fill="#fff">
+    <circle cx="900" cy="262" r="10"/><circle cx="960" cy="300" r="10"/><circle cx="930" cy="380" r="10"/><circle cx="1000" cy="360" r="10"/><circle cx="1030" cy="210" r="10"/><circle cx="1088" cy="424" r="10"/>
+  </g>
+  <!-- vehicles: subway circles, bus rounded squares, rail diamonds -->
+  <g stroke="#fff" stroke-width="4">
+    <circle cx="820" cy="190" r="17" fill="#EE352E"/>
+    <circle cx="1060" cy="388" r="17" fill="#EE352E"/>
+    <circle cx="880" cy="250" r="17" fill="#00933C"/>
+    <circle cx="1110" cy="520" r="17" fill="#00933C"/>
+    <circle cx="760" cy="487" r="17" fill="#0039A6"/>
+    <circle cx="1130" cy="190" r="17" fill="#0039A6"/>
+    <circle cx="880" cy="398" r="17" fill="#FCCC0A"/>
+    <circle cx="1140" cy="80" r="17" fill="#B933AD"/>
+    <circle cx="780" cy="380" r="17" fill="#FF6319"/>
+    <rect x="980" y="120" width="32" height="32" rx="8" fill="#2563eb"/>
+    <rect x="700" y="270" width="32" height="32" rx="8" fill="#2563eb"/>
+    <rect x="1150" y="270" width="32" height="32" rx="8" fill="#2563eb"/>
+    <rect x="985" y="540" width="32" height="32" rx="8" fill="#2563eb"/>
+    <rect x="-16" y="-16" width="32" height="32" rx="3" fill="#7c3aed" transform="translate(1000 460) rotate(45)"/>
+    <rect x="-16" y="-16" width="32" height="32" rx="3" fill="#0d9488" transform="translate(1180 410) rotate(45)"/>
+  </g>
+</svg>
+<div class="fade"></div>
+<div class="live"><i></i>LIVE</div>
+<div class="text">
+  <div class="brand">
+    <svg viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="224" fill="#111827" stroke="#334155" stroke-width="16"/><g fill="none" stroke-linecap="round" stroke-width="64"><path d="M150 300 H430 Q512 300 560 380 L700 620 Q740 690 830 690 H880" stroke="#7c3aed"/><path d="M150 512 H880" stroke="#2563eb"/><path d="M150 760 H360 Q440 760 490 680 L620 440 Q670 340 760 340 H880" stroke="#22c55e"/></g><g stroke="#111827" stroke-width="20" fill="#fff"><circle cx="300" cy="300" r="62"/><circle cx="700" cy="512" r="62"/><circle cx="420" cy="760" r="62"/></g></svg>
+    <h1>NY Transit Live</h1>
+  </div>
+  <p>Every subway, bus and commuter train in New York, moving live on one map.</p>
+  <div class="chips">
+    <span class="chip"><i style="border-radius:50%;background:#EE352E"></i>Subway</span>
+    <span class="chip"><i style="border-radius:3px;background:#2563eb"></i>Bus</span>
+    <span class="chip"><i style="transform:rotate(45deg);background:#7c3aed"></i>LIRR &amp; Metro-North</span>
+  </div>
+</div>
+</body></html>

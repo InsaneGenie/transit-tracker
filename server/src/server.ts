@@ -3,6 +3,7 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AlertStore } from './alerts.js';
 import type { Mode } from './feeds.js';
+import { originOf, pageFor } from './preview.js';
 import type { Bbox, VehicleStore } from './store.js';
 
 /** The built map (`npm run build` in web/), served alongside the API so the whole site is one service. */
@@ -25,10 +26,12 @@ const CONTENT_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
 };
 
-async function sendFile(res: ServerResponse, webDir: string, pathname: string): Promise<void> {
+/** `page` turns the map page into the one for this request, e.g. with a shared link's preview. */
+async function sendFile(res: ServerResponse, webDir: string, pathname: string, page: (html: string) => string): Promise<void> {
   const index = path.join(webDir, 'index.html');
   const requested = path.join(webDir, pathname);
   // Paths that aren't a file get the map page, so links like /?theme=dark work.
@@ -45,7 +48,7 @@ async function sendFile(res: ServerResponse, webDir: string, pathname: string): 
     // Vite puts a hash in every file name under assets/, so those never change.
     'cache-control': file.startsWith(path.join(webDir, 'assets') + path.sep) ? 'public, max-age=31536000, immutable' : 'no-cache',
   });
-  res.end(data);
+  res.end(file === index ? page(data.toString('utf8')) : data);
 }
 
 /** Enough for any filter someone would set by hand, while keeping one request from asking for every line. */
@@ -140,6 +143,7 @@ export function createApiServer(
 
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
 
-    sendFile(res, webDir, url.pathname).catch(() => send(500, { error: 'could not read the map files' }));
+    const page = (html: string) => pageFor(html, url, originOf(req), store, now());
+    sendFile(res, webDir, url.pathname, page).catch(() => send(500, { error: 'could not read the map files' }));
   });
 }
