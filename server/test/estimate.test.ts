@@ -185,7 +185,7 @@ describe('projectFix', () => {
   it('leaves a late vehicle where it reported, and one at its stop there until it leaves', async () => {
     const index = await indexPromise;
     const late = trip([{ stopId: 'C', arrival: T - 10, departure: T + 20 }]);
-    expect(projectFix(fix, T, late, T + 30, index, track)).toBeNull();
+    expect(projectFix(fix, T, late, T + 30, index, track)).toMatchObject({ lat: 40.785, status: 'IN_TRANSIT_TO', stopId: 'C' });
     const near = { lat: 40.7805, lon: -73.95 };
     expect(projectFix(near, T, late, T + 10, index, track)).toMatchObject({ lat: 40.7805, status: 'STOPPED_AT', stopId: 'C' });
   });

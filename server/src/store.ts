@@ -205,6 +205,9 @@ const GLITCH_TRUSTED_S = 90;
 const BUS_SPEED_SLACK = 1.5;
 const SLOW_BUS_SLACK_M = 20;
 
+/** How fast a bus is taken to be going before it has reported twice, in meters per second (about 20 mph). */
+const USUAL_BUS_SPEED = 9;
+
 /** A vehicle's reported position and when it was first reported there, in Unix seconds. */
 interface Sighting {
   lat: number;
@@ -317,7 +320,7 @@ export class VehicleStore {
   /** Each GPS vehicle's recent positions, by vehicle id. */
   private fixes = new Map<string, FixHistory>();
   /** Each GPS vehicle's way from its position to its next stop, by vehicle id, reused until either changes. */
-  private fixTracks = new Map<string, { key: string; track: Polyline }>();
+  private fixTracks = new Map<string, { key: string; track: Polyline; fromMeters?: number }>();
 
   constructor(
     configs: FeedConfig[],
@@ -543,15 +546,15 @@ export class VehicleStore {
    */
   private projectGps(id: string, fix: FixHistory, trip: TripState, now: number, index: StaticIndex, mode: Mode): EstimatedPosition | null {
     const { current, previous } = fix;
-    const track = (stopId: string, fromStopId?: string) => {
+    const tripShapeId = index.tripShapes.get(trip.tripId);
+    const tripShape = tripShapeId ? index.shapes.get(tripShapeId) : undefined;
+    const cached = (stopId: string, fromStopId?: string) => {
       const key = `${current.lat},${current.lon}|${stopId}`;
-      const cached = this.fixTracks.get(id);
-      if (cached?.key === key) return cached.track;
+      const hit = this.fixTracks.get(id);
+      if (hit?.key === key) return hit;
       const stop = index.stops.get(stopId)!;
-      const tripShape = index.tripShapes.get(trip.tripId);
-      let way: Polyline | undefined;
-      if (tripShape && index.shapes.has(tripShape)) way = index.shapes.get(tripShape);
-      else {
+      let way = tripShape;
+      if (!way) {
         const seg = index.segments.get(`${trip.routeId}|${stopId}`) ?? index.segments.get(`*|${stopId}`);
         const from = fromStopId ?? seg?.fromStopId;
         if (from && index.stops.has(from)) {
@@ -559,16 +562,28 @@ export class VehicleStore {
           way = trackBetween(index, from, stopId, shapeId);
         }
       }
-      const result = way ? way.slice(current, stop) : new Polyline([current, stop]);
-      this.fixTracks.set(id, { key, track: result });
-      return result;
+      const entry = {
+        key,
+        track: way ? way.slice(current, stop) : new Polyline([current, stop]),
+        fromMeters: tripShape?.metersAlong(current),
+      };
+      this.fixTracks.set(id, entry);
+      return entry;
     };
     let maxMeters = Infinity;
-    if (mode === 'bus' && previous) {
-      const speed = distanceMeters(previous, current) / Math.max(1, current.since - previous.since);
+    if (mode === 'bus') {
+      const speed = previous
+        ? distanceMeters(previous, current) / Math.max(1, current.since - previous.since)
+        : USUAL_BUS_SPEED;
       maxMeters = speed * BUS_SPEED_SLACK * (now - current.since) + SLOW_BUS_SLACK_M;
     }
-    const pos = projectFix(current, current.since, trip, now, index, track, maxMeters);
+    const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > current.since);
+    const next = trip.stops[nextIdx];
+    const fromMeters = next && index.stops.has(next.stopId) ? cached(next.stopId, trip.stops[nextIdx - 1]?.stopId).fromMeters : undefined;
+    const pos = projectFix(current, current.since, trip, now, index, (stopId, from) => cached(stopId, from).track, maxMeters, fromMeters);
+    // Along the trip's route, how far it has got is comparable whichever stop is next, so a newer report that
+    // makes a stop further back the next one can't pull it back either.
+    if (pos && fromMeters !== undefined) return this.forwardOnly(id, { ...pos, stopId: trip.tripId, fromStopId: undefined }, now);
     return pos && this.forwardOnly(id, pos, now);
   }
 

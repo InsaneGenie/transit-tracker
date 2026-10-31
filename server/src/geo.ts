@@ -103,6 +103,13 @@ export class Polyline {
     return best;
   }
 
+  /** How far along the line, in meters, it passes closest to `p`. */
+  metersAlong(p: LatLon): number {
+    const m = this.measure(p);
+    const i = Math.floor(m);
+    return i + 1 < this.size ? this.cumulative[i] + (this.cumulative[i + 1] - this.cumulative[i]) * (m - i) : this.cumulative[i];
+  }
+
   /** The part of this line between where it passes closest to `from` and to `to`, in travel order. */
   slice(from: LatLon, to: LatLon): Polyline {
     const i = this.measure(from);

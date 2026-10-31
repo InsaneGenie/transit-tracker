@@ -10,7 +10,7 @@ import { decodeFeed, snapshotFromFeed } from '../src/realtime.js';
 import { createApiServer } from '../src/server.js';
 import { VehicleStore } from '../src/store.js';
 import { buildStaticIndex, type GtfsFiles } from '../src/static-gtfs.js';
-import { encodeFeed, gtfs, indexPromise } from './fixtures.js';
+import { encodeFeed, files, gtfs, indexPromise } from './fixtures.js';
 
 const T = 1_700_000_000;
 
@@ -308,6 +308,29 @@ describe('VehicleStore GPS positions', () => {
     await store.pollAll();
     // Reported 40 s ago, due at C in 40 s: halfway there.
     expect(store.vehicles(T)[0]).toMatchObject({ source: 'gps', lat: expect.closeTo(40.784, 4), bearing: expect.closeTo(180, 0) });
+  });
+
+  it("never pulls a bus back along its route when a newer report puts it behind where it was shown", async () => {
+    const busConfig: FeedConfig = { ...train, id: 'test-bus3', mode: 'bus', staticDetail: 'stops' };
+    // Trip t1 follows the dog-leg shape from A (40.80, -73.95) east, south, then west into B.
+    const report = (lon: number, timestamp: number, dueAtB: number) => [
+      { id: 'v', vehicle: { trip: { tripId: 't1' }, vehicle: { id: '5' }, position: { latitude: 40.8, longitude: lon }, timestamp } },
+      { id: 't', tripUpdate: { trip: { tripId: 't1', routeId: '1' }, stopTimeUpdate: [{ stopId: 'B', arrival: { time: dueAtB } }] } },
+    ];
+    let poll = 0;
+    const feeds = [report(-73.9475, T - 30, T + 30), report(-73.9474, T, T + 300)];
+    const store = new VehicleStore(
+      [busConfig],
+      {},
+      async () => snapshotFromFeed(decodeFeed(encodeFeed(feeds[Math.min(poll++, feeds.length - 1)])), T),
+      () => buildStaticIndex(files, 'stops'),
+    );
+    await store.loadStatic();
+    await store.pollAll();
+    const first = store.vehicles(T)[0];
+    expect(first.lon).toBeGreaterThan(-73.9475); // moved on east along the route
+    await store.pollAll(); // reported just 9 m on, and now late
+    expect(store.vehicles(T + 1)[0]).toMatchObject({ lat: first.lat, lon: first.lon });
   });
 
   it('ignores a position too far from the last to be real, until the next one agrees with it', async () => {

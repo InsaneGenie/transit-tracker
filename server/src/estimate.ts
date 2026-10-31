@@ -217,15 +217,20 @@ export function estimatePosition(
 /** A vehicle due at its next stop this long before it reported a position nowhere near it is late, in meters. */
 const NEAR_STOP_M = 150;
 
+/** A projected vehicle's heading is taken over this stretch of its way, in meters. */
+const HEADING_SPAN_M = 30;
+
 /** A position is moved on at most this long past when it was reported, in seconds. */
 const MAX_PROJECT_S = 3 * 60;
 
 /**
  * Where a vehicle that reported its position at `fixTime` is likely to be `now`: moved on along `track`
  * (the way from the reported position to its next stop) at the pace that gets it there at its predicted
- * time, then waiting there until its predicted departure. Null when its times say nothing about it, so
- * it stays where it reported. Feeds pass on positions 30 to 60 seconds old, in which a bus covers a block
+ * time, then waiting there until its predicted departure. Null when its times say nothing about it. Feeds pass on positions 30 to 60 seconds old, in which a bus covers a block
  * or two and a train far more. It goes no further than `maxMeters` from the reported position.
+ *
+ * `along` is how close it is to the next stop, unless `fromMeters` (how far along its whole route the reported
+ * position is) is given: then it is how far along its route it is, which compares across stops.
  */
 export function projectFix(
   fix: LatLon,
@@ -235,34 +240,44 @@ export function projectFix(
   index: StaticIndex,
   track: (stopId: string, fromStopId?: string) => Polyline,
   maxMeters = Infinity,
+  fromMeters?: number,
 ): EstimatedPosition | null {
   const at = Math.min(now, fixTime + MAX_PROJECT_S);
   const nextIdx = trip.stops.findIndex((s) => (s.departure ?? s.arrival ?? -Infinity) > fixTime);
-  if (nextIdx === -1 || at <= fixTime) return null;
+  if (nextIdx === -1) return null;
   const next = trip.stops[nextIdx];
   const stop = index.stops.get(next.stopId);
   if (!stop) return null;
   const arrive = next.arrival ?? next.departure!;
   const fromStopId = trip.stops[nextIdx - 1]?.stopId;
   const atStop = { lat: stop.lat, lon: stop.lon, stopId: next.stopId, status: 'STOPPED_AT' as const, along: 1 };
-  if (arrive <= fixTime) {
-    // Due there already. Near it, it's waiting to leave; anywhere else it's running late, so the times are no guide.
-    return distanceMeters(fix, stop) <= NEAR_STOP_M ? { ...atStop, lat: fix.lat, lon: fix.lon } : null;
+  // Due there already and near it: waiting to leave.
+  if (arrive <= fixTime && distanceMeters(fix, stop) <= NEAR_STOP_M) {
+    return { ...atStop, lat: fix.lat, lon: fix.lon, along: fromMeters ?? atStop.along };
   }
   const path = track(next.stopId, fromStopId);
-  if (at >= arrive && path.length <= maxMeters) return atStop;
-  const fraction = Math.min((at - fixTime) / (arrive - fixTime), path.length > 0 ? maxMeters / path.length : 1);
+  // Due there already and nowhere near it, it's running late and the times are no guide, so it stays put.
+  const fraction = Math.min(
+    arrive > fixTime ? Math.max(0, (at - fixTime) / (arrive - fixTime)) : 0,
+    path.length > 0 ? maxMeters / path.length : 1,
+  );
+  if (fraction >= 1) return fromMeters === undefined ? atStop : { ...atStop, along: fromMeters + path.length };
   const point = path.at(fraction);
   const metersLeft = path.length * (1 - fraction);
+  // Heading from a little way back to a little way on: the first bit of the way, from a reported position
+  // a few meters to the side of the route onto it, can point anywhere.
+  const step = path.length > 0 ? HEADING_SPAN_M / path.length : 0;
+  const ahead = path.at(Math.min(1, fraction + step));
+  const behind = path.at(Math.max(0, fraction - step));
   return {
     lat: point.lat,
     lon: point.lon,
-    bearing: path.length > 0 ? point.bearing : undefined,
+    bearing: path.length > 0 ? bearingDegrees(behind, ahead) : undefined,
     stopId: next.stopId,
     status: 'IN_TRANSIT_TO',
     // From how far it has left to go rather than the share of the way from this fix, so positions projected
     // from an older and a newer fix compare.
-    along: 1 / (1 + metersLeft / 1000),
+    along: fromMeters === undefined ? 1 / (1 + metersLeft / 1000) : fromMeters + path.length - metersLeft,
     fromStopId,
   };
 }
