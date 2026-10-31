@@ -37,7 +37,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map follows the vehicle you tap until you drag it. **Lines** opens a legend of every line color, where you can tap lines to show only those. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
+Then open http://localhost:5173. Dots are colored by line and appear once you zoom in to about city level. Zoom in further to see each vehicle's line and the direction it's heading, and tap one for its route and next stops. The map follows the vehicle you tap until you drag it. **Lines** opens a legend of every line color, where you can tap lines to show only those. The map is light by day and dark after sunset in New York; add `?theme=dark` or `?theme=light` to the address to force one. The share button on a train's, bus's or line's card copies a link (or opens the share sheet on phones) that opens the map on it, such as `/?line=mta-subway:A&station=A38`; a link to a train whose trip has ended opens its line. When a link is pasted into a chat or post, the server fills its preview with what it shows and the picture in `web/public/og-image.png`. The street map comes from [OpenFreeMap](https://openfreemap.org), which is free and needs no key.
 
 ## Putting it online
 

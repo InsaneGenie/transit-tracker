@@ -528,6 +528,63 @@ describe('the map page', () => {
   });
 });
 
+describe('link previews', () => {
+  const page = `<title>NY Transit Live</title>
+<meta name="description" content="default" />
+<meta property="og:title" content="NY Transit Live" />
+<meta property="og:description" content="default" />
+<meta property="og:url" content="/" />
+<meta property="og:image" content="/og-image.png" />
+<meta name="twitter:title" content="NY Transit Live" />
+<meta name="twitter:description" content="default" />
+<meta name="twitter:image" content="/og-image.png" />`;
+  const feed = encodeFeed([
+    {
+      id: '1',
+      tripUpdate: {
+        trip: { tripId: 'tB', routeId: '1' },
+        stopTimeUpdate: [
+          { stopId: 'A', departure: { time: T - 200 } },
+          { stopId: 'B', arrival: { time: T + 60 } },
+          { stopId: 'C', arrival: { time: T + 240 } },
+        ],
+      },
+    },
+  ]);
+
+  it('names the train, line or station a shared link shows', async () => {
+    const webDir = await mkdtemp(path.join(tmpdir(), 'web-'));
+    await writeFile(path.join(webDir, 'index.html'), page);
+    const store = new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(feed), T), () => indexPromise);
+    await store.loadStatic();
+    await store.pollAll();
+    const server = createApiServer(store, () => T, webDir).listen(0);
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+    const open = (query: string, headers: Record<string, string> = {}) => fetch(`${base}/${query}`, { headers }).then((r) => r.text());
+    try {
+      // Render answers on https in front of the server, and says so.
+      const plain = await open('', { 'x-forwarded-proto': 'https' });
+      expect(plain).toContain(`<meta property="og:image" content="${base.replace('http:', 'https:')}/og-image.png" />`);
+      expect(plain).toContain('<meta property="og:title" content="NY Transit Live" />');
+
+      const vehicle = await open('?vehicle=test-train:tB&line=test-train:1');
+      expect(vehicle).toContain('<title>The 1 train to Charlie · NY Transit Live</title>');
+      expect(vehicle).toContain('<meta property="og:description" content="Next stop: Bravo. Watch this train move live');
+      expect(vehicle).toContain('<meta property="og:url" content="http://localhost');
+
+      // A trip that has ended shows its line.
+      expect(await open('?vehicle=gone&line=test-train:1')).toContain('<meta property="og:title" content="The 1 line" />');
+      expect(await open('?line=test-train:1&station=B')).toContain('<meta name="twitter:title" content="Bravo on the 1 line" />');
+      expect(await open('?line=test-train:1')).toContain('Every station and train on the 1 line (Test Local)');
+      expect(await open('?line=nope:1')).toContain('<title>NY Transit Live</title>');
+      // Nothing from the link is written into the page unescaped.
+      expect(await open('?line=x:%22%3E%3Cscript%3E')).not.toContain('<script>');
+    } finally {
+      server.close();
+    }
+  });
+});
+
 describe('buses', () => {
   const busFeedConfig: FeedConfig = {
     id: 'test-bus2',

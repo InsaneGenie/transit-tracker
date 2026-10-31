@@ -5,7 +5,9 @@ import type { ArrivalDirection, RouteInfo, ServiceAlert, UpcomingStop, VehicleDe
 import { BackButton } from './BackButton';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
-import { colorFor, displayName, formatEta, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
+import { shareTitle, shareUrl } from './share';
+import { ShareButton } from './ShareButton';
+import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -157,6 +159,8 @@ export function VehiclePanel({
       : next
         ? `Next stop: ${next}`
         : undefined;
+  const last = upcoming[upcoming.length - 1]?.name;
+  const title = shareTitle({ vehicle: { name, mode: vehicle.mode, to: last && tidyStopName(last) } });
 
   return (
     <aside ref={ref} className="panel" aria-label="Vehicle details" style={{ '--route': color } as CSSProperties}>
@@ -170,6 +174,7 @@ export function VehiclePanel({
           <strong>{routeLongName || `${MODE_LABELS[vehicle.mode]} ${name}`}</strong>
           <span className="muted">{vehicle.agency}</span>
         </div>
+        <ShareButton url={shareUrl(location.origin, { vehicle: vehicle.id, line: vehicle.routeId ? routeKey(vehicle) : undefined })} title={title} />
         <CloseButton onClick={onClose} />
       </header>
 

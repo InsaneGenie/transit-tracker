@@ -1,4 +1,7 @@
 import type { Bounds, Mode, RouteInfo, Vehicle } from './api';
+import { displayName } from './names';
+
+export { displayName, tidyStopName } from './names';
 
 const MODE_COLORS: Record<Mode, string> = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb' };
 
@@ -15,8 +18,6 @@ export function textColorFor(hex: string): string {
 
 export const routeKey = (v: Pick<Vehicle, 'feed' | 'routeId'>) => `${v.feed}:${v.routeId ?? ''}`;
 
-/** Strips Bus Time's agency prefix ("MTA NYCT_M15") from names that arrive without a schedule match. */
-export const displayName = (name: string) => name.replace(/^MTA\s*\w*_/, '');
 
 export function toFeatureCollection(vehicles: Vehicle[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
@@ -94,11 +95,6 @@ export function formatEta(time: number | undefined, now = Date.now() / 1000): st
 export const MODE_LABELS: Record<Mode, string> = { subway: 'Subway', rail: 'Rail', bus: 'Bus' };
 
 
-/** Bus stop names come in capitals ("WILLIS AV/E 138 ST"); show them like the subway's ("Willis Av/E 138 St"). */
-export function tidyStopName(name: string): string {
-  if (name !== name.toUpperCase()) return name;
-  return name.toLowerCase().replace(/(^|[\s/&(-])([a-z])/g, (_, sep: string, c: string) => sep + c.toUpperCase());
-}
 
 export interface LegendGroup {
   title: string;

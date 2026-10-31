@@ -4,16 +4,19 @@ import {
   displayName,
   formatEta,
   MODE_LABELS,
+  routeKey,
   sameStation,
   textColorFor,
   tidyStopName,
   transferLines,
 } from '../../web/src/vehicles';
+import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
+import { ShareButton } from './ShareButton';
 import { palette } from './theme';
 
 const MAX_STOPS = 12;
@@ -200,6 +203,7 @@ export function VehiclePanel({
   const next = upcoming[0]?.name ? tidyStopName(upcoming[0].name) : stopName;
   const where =
     vehicle.status === 'STOPPED_AT' && stopName ? `At ${stopName}` : next ? `Next stop: ${next}` : undefined;
+  const last = upcoming[upcoming.length - 1]?.name;
 
   return (
     <View style={[styles.panel, { backgroundColor: c.card, paddingBottom: bottomInset + 12 }]}>
@@ -217,6 +221,11 @@ export function VehiclePanel({
             </Text>
             <Text style={[styles.muted, { color: c.muted }]}>{vehicle.agency}</Text>
           </View>
+          <ShareButton
+            url={shareUrl(SITE_URL, { vehicle: vehicle.id, line: vehicle.routeId ? routeKey(vehicle) : undefined })}
+            title={shareTitle({ vehicle: { name, mode: vehicle.mode, to: last && tidyStopName(last) } })}
+            color={c.muted}
+          />
           <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
             <Text style={[styles.close, { color: c.muted }]}>✕</Text>
           </Pressable>
