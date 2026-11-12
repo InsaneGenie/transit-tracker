@@ -1,6 +1,7 @@
 import { CloseButton } from './CloseButton';
 import { FEEDBACK_EMAIL, feedbackMailto } from './feedback';
 import { GUIDE } from './guide';
+import { SUPPORT_URL } from './support';
 import { APP_STORE_URL, TESTFLIGHT_URL } from './testflight';
 
 /** How to use the map, opened from the toolbar's "?" and shown once on a first visit. */
@@ -46,6 +47,17 @@ export function Guide({ onClose }: { onClose: () => void }) {
             No email app? Write to <a href={`mailto:${FEEDBACK_EMAIL}`}>{FEEDBACK_EMAIL}</a>.
           </p>
         </section>
+        {SUPPORT_URL && (
+          <section className="guide-feedback">
+            <h3>Support the map</h3>
+            <p className="muted small">
+              NY Transit Live is free, with no ads. If it helps your commute, a small tip keeps the live data running.
+            </p>
+            <a className="chip guide-feedback-button guide-support-button" href={SUPPORT_URL} target="_blank" rel="noopener">
+              <span aria-hidden="true">♥</span> Support me
+            </a>
+          </section>
+        )}
         <button className="chip guide-done" onClick={onClose}>
           Got it
         </button>
