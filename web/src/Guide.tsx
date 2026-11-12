@@ -1,7 +1,7 @@
 import { CloseButton } from './CloseButton';
 import { FEEDBACK_EMAIL, feedbackMailto } from './feedback';
 import { GUIDE } from './guide';
-import { TESTFLIGHT_URL } from './testflight';
+import { APP_STORE_URL, TESTFLIGHT_URL } from './testflight';
 
 /** How to use the map, opened from the toolbar's "?" and shown once on a first visit. */
 export function Guide({ onClose }: { onClose: () => void }) {
@@ -27,12 +27,14 @@ export function Guide({ onClose }: { onClose: () => void }) {
         ))}
         <section className="guide-feedback">
           <h3>iPhone app</h3>
-          <p className="muted small">
-            The map is also an iPhone app, in beta. Open the link on your iPhone; Apple's free TestFlight app installs it.
-          </p>
-          <a className="chip guide-feedback-button" href={TESTFLIGHT_URL} target="_blank" rel="noopener">
-            Try the iPhone app beta
+          <p className="muted small">The map is also a free iPhone and iPad app, NY Transit Live, on the App Store.</p>
+          <a className="chip guide-feedback-button" href={APP_STORE_URL} target="_blank" rel="noopener">
+            Get it on the App Store
           </a>
+          <p className="muted small">
+            Want new features early? <a href={TESTFLIGHT_URL} target="_blank" rel="noopener">Join the beta</a> on your
+            iPhone; Apple's free TestFlight app installs it.
+          </p>
         </section>
         <section className="guide-feedback">
           <h3>Feedback</h3>
