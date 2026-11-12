@@ -10,7 +10,7 @@ import { ModeIcon } from './ModeIcon';
 import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from './panelHistory';
 import { parseShare, withoutShare } from './share';
-import { TESTFLIGHT_URL } from './testflight';
+import { APP_STORE_URL, TESTFLIGHT_URL } from './testflight';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
 import { facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
@@ -21,7 +21,8 @@ const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
-const APP_INVITE_CLOSED_KEY = 'transit-tracker:app-invite-closed';
+// A new key since the app reached the App Store, so people who closed the beta invite see it once more.
+const APP_INVITE_CLOSED_KEY = 'transit-tracker:app-store-invite-closed';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 
@@ -721,8 +722,11 @@ export function App() {
       {/* Kept out of the way of the guide and the cards, which sit along the bottom on phones. */}
       {appInviteOpen && !guideOpen && !linesOpen && !detail && !viewLine && !station && (
         <div className="app-invite" role="note">
-          <a href={TESTFLIGHT_URL} target="_blank" rel="noopener" onClick={closeAppInvite}>
-            Try the iPhone app beta
+          <a href={APP_STORE_URL} target="_blank" rel="noopener" onClick={closeAppInvite}>
+            Get the iPhone app
+          </a>
+          <a className="app-invite-beta" href={TESTFLIGHT_URL} target="_blank" rel="noopener" onClick={closeAppInvite}>
+            or try the beta
           </a>
           <button className="app-invite-close" aria-label="Close" title="Close" onClick={closeAppInvite}>
             ×

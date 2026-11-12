@@ -1011,7 +1011,7 @@ button {
   display: none;
 }
 
-/* A small invite to the iPhone app's beta, at the bottom of the map until it is closed. */
+/* A small invite to the iPhone app (App Store, or the TestFlight beta), at the bottom of the map until it is closed. */
 
 .app-invite {
   position: absolute;
@@ -1036,6 +1036,12 @@ button {
 
 .app-invite a:hover {
   text-decoration: underline;
+}
+
+.app-invite .app-invite-beta {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .app-invite-close {
