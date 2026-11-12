@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type OutgoingHttpHeaders, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AlertStore } from './alerts.js';
+import { compress, compressFile, pickEncoding, shouldCompress } from './compress.js';
 import type { Mode } from './feeds.js';
 import { originOf, pageFor } from './preview.js';
 import type { Bbox, VehicleStore } from './store.js';
@@ -30,8 +31,35 @@ const CONTENT_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+/**
+ * Sends a body, compressed when the client accepts it and it is worth it. `file` names a file that
+ * never changes while the server runs, so its compressed copy is made once and kept.
+ */
+async function sendBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  status: number,
+  headers: OutgoingHttpHeaders,
+  body: Buffer,
+  file?: string,
+): Promise<void> {
+  const type = String(headers['content-type'] ?? '');
+  const encoding = shouldCompress(type, body.length) ? pickEncoding(req.headers['accept-encoding']) : null;
+  if (encoding) {
+    body = file ? await compressFile(file, body, encoding) : compress(body, encoding);
+    headers = { ...headers, 'content-encoding': encoding };
+  }
+  // Caches must keep compressed and plain copies apart.
+  if (shouldCompress(type, Number.POSITIVE_INFINITY)) headers = { ...headers, vary: 'accept-encoding' };
+  res.writeHead(status, { ...headers, 'content-length': body.length });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+/** Icons, the link preview image and the like: they only change with a deploy, so a day is safe. */
+const PUBLIC_MAX_AGE = 'public, max-age=86400';
+
 /** `page` turns the map page into the one for this request, e.g. with a shared link's preview. */
-async function sendFile(res: ServerResponse, webDir: string, pathname: string, page: (html: string) => string): Promise<void> {
+async function sendFile(req: IncomingMessage, res: ServerResponse, webDir: string, pathname: string, page: (html: string) => string): Promise<void> {
   const index = path.join(webDir, 'index.html');
   const requested = path.join(webDir, pathname);
   // Paths that aren't a file get the map page, so links like /?theme=dark work.
@@ -43,16 +71,24 @@ async function sendFile(res: ServerResponse, webDir: string, pathname: string, p
     res.end('The map is not built yet. Run npm run build in web/.');
     return;
   }
-  res.writeHead(200, {
+  const headers = {
     'content-type': CONTENT_TYPES[path.extname(file)] ?? 'application/octet-stream',
-    // Vite puts a hash in every file name under assets/, so those never change.
-    'cache-control': file.startsWith(path.join(webDir, 'assets') + path.sep) ? 'public, max-age=31536000, immutable' : 'no-cache',
-  });
-  res.end(file === index ? page(data.toString('utf8')) : data);
+    // Vite puts a hash in every file name under assets/, so those never change. The map page is
+    // checked every time so a deploy shows up at once.
+    'cache-control': file.startsWith(path.join(webDir, 'assets') + path.sep)
+      ? 'public, max-age=31536000, immutable'
+      : file === index
+        ? 'no-cache'
+        : PUBLIC_MAX_AGE,
+  };
+  if (file === index) await sendBody(req, res, 200, headers, Buffer.from(page(data.toString('utf8'))));
+  else await sendBody(req, res, 200, headers, data, file);
 }
 
 /** Enough for any filter someone would set by hand, while keeping one request from asking for every line. */
 const MAX_ROUTE_LINES = 60;
+
+const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
 
 function parseBbox(value: string | null): Bbox | null | 'invalid' {
   if (!value) return null;
@@ -70,14 +106,14 @@ export function createApiServer(
   const started = Date.now();
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    const send = (status: number, body: unknown) => {
-      res.writeHead(status, {
-        'content-type': 'application/json',
-        'access-control-allow-origin': '*',
-        'cache-control': 'no-store',
-      });
-      res.end(JSON.stringify(body));
-    };
+    const send = (status: number, body: unknown) =>
+      void sendBody(
+        req,
+        res,
+        status,
+        { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+        Buffer.from(JSON.stringify(body)),
+      );
 
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { error: 'GET only' });
 
@@ -85,7 +121,11 @@ export function createApiServer(
       const bbox = parseBbox(url.searchParams.get('bbox'));
       if (bbox === 'invalid') return send(400, { error: 'bbox must be west,south,east,north' });
       const modes = url.searchParams.get('mode')?.split(',');
-      const vehicles = store.vehicles(now(), bbox ?? undefined).filter((v) => !modes || modes.includes(v.mode));
+      const vehicles = store
+        .vehicles(now(), bbox ?? undefined)
+        .filter((v) => !modes || modes.includes(v.mode))
+        // About a meter is as close as anyone can see on a map, and shorter numbers send smaller.
+        .map((v) => ({ ...v, lat: round5(v.lat), lon: round5(v.lon) }));
       return send(200, { updatedAt: new Date().toISOString(), count: vehicles.length, vehicles });
     }
 
@@ -144,6 +184,6 @@ export function createApiServer(
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
 
     const page = (html: string) => pageFor(html, url, originOf(req), store, now());
-    sendFile(res, webDir, url.pathname, page).catch(() => send(500, { error: 'could not read the map files' }));
+    sendFile(req, res, webDir, url.pathname, page).catch(() => send(500, { error: 'could not read the map files' }));
   });
 }

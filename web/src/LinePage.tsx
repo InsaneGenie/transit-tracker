@@ -7,6 +7,7 @@ import { LineBadge } from './LineBadge';
 import { towards, vehicleCount } from './lines';
 import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from './vehicles';
 import { Transfers } from './VehiclePanel';
+import { everyWhileVisible } from './visible';
 
 /** Each station's row on the strip, in px; vehicles are placed by it, so every row is the same height. */
 const ROW = 56;
@@ -40,10 +41,10 @@ function useLineVehicles(key: string): LineVehicle[] | null {
         .then((r) => setVehicles(r.vehicles))
         .catch(() => {});
     void load();
-    const timer = setInterval(load, POLL_MS);
+    const stop = everyWhileVisible(load, POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [key]);
   return vehicles;

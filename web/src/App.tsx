@@ -14,6 +14,7 @@ import { TESTFLIGHT_URL } from './testflight';
 import { themeFor, type Theme } from './theme';
 import { VehiclePanel } from './VehiclePanel';
 import { facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
+import { everyWhileVisible } from './visible';
 
 const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
@@ -138,10 +139,10 @@ function useLineAlerts(keys: string[]): ServiceAlert[] | null {
         .then((r) => setAlerts(r.alerts))
         .catch(() => {});
     void load();
-    const timer = setInterval(load, ALERT_POLL_MS);
+    const stop = everyWhileVisible(load, ALERT_POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [joined]);
   return alerts;
@@ -157,10 +158,10 @@ function useAlertSummary(): Record<string, AlertSeverity> {
         .then((r) => setSummary(r.lines))
         .catch(() => {});
     void load();
-    const timer = setInterval(load, ALERT_POLL_MS);
+    const stop = everyWhileVisible(load, ALERT_POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, []);
   return summary;
@@ -177,10 +178,10 @@ function useLineCounts(on: boolean): Record<string, number> | null {
         .then((r) => setCounts(r.lines))
         .catch(() => {});
     void load();
-    const timer = setInterval(load, 30_000);
+    const stop = everyWhileVisible(load, 30_000);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [on]);
   return counts;
@@ -316,10 +317,10 @@ export function App() {
         .then((r) => setArrivals(r.directions))
         .catch(() => {});
     void load();
-    const timer = setInterval(load, SELECTED_POLL_MS);
+    const stop = everyWhileVisible(load, SELECTED_POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [station?.lat, station?.lon, selectedLine, viewLine?.key]);
 
@@ -511,10 +512,10 @@ export function App() {
           }
         });
     void load();
-    const timer = setInterval(load, SELECTED_POLL_MS);
+    const stop = everyWhileVisible(load, SELECTED_POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [selectedId]);
 

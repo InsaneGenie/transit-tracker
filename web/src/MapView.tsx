@@ -27,6 +27,7 @@ import type { Theme } from './theme';
 import { Transfers } from './VehiclePanel';
 import { colorFor, holdMissing, interpolate, routeKey, sameStation, tidyStopName, toFeatureCollection, transferLines } from './vehicles';
 import { GLYPH_SCALE, MODE_GLYPHS, MODE_SHAPES, shapePath } from './vehicleIcons';
+import { pageVisible } from './visible';
 
 // MapLibre finds its worker next to its own file, which bundlers move; point it at the bundled copy.
 setWorkerUrl(workerUrl);
@@ -53,9 +54,13 @@ export const SELECTED_POLL_MS = 3000;
 const GLIDE_MIN_ZOOM = 13;
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-/** Closer in, there are fewer vehicles on screen and each one's movement is visible, so update more often. */
+/**
+ * Closer in, there are fewer vehicles on screen and each one's movement is visible, so update more often.
+ * Zoomed out to the whole city, one update is thousands of vehicles that barely move on screen, so it
+ * comes less often: that view was most of the server's data use.
+ */
 export function pollMsFor(zoom: number): number {
-  return zoom >= 15 ? 2000 : zoom >= GLIDE_MIN_ZOOM ? 3000 : 5000;
+  return zoom >= 15 ? 2000 : zoom >= GLIDE_MIN_ZOOM ? 3000 : zoom >= 12 ? 5000 : 10_000;
 }
 
 /** Redrawing every vehicle is the expensive part, so the glide frame rate rises only as the count falls. */
@@ -698,6 +703,13 @@ export function MapView(props: Props) {
     const lastSeen = new Map<string, { vehicle: Vehicle; at: number }>();
     let controller: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let paused = false;
+    const onVisibility = () => {
+      if (!pageVisible() || !paused) return;
+      paused = false;
+      void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     const setVehicles = (vehicles: Vehicle[]) => {
       state.current.vehicles = toFeatureCollection(vehicles);
@@ -718,6 +730,11 @@ export function MapView(props: Props) {
     const refresh = async () => {
       clearTimeout(timer);
       controller?.abort();
+      // Nothing is fetched while the tab is in the background; showing it again picks up from here.
+      if (!pageVisible()) {
+        paused = true;
+        return;
+      }
       if (map.getZoom() < VEHICLE_MIN_ZOOM) {
         // Too far out to show vehicles: stop fetching until the user zooms in.
         showing = false;
@@ -893,6 +910,7 @@ export function MapView(props: Props) {
     });
 
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       clearTimeout(timer);
       clearTimeout(moveTimer);
       cancelAnimationFrame(frame);
