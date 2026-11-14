@@ -179,13 +179,16 @@ describe('ReportBook', () => {
     const index = await buildStaticIndex(lineFiles(), 'full', 'gaps');
     const book = new ReportBook();
     const now = morning;
-    book.observe('sub', 'subway', 20, snapshot(now, [{ id: 'gone', atB: now + 600 }]), index);
+    // One left in the feed hours after it was due, as the subway's sometimes does.
+    const stale: TripState = { tripId: 'stale', routeId: 'X', stops: [{ stopId: 'B', arrival: now - 600 }] };
+    for (let at = now - 1200; at < now; at += 20) book.observe('sub', 'subway', 20, snapshot(at, []), index);
+    book.observe('sub', 'subway', 20, { ...snapshot(now, [{ id: 'gone', atB: now + 600 }]), trips: [...snapshot(now, [{ id: 'gone', atB: now + 600 }]).trips, stale] }, index);
     const ghost = (at: number): FeedSnapshot => ({ fetchedAt: at, gps: [], trips: [{ tripId: 'ghost', routeId: 'X', stops: [{ stopId: 'B', arrival: now + 60 }] }] });
     for (let at = now + 20; at <= now + 1200; at += 20) {
-      book.observe('sub', 'subway', 20, snapshot(at, []), index);
+      book.observe('sub', 'subway', 20, { ...snapshot(at, []), trips: [stale] }, index);
       book.observe('bus', 'bus', 30, ghost(at), index);
     }
-    expect(book.report('sub:X', 'subway', index, now + 1200).days[0].directions![0]).toMatchObject({ trips: 0, scheduled: 2 });
+    expect(book.report('sub:X', 'subway', index, now + 1200).days[0].directions![0]).toMatchObject({ trips: 0, scheduled: 4 });
     expect(book.report('bus:X', 'bus', index, now + 1200).days[0].directions![0]).toMatchObject({ trips: 0, scheduled: 2 });
     // With its bus reporting in, the same trip counts.
     const bus = new ReportBook();

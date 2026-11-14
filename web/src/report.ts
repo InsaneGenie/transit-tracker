@@ -23,6 +23,8 @@ export interface DirectionReport {
   longestGap?: number;
   /** Unix seconds. */
   longestGapAt?: number;
+  /** Most trips missed the stop (planned work, usually), so this way doesn't count toward the grade. */
+  skipped?: boolean;
 }
 
 export interface DayReport {
@@ -88,8 +90,10 @@ export function headline(kind: ReportKind, day: DayReport, mode: Mode): string {
 }
 
 export function watchedText(day: DayReport): string {
+  const so = day.today ? ' so far' : '';
+  if (day.watchedHours < 1) return `From ${Math.max(1, Math.round(day.watchedHours * 60))} min of live data${so}`;
   const hours = day.watchedHours >= 10 ? Math.round(day.watchedHours) : day.watchedHours;
-  return `From ${hours} ${hours === 1 ? 'hour' : 'hours'} of live data${day.today ? ' so far' : ''}`;
+  return `From ${hours} ${hours === 1 ? 'hour' : 'hours'} of live data${so}`;
 }
 
 const clock = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -103,7 +107,8 @@ export function directionLines(d: DirectionReport, mode: Mode): { title: string;
     lines.push(`Usual wait ${duration(d.typicalGap)}${d.scheduledGap !== undefined ? ` (scheduled ${duration(d.scheduledGap)})` : ''}`);
   }
   if (d.longestGap !== undefined) lines.push(`Longest wait ${duration(d.longestGap)}${d.longestGapAt ? `, from ${clock(d.longestGapAt)}` : ''}`);
-  if (d.waits) lines.push(`${d.waitsOnSchedule} of ${d.waits} waits on schedule`);
+  if (d.skipped) lines.push(`Most ${noun} skipped ${at}, likely for planned work, so this way isn't graded`);
+  else if (d.waits) lines.push(`${d.waitsOnSchedule} of ${d.waits} waits on schedule`);
   return { title: d.toward ? `Toward ${tidyStopName(d.toward)}` : 'One way', lines };
 }
 

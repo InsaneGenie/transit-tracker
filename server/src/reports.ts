@@ -50,6 +50,8 @@ export interface DirectionReport {
   longestGap?: number;
   /** When the longest gap began, in Unix seconds. */
   longestGapAt?: number;
+  /** Most trips missed the stop (planned work, usually), so this way doesn't count toward the grade. */
+  skipped?: boolean;
 }
 
 export interface DayReport {
@@ -123,6 +125,9 @@ interface Pending {
   seen: number;
   trip: TripState;
 }
+
+/** A trip still listed this long after it was due at a stop isn't taken to have just passed it. */
+const STALE_S = 5 * 60;
 
 /** Polls further apart than this, and the time between them doesn't count as watched. */
 const MIN_WATCH_GAP_S = 180;
@@ -312,8 +317,12 @@ export class ReportBook {
         this.book.done[key] = now;
         return;
       }
-      if (time <= now) this.record(feed, kind, index, { key, line, time, seen: now, trip }, time);
-      else this.pending.set(key, { key, line, time, seen: now, trip });
+      const p = { key, line, time, seen: now, trip };
+      if (time > now) this.pending.set(key, p);
+      // Due a while ago and still listed: either it passed before this server was watching (a restart),
+      // or the feed is holding on to a trip gone stale (the subway's sometimes keeps one for hours).
+      else if (time < now - STALE_S) this.book.done[key] = now;
+      else this.record(feed, kind, index, p, time);
     };
 
     for (const trip of snapshot.trips) {
@@ -478,17 +487,17 @@ export class ReportBook {
         scheduledGap: round(median(scheduledGaps)),
         longestGap: longest?.[0],
         longestGapAt: longest?.[1],
+        // Most trips missing at the timing stop means the line ran another way (planned work), not that it
+        // ran badly; its waits there would say little.
+        ...(scheduled >= MIN_WAITS && passes.length < scheduled * MIN_RUN_SHARE && { skipped: true }),
       });
     }
     if (!directions.length) return null;
-    const waits = directions.reduce((n, d) => n + d.waits, 0);
-    const ok = directions.reduce((n, d) => n + d.waitsOnSchedule, 0);
-    const trips = directions.reduce((n, d) => n + d.trips, 0);
-    const scheduled = directions.reduce((n, d) => n + d.scheduled, 0);
+    const graded = directions.filter((d) => !d.skipped);
+    const waits = graded.reduce((n, d) => n + d.waits, 0);
+    const ok = graded.reduce((n, d) => n + d.waitsOnSchedule, 0);
     const report: DayReport = { ...base, directions };
-    // Most trips missing at the timing stop means the line ran another way (planned work), not that it
-    // ran badly; its waits there would say little.
-    if (scheduled >= MIN_WAITS && trips < scheduled * MIN_RUN_SHARE) return { ...report, note: 'skipped-stop' };
+    if (!graded.length) return { ...report, note: 'skipped-stop' };
     return withGrade(report, kind, waits >= MIN_WAITS ? (ok / waits) * 100 : undefined, 'too-little-data');
   }
 }

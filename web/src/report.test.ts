@@ -17,6 +17,7 @@ describe('report card words', () => {
     expect(dayLabel({ ...day, today: true })).toBe('Today');
     expect(watchedText(day)).toBe('From 20 hours of live data');
     expect(watchedText({ ...day, today: true, watchedHours: 1 })).toBe('From 1 hour of live data so far');
+    expect(watchedText({ ...day, today: true, watchedHours: 0.1 })).toBe('From 6 min of live data so far');
   });
 
   it('heads the card with its score, or why there is none', () => {
@@ -39,6 +40,11 @@ describe('report card words', () => {
       'Longest wait 21 min',
       '88 of 110 waits on schedule',
     ]);
+  });
+
+  it('says when one way mostly skipped its stop', () => {
+    const d = directionLines({ toward: 'South Ferry', at: '79 St', trips: 3, scheduled: 90, waits: 2, waitsOnSchedule: 0, skipped: true }, 'subway');
+    expect(d.lines.at(-1)).toBe("Most trains skipped 79 St, likely for planned work, so this way isn't graded");
   });
 
   it("lists a rail line's numbers", () => {
