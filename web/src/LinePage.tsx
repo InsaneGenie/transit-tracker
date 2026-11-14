@@ -4,6 +4,7 @@ import { AlertList } from './AlertList';
 import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { CloseButton } from './CloseButton';
 import { LineBadge } from './LineBadge';
+import { ReportCard } from './ReportCard';
 import { towards, vehicleCount } from './lines';
 import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from './vehicles';
 import { Transfers } from './VehiclePanel';
@@ -92,6 +93,8 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
       </div>
 
       <AlertList alerts={alerts} routes={routes} empty="No delays or service changes on this line right now." />
+
+      <ReportCard lineKey={lineKey} mode={mode} />
 
       {!line ? (
         <p className="muted">Loading the line…</p>

@@ -1,3 +1,5 @@
+import type { LineReport } from './report';
+
 export type Mode = 'subway' | 'bus' | 'rail';
 
 /** Mirrors `Vehicle` in server/src/store.ts. */
@@ -163,4 +165,9 @@ export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{
 /** How many vehicles are out on each line, by line key. */
 export function fetchLineCounts(signal?: AbortSignal): Promise<{ lines: Record<string, number> }> {
   return get('/api/line-counts', signal);
+}
+
+/** A line's daily report cards, today's first. */
+export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
+  return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
 }

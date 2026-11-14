@@ -1,4 +1,5 @@
 import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { LineReport } from '../../web/src/report';
 import type { Bounds } from './region';
 
 export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
@@ -76,4 +77,9 @@ export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record
 
 export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
   return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+/** A line's daily report cards, today's first. */
+export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
+  return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
 }

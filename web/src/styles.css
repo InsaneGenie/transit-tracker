@@ -1847,3 +1847,144 @@ button {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* A line's daily report card, on its page. */
+.report-card {
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.report-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-summary:hover {
+  background: var(--hover);
+}
+
+.report-grade {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--muted);
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.report-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.report-eyebrow {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.report-headline {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.report-chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.report-summary[aria-expanded='true'] .report-chevron {
+  transform: rotate(225deg);
+}
+
+.report-days {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+}
+
+.report-days button {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  min-width: 44px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-days button strong {
+  font-size: 15px;
+}
+
+.report-days button[aria-selected='true'] {
+  border-color: var(--ink);
+}
+
+.report-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+  font-size: 14px;
+}
+
+.report-details h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.report-details ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.report-details p {
+  margin: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.report-text .small {
+  margin: 0;
+}

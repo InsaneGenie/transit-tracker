@@ -3,6 +3,7 @@ import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
+import { ReportCard } from './ReportCard';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
@@ -99,6 +100,8 @@ export function LinePanel({
 
       <ScrollView style={styles.body}>
         <AlertList alerts={alerts} routes={routes} dark={dark} empty="No delays or service changes on this line right now." />
+        {/* With a station picked, its arrivals come first; the card is for the line as a whole. */}
+        {!station && !!(info?.key ?? line?.key) && <ReportCard lineKey={(info?.key ?? line?.key)!} mode={mode} active dark={dark} style={{ marginBottom: 12 }} />}
 
         {station && (
           <View style={[styles.stationCard, { borderColor: color }]} accessibilityLabel="Picked station">

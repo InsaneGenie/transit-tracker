@@ -165,6 +165,21 @@ export function createApiServer(
       return send(200, { vehicles: store.lineVehicles(line, now()) });
     }
 
+    if (url.pathname === '/api/report') {
+      const line = url.searchParams.get('line');
+      if (!line) return send(400, { error: 'line is required' });
+      const report = store.report(line, now());
+      if (!report) return send(404, { error: 'no report card for that line' });
+      // It changes only every minute or so, so browsers and the app may reuse it that long.
+      return void sendBody(
+        req,
+        res,
+        200,
+        { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=60' },
+        Buffer.from(JSON.stringify(report)),
+      );
+    }
+
     if (url.pathname === '/api/line-counts') return send(200, { lines: store.lineCounts(now()) });
 
     if (url.pathname === '/api/alerts') {

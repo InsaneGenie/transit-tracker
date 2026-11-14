@@ -29,6 +29,8 @@ export interface FeedConfig {
    * GTFS-Realtime feed) rather than GTFS-Realtime's clockwise from north.
    */
   bearingFromEast?: boolean;
+  /** Realtime trip ids are the schedule's own (the LIRR's), so the report cards can look trips up by id. */
+  tripIdsMatchSchedule?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -60,6 +62,7 @@ export const FEEDS: FeedConfig[] = [
     realtimeUrls: [`${MTA_RT}lirr%2Fgtfs-lirr`],
     staticUrls: [`${MTA_STATIC}gtfslirr.zip`],
     keepsPastStops: true,
+    tripIdsMatchSchedule: true,
     pollSeconds: 30,
   },
   {

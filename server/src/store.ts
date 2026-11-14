@@ -4,6 +4,7 @@ import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
 import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
+import type { LineReport, ReportBook } from './reports.js';
 
 export interface Vehicle {
   id: string;
@@ -293,7 +294,10 @@ export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 
 /** A feed's schedule, with which stations are accessible when that comes from elsewhere. */
 async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
-  const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail);
+  // Rail runs to a timetable, so its report card says how many trains were on time; subway and buses
+  // come often enough that how evenly they come matters more.
+  const report = config.mode !== 'rail' ? 'gaps' : config.tripIdsMatchSchedule ? 'ontime-by-id' : 'ontime';
+  const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail, report);
   if (config.accessibilityUrl) {
     try {
       applyStationAccess(index, await loadStationAccess(config.id, config.accessibilityUrl));
@@ -321,6 +325,8 @@ export class VehicleStore {
   private fixes = new Map<string, FixHistory>();
   /** Each GPS vehicle's way from its position to its next stop, by vehicle id, reused until either changes. */
   private fixTracks = new Map<string, { key: string; track: Polyline; fromMeters?: number }>();
+  /** Takes in each full poll for the lines' daily report cards, when set. */
+  reports?: ReportBook;
 
   constructor(
     configs: FeedConfig[],
@@ -367,6 +373,15 @@ export class VehicleStore {
     if (ok.length) {
       const merged = mergeSnapshots(ok);
       feed.snapshot = feed.config.agencyPrefixedIds ? withoutAgencyPrefixes(merged) : merged;
+    }
+    // Only polls where every URL answered, so a stretch counted as watched was watched for every line.
+    if (this.reports && feed.snapshot && !failed.length) {
+      try {
+        this.reports.observe(feed.config.id, feed.config.mode, feed.config.pollSeconds, feed.snapshot, feed.index);
+      } catch (err) {
+        // The report cards must never stop the map.
+        console.warn(`${feed.config.id}: report cards: ${(err as Error).stack ?? err}`);
+      }
     }
     feed.lastError = failed.length ? failed.join('; ') : undefined;
   }
@@ -846,6 +861,14 @@ export class VehicleStore {
       out.push({ vehicle, at, heading, destination: last && index.stops.get(last.stopId)?.name });
     }
     return out.sort((a, b) => a.at - b.at);
+  }
+
+  /** A line's daily report cards, by legend key, or null for a line no schedule lists. */
+  report(key: string, now = Date.now() / 1000): LineReport | null {
+    const split = key.indexOf(':');
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    if (!feed || !this.reports || !feed.index?.routes.has(key.slice(split + 1))) return null;
+    return this.reports.report(key, feed.config.mode, feed.index, now);
   }
 
   private counts?: { at: number; lines: Record<string, number> };
