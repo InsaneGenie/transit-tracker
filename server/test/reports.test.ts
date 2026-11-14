@@ -276,6 +276,15 @@ describe('rail on time', () => {
     expect(lateness(index, { ...trip('r1'), stops: [{ stopId: 'J', arrival: base + 8 * 3600 + 1200 }] }, base + 8 * 3600 + 1200)).toBeUndefined();
   });
 
+  it('takes a Metro-North train dropped from the feed a few minutes before it was due as having arrived', async () => {
+    const index = await buildStaticIndex(railFiles, 'full', 'ontime');
+    const book = new ReportBook();
+    const due = base + 9 * 3600;
+    const mnr = trip('3264716', { startTime: 8 * 3600, stops: [{ stopId: 'P', departure: base + 8 * 3600 }, { stopId: 'H', arrival: due }] });
+    for (let at = due - 900; at <= due + 300; at += 30) book.observe('mnr', 'rail', 30, { fetchedAt: at, gps: [], trips: at < due - 180 ? [mnr] : [] }, index);
+    expect(book.report('mnr:1', 'rail', index, due + 300).days[0]).toMatchObject({ trains: 1, onTime: 1 });
+  });
+
   it('counts trains on time within 5:59', async () => {
     const index = await buildStaticIndex(railFiles, 'full', 'ontime-by-id');
     const book = new ReportBook();

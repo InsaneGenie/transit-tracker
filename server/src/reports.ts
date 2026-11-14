@@ -114,8 +114,12 @@ export function gradeFor(kind: ReportKind, score: number): Grade {
   return i < 0 ? 'F' : grades[i];
 }
 
-/** A trip's pass vanished from the feed this close to when it was due, and it counts as having passed. */
-const IMMINENT_S = 60;
+/**
+ * A trip's pass vanished from the feed this close to when it was due, and it counts as having passed. A
+ * train or bus drops a stop from the feed once it leaves it. Metro-North drops a whole trip when it reaches
+ * the end of the line, often a few minutes before the timetable has it due there, so rail gets longer.
+ */
+const IMMINENT_S: Record<ReportKind, number> = { gaps: 120, ontime: 10 * 60 };
 
 /** A pass waiting to happen: when the trip was last said to be due there, and when the feed last listed it. */
 interface Pending {
@@ -343,7 +347,7 @@ export class ReportBook {
     const prefix = `${feed}|`;
     for (const [key, p] of this.pending) {
       if (!key.startsWith(prefix) || seen.has(key)) continue;
-      if (p.time <= now + IMMINENT_S) this.record(feed, kind, index, p, Math.min(p.time, now));
+      if (p.time <= now + IMMINENT_S[kind]) this.record(feed, kind, index, p, Math.min(p.time, now));
       else this.pending.delete(key);
     }
     for (const [key, at] of Object.entries(this.book.done)) {
