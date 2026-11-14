@@ -78,10 +78,29 @@ Everything to paste is in [APP_STORE.md](APP_STORE.md): the description, keyword
 
 **Before you submit, keep the server awake.** A free Render server sleeps after 15 minutes. If the reviewer opens the app to an empty map while it wakes up, they may reject it as broken. Add the free [UptimeRobot](https://uptimerobot.com) monitor described in the main README, or switch the Render service to the $7 Starter plan.
 
+## Widgets and the Lock Screen
+
+The app has a Home Screen and Lock Screen widget, and can follow a train or bus on the Lock Screen and in the Dynamic Island (a Live Activity). They need the real app from TestFlight or the App Store: **Expo Go can't show them**, so in Expo Go the buttons for them are hidden.
+
+- **Widget.** Open a station (tap a train, then a station in its list, or a station on the map) and tap **Add to widget**. Then hold an empty spot on the Home Screen, tap **Edit**, **Add Widget**, and pick **NY Transit Live**. It comes small, medium, and in three Lock Screen sizes. With more than one station saved, hold the widget, tap **Edit Widget** and pick which one it shows. A widget can't go online by itself, so each time the app is open it hands the widget the next hour of arrivals and the widget counts them down; it says "Open the app for new times" when they run out.
+- **Live Activity.** Tap a train or bus and tap **Track on Lock Screen**. It follows it to the station you picked, or to the end of its trip, with a countdown and a progress bar that run on their own. It ends a couple of minutes after the vehicle leaves the station. Tapping it opens the app on that vehicle.
+
+### What you need to do for them
+
+1. **Build as usual.** `eas build --platform ios --profile production --auto-submit`. The first build after this change adds a second part to the app (the widget, `com.insanegenie.nytransitlive.ExpoWidgetsTarget`), an App Group (`group.com.insanegenie.nytransitlive`) and Push Notifications. When EAS asks to set up credentials or capabilities for them, say **yes** and let it log in to your Apple account; it does the rest.
+2. **Optional, so the Lock Screen keeps updating while the app is closed.** Without this the Live Activity is still updated while the app is open, and keeps counting down when it isn't. With it, the server sends it fresh positions and times.
+   1. On https://developer.apple.com/account/resources/authkeys/list click **+**, name it "Live Activities", tick **Apple Push Notifications service (APNs)** (if it asks which environment, pick **Sandbox & Production**), then **Continue**, **Register**, then **Download**. You can download the `.p8` file only once, so keep it somewhere safe. Note the **Key ID** on that page.
+   2. Your **Team ID** is at the top right of the developer site (or under **Membership details**).
+   3. In Render, open the `transit-tracker` service, **Environment**, **Add Environment Variable**, and add three: `APNS_KEY` (open the `.p8` file in Notepad and paste all of it, including the `BEGIN` and `END` lines), `APNS_KEY_ID` and `APNS_TEAM_ID`. Save; Render redeploys.
+   4. Check https://transit-tracker-vbfs.onrender.com/api/health: it should say `"liveActivities":{"enabled":true,...}`.
+
+   A free Render server goes to sleep after 15 minutes with no visitors, and then it can't send updates either, so this works best with the server kept awake.
+
 ## How it's put together
 
 - `App.tsx`: the map screen. Vehicles appear once you zoom in to about a few neighborhoods (the website shows them a little further out), and at most 300 are drawn at once, nearest the middle of the screen first, so the map stays smooth.
 - `src/`: the vehicle panel, the Lines sheet, the server calls and map helpers.
+- `src/widgets/`: the widget and the Live Activity. They're drawn with Expo UI (SwiftUI) by [`expo-widgets`](https://docs.expo.dev/versions/latest/sdk/widgets/) and run apart from the app, so each one can only use what's inside its own function. What they show is worked out in `web/src/widgetTimeline.ts` and `web/src/tracking.ts`; the server uses the latter too when it pushes Live Activity updates (`server/src/liveActivities.ts`).
 - Colors, names, arrival times and the Lines groups come from the website's `web/src/vehicles.ts`, so both stay the same.
 - The map is light or dark following the phone's own setting.
 - To point the app at another server, set `EXPO_PUBLIC_API_URL`, for example `$env:EXPO_PUBLIC_API_URL="http://192.168.1.20:3000"; npx expo start` to use the server running on your PC.

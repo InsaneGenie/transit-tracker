@@ -55,6 +55,39 @@ interface Props {
   backLabel?: string;
   onBack: () => void;
   onClose: () => void;
+  /** Following this vehicle on the Lock Screen, to `stop`; missing where Live Activities can't run. */
+  track?: { on: boolean; stop?: string; onPress: () => void };
+  /** Putting the picked station on the Home Screen widget; missing where widgets can't run. */
+  widget?: WidgetToggle;
+}
+
+export interface WidgetToggle {
+  on: boolean;
+  onPress: () => void;
+}
+
+/** Adds the picked station to the Home Screen and Lock Screen widget, or takes it off. */
+export function WidgetButton({ widget, dark }: { widget: WidgetToggle; dark: boolean }) {
+  const c = palette(dark);
+  return (
+    <Pressable
+      onPress={widget.onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: widget.on }}
+      accessibilityHint={widget.on ? 'Takes this station off your widget' : 'Shows its next arrivals on your Home Screen widget'}
+      style={({ pressed }) => [
+        styles.follow,
+        styles.widgetButton,
+        { borderColor: c.border },
+        widget.on && { backgroundColor: c.accent, borderColor: c.accent },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.followText, { color: widget.on ? '#ffffff' : c.text }]}>
+        {widget.on ? '✓ On widget' : '＋ Add to widget'}
+      </Text>
+    </Pressable>
+  );
 }
 
 /**
@@ -194,6 +227,8 @@ export function VehiclePanel({
   backLabel,
   onBack,
   onClose,
+  track,
+  widget,
 }: Props) {
   const c = palette(dark);
   const { vehicle, upcoming, routeLongName } = detail;
@@ -256,6 +291,24 @@ export function VehiclePanel({
             </Pressable>
           </View>
         </View>
+        {track && (
+          <Pressable
+            onPress={track.onPress}
+            accessibilityRole="button"
+            accessibilityState={{ selected: track.on }}
+            style={({ pressed }) => [
+              styles.follow,
+              styles.track,
+              { borderColor: c.border },
+              track.on && { backgroundColor: c.accent, borderColor: c.accent },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.followText, { color: track.on ? '#ffffff' : c.text }]} numberOfLines={1}>
+              {track.on ? 'On your Lock Screen · Tap to stop' : `Track on Lock Screen${track.stop ? ` to ${track.stop}` : ''}`}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView style={styles.body}>
@@ -292,6 +345,7 @@ export function VehiclePanel({
                 </Pressable>
               )}
             </View>
+            {widget && <WidgetButton widget={widget} dark={dark} />}
             <Arrivals
               directions={arrivals}
               selectedId={vehicle.id}
@@ -374,6 +428,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 6 },
   follow: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 },
   followText: { fontSize: 14, fontWeight: '600' },
+  track: { alignItems: 'center', marginBottom: 8 },
+  widgetButton: { alignSelf: 'flex-start', marginTop: 8 },
   body: { flexGrow: 0, flexShrink: 1 },
   small: { fontSize: 12 },
   arrivals: { marginTop: 8, gap: 6 },

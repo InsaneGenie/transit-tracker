@@ -8,7 +8,7 @@ import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
 import { palette } from './theme';
-import { Arrivals, panelStyles as styles, Transfers } from './VehiclePanel';
+import { Arrivals, panelStyles as styles, Transfers, WidgetButton, type WidgetToggle } from './VehiclePanel';
 
 interface Props {
   /** The line being shown, from the Lines list. */
@@ -33,6 +33,8 @@ interface Props {
   /** Tapping a transfer at the picked station shows that line instead. */
   onLine: (key: string) => void;
   onClose: () => void;
+  /** Putting the picked station on the Home Screen widget; missing where widgets can't run. */
+  widget?: WidgetToggle;
 }
 
 /** A whole line, opened from a station's transfers: its stations here, its route and vehicles on the map. */
@@ -52,6 +54,7 @@ export function LinePanel({
   onArrival,
   onLine,
   onClose,
+  widget,
 }: Props) {
   const c = palette(dark);
   const mode = info?.mode ?? line?.mode ?? 'subway';
@@ -113,6 +116,7 @@ export function LinePanel({
                 <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
               )}
             </View>
+            {widget && <WidgetButton widget={widget} dark={dark} />}
             <Arrivals directions={arrivals} noun={noun} dark={dark} onPick={onArrival} />
           </View>
         )}

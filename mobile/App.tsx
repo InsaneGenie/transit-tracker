@@ -3,7 +3,9 @@ import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   AppState,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -15,7 +17,20 @@ import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accessOf } from '../web/src/accessibility';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from '../web/src/panelHistory';
-import { colorFor, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { hasStopAhead, type TrackStop } from '../web/src/tracking';
+import {
+  colorFor,
+  displayName,
+  facingWay,
+  holdMissing,
+  MODE_LABELS,
+  routeKey,
+  sameStation,
+  textColorFor,
+  tidyStopName,
+  transferLines,
+} from '../web/src/vehicles';
+import { pickId } from '../web/src/widgetTimeline';
 import {
   fetchAlerts,
   fetchAlertSummary,
@@ -51,6 +66,8 @@ import { PanelSheet, type Sheet } from './src/PanelSheet';
 import { boundsOf, GLIDE_MIN_ZOOM, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
+import { MAX_WIDGET_STATIONS, useWidgetStations, type WidgetStation } from './src/useWidgetStations';
+import { TRACK_URL, useTracking, type Badge } from './src/useTracking';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { Transfers, VehiclePanel } from './src/VehiclePanel';
 
@@ -81,6 +98,13 @@ function latLngs(path: [number, number][]): LatLng[] {
     pathCache.set(path, out);
   }
   return out;
+}
+
+/** A line's badge for the Lock Screen and widget, which want plain #rrggbb colors. */
+function badgeFor(name: string, mode: Mode, routeColor?: string): Badge & { mode: Mode } {
+  let color = colorFor({ routeColor, mode });
+  if (!/^#[0-9a-f]{6}$/i.test(color)) color = colorFor({ mode });
+  return { line: displayName(name), color, textColor: textColorFor(color), mode };
 }
 
 const byId = (a: Vehicle, b: Vehicle) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -292,6 +316,9 @@ function TransitMap() {
   const [panelHeight, setPanelHeight] = useState(0);
   const [locating, setLocating] = useState(false);
   const [showsUser, setShowsUser] = useState(false);
+  // A vehicle followed on the Lock Screen, and the stations on the Home Screen widget.
+  const tracking = useTracking(active);
+  const widgetStations = useWidgetStations(active);
 
   const zoom = zoomOf(region, width);
 
@@ -749,6 +776,90 @@ function TransitMap() {
     // Only when a new line arrives, not when the screen turns.
   }, [viewRoute]);
 
+  // Following the open vehicle on the Lock Screen: to the picked station when it's still ahead, else to
+  // the end of its trip.
+  const trackStop = useMemo((): TrackStop | null => {
+    if (!detail || detail.loading) return null;
+    if (station?.name) {
+      const picked = { stopId: station.stopId, name: station.name, lat: station.lat, lon: station.lon };
+      if (hasStopAhead(detail, picked)) return picked;
+    }
+    const end = [...detail.upcoming].reverse().find((s) => s.name);
+    return end ? { stopId: end.stopId, name: end.name!, lat: end.lat, lon: end.lon } : null;
+  }, [detail, station]);
+  const trackingThis = tracking.tracked !== null && tracking.tracked.vehicleId === detail?.vehicle.id;
+  const toggleTracking = () => {
+    if (!detail) return;
+    if (trackingThis) return tracking.stop();
+    if (!trackStop) return;
+    const v = detail.vehicle;
+    const { line, color, textColor } = badgeFor(v.routeName ?? v.routeId ?? '?', v.mode, v.routeColor);
+    tracking.start(detail, trackStop, { line, color, textColor });
+  };
+
+  // The picked station, for the Home Screen widget, on the open vehicle's line or the line open on its own.
+  const widgetPick = ((): WidgetStation | null => {
+    const key = selectedLine ?? viewLine?.key;
+    if (!station?.name || !key) return null;
+    const info = routesByKey.get(key);
+    const mode = info?.mode ?? detail?.vehicle.mode ?? 'subway';
+    const name = info?.name ?? detail?.vehicle.routeName ?? key.split(':')[1] ?? '?';
+    const { line, color, textColor } = badgeFor(name, mode, info?.color ?? detail?.vehicle.routeColor);
+    return { line: key, stopId: station.stopId, name: station.name, lat: station.lat, lon: station.lon, badge: line, color, textColor, mode };
+  })();
+  const widgetButton =
+    widgetStations.supported && widgetPick
+      ? {
+          on: widgetStations.has(widgetPick),
+          onPress: () => {
+            if (widgetStations.toggle(widgetPick)) return;
+            Alert.alert(
+              'The widget is full',
+              `It can show up to ${MAX_WIDGET_STATIONS} stations. Take one off first: open it and tap On widget.`,
+            );
+          },
+        }
+      : undefined;
+
+  // Opened from the Lock Screen or a widget: show what was tapped.
+  const openLink = useRef<(url: string) => void>(() => {});
+  openLink.current = (url: string) => {
+    if (url.startsWith(TRACK_URL)) {
+      const t = tracking.tracked;
+      if (!t) return;
+      openVehicle(t.vehicleId);
+      if (t.stop.lat !== undefined && t.stop.lon !== undefined) {
+        setFollowing(false);
+        setRestoreStation({ stopId: t.stop.stopId, name: t.stop.name, lat: t.stop.lat, lon: t.stop.lon });
+      }
+      return;
+    }
+    const id = url.match(/^nytransitlive:\/\/station\?id=([^&]+)/)?.[1];
+    const picked = id && widgetStations.stations.find((s) => pickId(s) === decodeURIComponent(id));
+    if (picked) {
+      setLinesUp(false);
+      setLinePage(null);
+      setFollowing(false);
+      openLine(picked.line, { stopId: picked.stopId, name: picked.name, lat: picked.lat, lon: picked.lon });
+    }
+  };
+  // A link that opened the app waits until what it points at has loaded from storage.
+  const [pendingLink, setPendingLink] = useState<string | null>(null);
+  useEffect(() => {
+    Linking.getInitialURL()
+      .then((url) => url && setPendingLink(url))
+      .catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => setPendingLink(url));
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    if (!pendingLink) return;
+    const ready = pendingLink.startsWith(TRACK_URL) ? tracking.tracked !== null : widgetStations.stations.length > 0;
+    if (!ready) return;
+    setPendingLink(null);
+    openLink.current(pendingLink);
+  }, [pendingLink, tracking.tracked, widgetStations.stations]);
+
   const locate = async () => {
     setLocating(true);
     try {
@@ -932,6 +1043,12 @@ function TransitMap() {
         onLine={(key) => openLine(key)}
         onStop={pickStation}
         onClose={closePanels}
+        track={
+          tracking.supported && (trackingThis || trackStop)
+            ? { on: trackingThis, stop: trackStop?.name ? tidyStopName(trackStop.name) : undefined, onPress: toggleTracking }
+            : undefined
+        }
+        widget={widgetButton}
       />
     );
   const linePanel = (sheet?: Sheet) =>
@@ -952,6 +1069,7 @@ function TransitMap() {
         onArrival={(id) => openVehicle(id, true)}
         onLine={(key) => openLine(key)}
         onClose={closePanels}
+        widget={widgetButton}
       />
     );
   const linesContent = linePage ? (
