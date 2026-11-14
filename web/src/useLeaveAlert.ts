@@ -93,7 +93,7 @@ export interface LeaveAlert {
   /** The last walk time picked, offered first next time. */
   walk: number;
   notifyState: NotifyState;
-  start: (watch: Omit<LeaveWatch, 'created' | 'told'>) => void;
+  start: (watch: Omit<LeaveWatch, 'created' | 'told' | 'notifyAt'>) => void;
   stop: () => void;
 }
 
@@ -106,11 +106,14 @@ export interface LeaveAlert {
 export function useLeaveAlert(): LeaveAlert {
   const [watch, setWatch] = useState<LeaveWatch | null>(() => parseWatch(load(LEAVE_WATCH_KEY), nowS()));
   const [walk, setWalk] = useState(() => parseWalk(load(WALK_MINUTES_KEY)));
-  const [directions, setDirections] = useState<ArrivalDirection[] | null>(null);
+  // Arrivals with the alert they were fetched for, so a new alert never goes by the last one's.
+  const [fetched, setFetched] = useState<{ key: string; directions: ArrivalDirection[] } | null>(null);
   const [now, setNow] = useState(nowS);
   const [permission, setPermission] = useState<NotifyState>(notifyState);
   const audio = useRef<AudioContext | null>(null);
 
+  const watchKey = watch && `${watch.line}|${watch.station.lat},${watch.station.lon}|${watch.toward.join('/')}|${watch.created}`;
+  const directions = fetched && fetched.key === watchKey ? fetched.directions : null;
   const plan = watch && directions ? planLeave(watch, directions, now) : null;
   const planRef = useRef(plan);
   planRef.current = plan;
@@ -124,15 +127,13 @@ export function useLeaveAlert(): LeaveAlert {
   }, []);
 
   // The station's arrival times, fresher as leaving gets close.
-  const watchKey = watch && `${watch.line}|${watch.station.lat},${watch.station.lon}|${watch.toward.join('/')}|${watch.created}`;
   useEffect(() => {
-    setDirections(null);
     if (!watch) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
       fetchArrivals(watch.line, watch.station, controller.signal)
-        .then((r) => setDirections(r.directions))
+        .then((r) => setFetched({ key: watchKey!, directions: r.directions }))
         .catch(() => {})
         .finally(() => {
           if (!controller.signal.aborted) timer = setTimeout(load, pollMs(planRef.current, nowS()));

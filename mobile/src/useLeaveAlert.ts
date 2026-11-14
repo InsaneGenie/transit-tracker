@@ -78,10 +78,13 @@ export function useLeaveAlert(active: boolean): LeaveAlert {
   const [loaded, setLoaded] = useState(false);
   const [watch, setWatch] = useState<LeaveWatch | null>(null);
   const [walk, setWalk] = useState(parseWalk(null));
-  const [directions, setDirections] = useState<ArrivalDirection[] | null>(null);
+  // Arrivals with the alert they were fetched for, so a new alert never goes by the last one's.
+  const [fetched, setFetched] = useState<{ key: string; directions: ArrivalDirection[] } | null>(null);
   const [now, setNow] = useState(nowS);
   const [notifyState, setNotifyState] = useState<NotifyState>('undetermined');
 
+  const watchKey = watch && `${watch.line}|${watch.station.lat},${watch.station.lon}|${watch.toward.join('/')}|${watch.created}`;
+  const directions = fetched && fetched.key === watchKey ? fetched.directions : null;
   const plan = watch && directions ? planLeave(watch, directions, now) : null;
   const planRef = useRef(plan);
   planRef.current = plan;
@@ -104,14 +107,13 @@ export function useLeaveAlert(active: boolean): LeaveAlert {
   }, [watch, loaded]);
 
   // The station's arrival times, fresher as leaving gets close; nothing while the app is in the background.
-  const watchKey = watch && `${watch.line}|${watch.station.lat},${watch.station.lon}|${watch.toward.join('/')}|${watch.created}`;
   useEffect(() => {
     if (!watch || !active) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
       fetchArrivals(watch.line, { lat: watch.station.lat, lon: watch.station.lon }, controller.signal)
-        .then((r) => setDirections(r.directions))
+        .then((r) => setFetched({ key: watchKey!, directions: r.directions }))
         .catch(() => {})
         .finally(() => {
           if (!controller.signal.aborted) timer = setTimeout(load, pollMs(planRef.current, nowS()));
@@ -122,9 +124,6 @@ export function useLeaveAlert(active: boolean): LeaveAlert {
       clearTimeout(timer);
     };
   }, [watchKey, active]);
-
-  // A different alert starts from no arrivals, not the last one's.
-  useEffect(() => setDirections(null), [watchKey]);
 
   // The countdown, between fetches.
   useEffect(() => {
@@ -164,11 +163,17 @@ export function useLeaveAlert(active: boolean): LeaveAlert {
       setWatch(null);
       return;
     }
-    if (plan?.kind !== 'leave' || watch.told || !plan.arrival) return;
+    if (watch.told) return;
+    // The notification set ahead went off, maybe while the app was closed: that was the telling.
     const set = watch.notifyAt;
-    const wentOff = set !== undefined && set.vehicleId === plan.vehicleId && set.at <= now;
+    if (set && set.at <= now) {
+      const same = plan?.kind !== 'none' && plan?.vehicleId === set.vehicleId ? plan.time : undefined;
+      setWatch({ ...watch, told: { vehicleId: set.vehicleId, time: same ?? set.at + HEADS_UP_S + watch.walkMinutes * 60 } });
+      return;
+    }
+    if (plan?.kind !== 'leave' || !plan.arrival) return;
     setWatch({ ...watch, told: { vehicleId: plan.vehicleId, time: plan.time } });
-    if (wentOff) return;
+    // Now, in place of the one set ahead for later.
     if (notifyState === 'granted') schedule(leaveMessage(watch, plan.arrival, now));
     else cancel();
     if (active) Vibration.vibrate([0, 300, 150, 300]);
@@ -178,7 +183,6 @@ export function useLeaveAlert(active: boolean): LeaveAlert {
     cancel();
     setWalk(next.walkMinutes);
     AsyncStorage.setItem(WALK_MINUTES_KEY, String(next.walkMinutes)).catch(() => {});
-    setDirections(null);
     setNow(nowS());
     setWatch({ ...next, created: nowS() });
     void permission(true).then(setNotifyState);
