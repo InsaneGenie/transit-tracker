@@ -1,4 +1,6 @@
-export type Mode = 'subway' | 'bus' | 'rail';
+import { EXTRA_MODES } from './vehicles';
+
+export type Mode = 'subway' | 'bus' | 'rail' | 'ferry';
 
 /** Mirrors `Vehicle` in server/src/store.ts. */
 export interface Vehicle {
@@ -90,6 +92,28 @@ export interface ArrivalDirection {
   arrivals: Arrival[];
 }
 
+/** A Citi Bike dock. Mirrors `BikeDock` in server/src/bikes.ts. */
+export interface BikeDock {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Bikes ready to ride, e-bikes included. */
+  bikes: number;
+  ebikes?: number;
+  /** Free spots to return a bike to. */
+  docks: number;
+  renting: boolean;
+  returning: boolean;
+}
+
+/** The docks in an area; `zoomIn` when the area is too big to list them. */
+export interface BikeDocks {
+  updatedAt?: string;
+  zoomIn?: boolean;
+  docks: BikeDock[];
+}
+
 /** Mirrors `AlertSeverity` in server/src/alerts.ts. */
 export type AlertSeverity = 'suspended' | 'delays' | 'changes' | 'info';
 
@@ -118,7 +142,7 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
 export type Bounds = [west: number, south: number, east: number, north: number];
 
 export function fetchVehicles(bounds: Bounds, signal?: AbortSignal): Promise<{ vehicles: Vehicle[] }> {
-  return get(`/api/vehicles?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}`, signal);
+  return get(`/api/vehicles?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}&extra=${EXTRA_MODES}`, signal);
 }
 
 export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<VehicleDetail> {
@@ -126,16 +150,21 @@ export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<Ve
 }
 
 export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[] }> {
-  return get('/api/routes', signal);
+  return get(`/api/routes?extra=${EXTRA_MODES}`, signal);
 }
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
 }
 
-/** Every subway and rail line's path, for drawing all of them at once. */
+/** Every subway, rail and ferry line's path, for drawing all of them at once. */
 export function fetchRoutePaths(signal?: AbortSignal): Promise<{ lines: RoutePath[] }> {
-  return get('/api/route-paths?modes=subway,rail', signal);
+  return get('/api/route-paths?modes=subway,rail,ferry', signal);
+}
+
+/** The Citi Bike docks in an area, with their bikes and free docks. */
+export function fetchBikes(bounds: Bounds, signal?: AbortSignal): Promise<BikeDocks> {
+  return get(`/api/bikes?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}`, signal);
 }
 
 export function fetchArrivals(

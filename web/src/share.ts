@@ -52,9 +52,12 @@ export function shareTitle(
 ): string {
   if ('vehicle' in shown) {
     const { name, mode, to } = shown.vehicle;
-    return `The ${name} ${mode === 'bus' ? 'bus' : 'train'}${to ? ` to ${to}` : ''}`;
+    // Spelled out rather than taken from names.ts: the server reads this file too, and imports differ there.
+    const noun = mode === 'bus' ? 'bus' : mode === 'ferry' ? 'ferry' : 'train';
+    return `The ${name} ${noun}${to ? ` to ${to}` : ''}`;
   }
-  const line = `the ${shown.line.name} ${shown.line.mode === 'bus' ? 'bus line' : 'line'}`;
+  const kind = shown.line.mode === 'bus' ? 'bus line' : shown.line.mode === 'ferry' ? 'ferry route' : 'line';
+  const line = `the ${shown.line.name} ${kind}`;
   return shown.station ? `${shown.station} on ${line}` : line[0].toUpperCase() + line.slice(1);
 }
 

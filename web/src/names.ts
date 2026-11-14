@@ -1,5 +1,12 @@
 // Kept apart from vehicles.ts so the server can use them too, for link previews.
 
+/** What one vehicle of a mode is called: "train", "bus" or "ferry", or with `plural` "trains", "buses", "ferries". */
+export function vehicleNoun(mode: string, plural = false): string {
+  if (mode === 'bus') return plural ? 'buses' : 'bus';
+  if (mode === 'ferry') return plural ? 'ferries' : 'ferry';
+  return plural ? 'trains' : 'train';
+}
+
 /** Strips Bus Time's agency prefix ("MTA NYCT_M15") from names that arrive without a schedule match. */
 export const displayName = (name: string) => name.replace(/^MTA\s*\w*_/, '');
 

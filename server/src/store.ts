@@ -1,7 +1,7 @@
 import { estimatePosition, projectFix, shapeBetween, trackBetween, type EstimatedPosition } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
-import { fetchFeed, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
+import { fetchFeed, linkTripsByVehicle, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
 import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
 
@@ -190,9 +190,9 @@ const PROGRESS_KEPT_S = 120;
 /**
  * Faster than this between two reported positions, in meters per second, the newer one is a glitch (Metro-North
  * sometimes reports a train miles from where it was seconds before, then back again). About 155 mph for
- * trains and 80 mph for buses.
+ * trains, 80 mph for buses and 55 mph for ferries (they cruise at about 30).
  */
-const MAX_SPEED: Record<Mode, number> = { subway: 70, rail: 70, bus: 35 };
+const MAX_SPEED: Record<Mode, number> = { subway: 70, rail: 70, bus: 35, ferry: 25 };
 
 /** A position that looks like a glitch is believed once it has been reported this long, in seconds. */
 const GLITCH_TRUSTED_S = 90;
@@ -365,8 +365,9 @@ export class VehicleStore {
     feed.parts = parts;
     const ok = parts.flatMap((p) => (p ? [p.snapshot] : []));
     if (ok.length) {
-      const merged = mergeSnapshots(ok);
-      feed.snapshot = feed.config.agencyPrefixedIds ? withoutAgencyPrefixes(merged) : merged;
+      let merged = mergeSnapshots(ok);
+      if (feed.config.agencyPrefixedIds) merged = withoutAgencyPrefixes(merged);
+      feed.snapshot = feed.config.matchTripsByVehicle ? linkTripsByVehicle(merged) : merged;
     }
     feed.lastError = failed.length ? failed.join('; ') : undefined;
   }
@@ -879,7 +880,12 @@ export class VehicleStore {
   ready(): boolean {
     return this.feeds
       .filter((f) => this.enabled(f))
-      .every((f) => f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError));
+      .every((f) =>
+        f.config.optional
+          ? // Tried once, worked or not: an optional feed being down doesn't hold the rest up.
+            (f.snapshot || f.lastError) && (!f.config.staticUrls?.length || f.index || f.staticError)
+          : f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError),
+      );
   }
 
   status(): FeedStatus[] {

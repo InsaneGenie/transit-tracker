@@ -3,10 +3,11 @@ import { colorFor, displayName, textColorFor } from '../../web/src/vehicles';
 import type { RouteInfo } from './api';
 import { ModeIcon } from './ModeIcon';
 
-/** A line's badge: the subway's round bullet, a bus route's rounded square, a commuter line's diamond. */
+/** A line's badge: the subway's round bullet, a bus route's rounded square, a commuter line's diamond, a ferry's shield. */
 export function LineBadge({ route, size = 34 }: { route: Pick<RouteInfo, 'mode' | 'name' | 'color'>; size?: number }) {
   const color = colorFor({ routeColor: route.color, mode: route.mode });
-  if (route.mode === 'rail') return <ModeIcon mode="rail" size={size} color={color} ink="#ffffff" />;
+  // Commuter lines and ferry routes have names too long for a badge, so they get their mode's icon.
+  if (route.mode === 'rail' || route.mode === 'ferry') return <ModeIcon mode={route.mode} size={size} color={color} ink="#ffffff" />;
   const name = displayName(route.name);
   return (
     <View

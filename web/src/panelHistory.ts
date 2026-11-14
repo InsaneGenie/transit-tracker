@@ -1,5 +1,5 @@
 import type { RouteInfo, UpcomingStop, Vehicle } from './api';
-import { displayName, tidyStopName } from './vehicles';
+import { displayName, tidyStopName, vehicleNoun } from './vehicles';
 
 /**
  * A line opened from a station's transfers or one of its stations on the map. `atStation` keeps the map on
@@ -44,7 +44,7 @@ export function stepLabel(
 ): string {
   const what =
     'vehicle' in shown
-      ? `the ${displayName(shown.vehicle.routeName ?? shown.vehicle.routeId ?? '')} ${shown.vehicle.mode === 'bus' ? 'bus' : 'train'}`
+      ? `the ${displayName(shown.vehicle.routeName ?? shown.vehicle.routeId ?? '')} ${vehicleNoun(shown.vehicle.mode)}`
       : `the ${displayName(shown.info?.name ?? shown.lineKey.split(':')[1] ?? '?')} line`;
   return station?.name ? `${what} · ${tidyStopName(station.name)}` : what;
 }

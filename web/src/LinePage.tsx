@@ -5,7 +5,7 @@ import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, ty
 import { CloseButton } from './CloseButton';
 import { LineBadge } from './LineBadge';
 import { towards, vehicleCount } from './lines';
-import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from './vehicles';
+import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines, vehicleNoun } from './vehicles';
 import { Transfers } from './VehiclePanel';
 import { everyWhileVisible } from './visible';
 
@@ -57,7 +57,7 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const badge = { mode, name: displayName(info?.name ?? lineKey.split(':')[1] ?? '?'), color: info?.color ?? line?.color };
   const color = colorFor({ routeColor: badge.color, mode });
-  const noun = mode === 'bus' ? 'buses' : 'trains';
+  const noun = vehicleNoun(mode, true);
   const stops = line?.stops ?? [];
   const ordered = heading === 1 ? stops : [...stops].reverse();
   const going = useMemo(() => (vehicles ?? []).filter((v) => v.heading === heading), [vehicles, heading]);
@@ -135,7 +135,7 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
                   style={{ top: place * ROW + ROW / 2 }}
                   onClick={() => onVehicle(v)}
                   title={v.destination ? `To ${tidyStopName(v.destination)}` : undefined}
-                  aria-label={`${badge.name} ${mode === 'bus' ? 'bus' : 'train'}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
+                  aria-label={`${badge.name} ${vehicleNoun(mode)}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
                 >
                   <LineBadge route={badge} size={24} />
                 </button>
