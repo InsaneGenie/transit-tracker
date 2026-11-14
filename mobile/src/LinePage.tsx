@@ -4,8 +4,9 @@ import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from 
 import { towards } from '../../web/src/lines';
 import { WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
-import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
+import { fetchLineVehicles, type LineService, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { LineBadge, vehicleCount } from './LineBadge';
+import { ServiceCheck, StripMarks } from './ServiceCheck';
 import { palette } from './theme';
 import { Transfers } from './VehiclePanel';
 
@@ -35,16 +36,19 @@ interface Props {
   onVehicle: (v: LineVehicle) => void;
 }
 
-/** The line's vehicles along its stations, kept fresh. Null until they first load, or if they can't be. */
-function useLineVehicles(key: string, active: boolean): LineVehicle[] | null {
-  const [vehicles, setVehicles] = useState<LineVehicle[] | null>(null);
+/**
+ * The line's vehicles along its stations, and for buses how they compare with the schedule, kept fresh.
+ * Vehicles are null until they first load, or if they can't be.
+ */
+function useLineVehicles(key: string, active: boolean): { vehicles: LineVehicle[] | null; service?: LineService } {
+  const [state, setState] = useState<{ vehicles: LineVehicle[] | null; service?: LineService }>({ vehicles: null });
   useEffect(() => {
-    setVehicles(null);
+    setState({ vehicles: null });
     if (!active) return;
     const controller = new AbortController();
     const load = () =>
       fetchLineVehicles(key, controller.signal)
-        .then((r) => setVehicles(r.vehicles))
+        .then((r) => setState({ vehicles: r.vehicles, service: r.service }))
         .catch(() => {});
     void load();
     const timer = setInterval(load, POLL_MS);
@@ -53,7 +57,7 @@ function useLineVehicles(key: string, active: boolean): LineVehicle[] | null {
       clearInterval(timer);
     };
   }, [key, active]);
-  return vehicles;
+  return state;
 }
 
 /** A line's own page: its alerts, and its trains or buses moving down a strip of its stations. */
@@ -75,7 +79,7 @@ export function LinePage({
   onVehicle,
 }: Props) {
   const c = palette(dark);
-  const vehicles = useLineVehicles(lineKey, active);
+  const { vehicles, service } = useLineVehicles(lineKey, active);
   const [heading, setHeading] = useState<1 | -1>(1);
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
@@ -84,6 +88,8 @@ export function LinePage({
   const stops = line?.stops ?? [];
   const ordered = heading === 1 ? stops : [...stops].reverse();
   const going = useMemo(() => (vehicles ?? []).filter((v) => v.heading === heading), [vehicles, heading]);
+  // Each vehicle's row down the strip, which lists the stations the way they are going.
+  const place = (v: LineVehicle) => (heading === 1 ? v.at : stops.length - 1 - v.at);
   const out = count ?? vehicles?.length;
 
   return (
@@ -152,6 +158,7 @@ export function LinePage({
             {vehicles === null && (
               <Text style={[styles.muted, styles.note, { color: c.muted }]}>Finding the {noun} on this line…</Text>
             )}
+            {mode === 'bus' && service && <ServiceCheck service={service} going={going} heading={heading} dark={dark} />}
 
             <View style={{ height: ordered.length * ROW }}>
               <View
@@ -176,8 +183,8 @@ export function LinePage({
                   </View>
                 </Pressable>
               ))}
+              <StripMarks going={going} place={place} row={ROW} trackX={TRACK_X} dark={dark} />
               {going.map((v) => {
-                const place = heading === 1 ? v.at : stops.length - 1 - v.at;
                 return (
                   <Pressable
                     key={v.vehicle.id}
@@ -185,7 +192,7 @@ export function LinePage({
                     hitSlop={6}
                     accessibilityRole="button"
                     accessibilityLabel={`${name} ${mode === 'bus' ? 'bus' : 'train'}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
-                    style={[styles.vehicle, { top: place * ROW + ROW / 2 - MARKER / 2 }]}
+                    style={[styles.vehicle, { top: place(v) * ROW + ROW / 2 - MARKER / 2 }]}
                   >
                     <View style={styles.vehicleRing}>
                       <LineBadge route={{ mode, name, color: info?.color ?? line.color }} size={MARKER - 4} />

@@ -162,7 +162,9 @@ export function createApiServer(
     if (url.pathname === '/api/line-vehicles') {
       const line = url.searchParams.get('line');
       if (!line) return send(400, { error: 'line is required' });
-      return send(200, { vehicles: store.lineVehicles(line, now()) });
+      const at = now();
+      const service = store.lineService(line, at);
+      return send(200, { vehicles: store.lineVehicles(line, at), ...(service && { service }) });
     }
 
     if (url.pathname === '/api/line-counts') return send(200, { lines: store.lineCounts(now()) });

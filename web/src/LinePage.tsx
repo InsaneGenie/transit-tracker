@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { AccessIcon } from './AccessIcon';
 import { AlertList } from './AlertList';
-import { fetchLineVehicles, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
+import { fetchLineVehicles, type LineService, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { CloseButton } from './CloseButton';
 import { LineBadge } from './LineBadge';
+import { ServiceCheck, StripMarks } from './ServiceCheck';
 import { towards, vehicleCount } from './lines';
 import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from './vehicles';
 import { Transfers } from './VehiclePanel';
@@ -30,15 +31,18 @@ interface Props {
   onVehicle: (v: LineVehicle) => void;
 }
 
-/** The line's vehicles along its stations, kept fresh. Null until they first load, or if they can't be. */
-function useLineVehicles(key: string): LineVehicle[] | null {
-  const [vehicles, setVehicles] = useState<LineVehicle[] | null>(null);
+/**
+ * The line's vehicles along its stations, and for buses how they compare with the schedule, kept fresh.
+ * Vehicles are null until they first load, or if they can't be.
+ */
+function useLineVehicles(key: string): { vehicles: LineVehicle[] | null; service?: LineService } {
+  const [state, setState] = useState<{ vehicles: LineVehicle[] | null; service?: LineService }>({ vehicles: null });
   useEffect(() => {
-    setVehicles(null);
+    setState({ vehicles: null });
     const controller = new AbortController();
     const load = () =>
       fetchLineVehicles(key, controller.signal)
-        .then((r) => setVehicles(r.vehicles))
+        .then((r) => setState({ vehicles: r.vehicles, service: r.service }))
         .catch(() => {});
     void load();
     const stop = everyWhileVisible(load, POLL_MS);
@@ -47,12 +51,12 @@ function useLineVehicles(key: string): LineVehicle[] | null {
       stop();
     };
   }, [key]);
-  return vehicles;
+  return state;
 }
 
 /** A line's own page: its alerts, and its trains or buses moving down a strip of its stations. */
 export function LinePage({ lineKey, info, line, routes, alerts, count, starred, onBack, onClose, onStar, onShowOnMap, onStation, onVehicle }: Props) {
-  const vehicles = useLineVehicles(lineKey);
+  const { vehicles, service } = useLineVehicles(lineKey);
   const [heading, setHeading] = useState<1 | -1>(1);
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const badge = { mode, name: displayName(info?.name ?? lineKey.split(':')[1] ?? '?'), color: info?.color ?? line?.color };
@@ -61,6 +65,8 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
   const stops = line?.stops ?? [];
   const ordered = heading === 1 ? stops : [...stops].reverse();
   const going = useMemo(() => (vehicles ?? []).filter((v) => v.heading === heading), [vehicles, heading]);
+  // Each vehicle's row down the strip, which lists the stations the way they are going.
+  const place = (v: LineVehicle) => (heading === 1 ? v.at : stops.length - 1 - v.at);
   const out = count ?? vehicles?.length;
 
   return (
@@ -107,6 +113,7 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
             ))}
           </div>
           {vehicles === null && <p className="muted small">Finding the {noun} on this line…</p>}
+          {mode === 'bus' && service && <ServiceCheck service={service} going={going} heading={heading} />}
 
           <div className="strip" style={{ height: ordered.length * ROW }}>
             <span className="strip-track" style={{ height: Math.max(ordered.length - 1, 0) * ROW }} />
@@ -126,13 +133,13 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
                 </li>
               ))}
             </ol>
+            <StripMarks going={going} place={place} row={ROW} />
             {going.map((v) => {
-              const place = heading === 1 ? v.at : stops.length - 1 - v.at;
               return (
                 <button
                   key={v.vehicle.id}
                   className="strip-vehicle"
-                  style={{ top: place * ROW + ROW / 2 }}
+                  style={{ top: place(v) * ROW + ROW / 2 }}
                   onClick={() => onVehicle(v)}
                   title={v.destination ? `To ${tidyStopName(v.destination)}` : undefined}
                   aria-label={`${badge.name} ${mode === 'bus' ? 'bus' : 'train'}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
