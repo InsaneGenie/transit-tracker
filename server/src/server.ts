@@ -159,6 +159,12 @@ export function createApiServer(
       return send(200, { directions: store.arrivals(line, { lat, lon }, now()) });
     }
 
+    if (url.pathname === '/api/connections') {
+      const vehicle = url.searchParams.get('vehicle');
+      if (!vehicle) return send(400, { error: 'vehicle is required' });
+      return send(200, { stops: store.connections(vehicle, now()) });
+    }
+
     if (url.pathname === '/api/line-vehicles') {
       const line = url.searchParams.get('line');
       if (!line) return send(400, { error: 'line is required' });

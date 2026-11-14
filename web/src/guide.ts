@@ -53,6 +53,15 @@ export const GUIDE: GuideSection[] = [
     ],
   },
   {
+    title: 'Will my transfer connect?',
+    points: [
+      'A train or bus card lists, under Your transfers, the next stations where you can change. For each line there, and each way it goes, it says how long you would wait for the next one after you get there.',
+      'Green means there’s time to change. Orange means it’s tight: it comes before you’d likely make it across, so the next one is shown too.',
+      'It counts the subway at Penn Station, Jamaica, Grand Central and other stations a short walk from LIRR and Metro-North trains.',
+      'Tap a connection to jump to that train or bus. Back returns you to yours.',
+    ],
+  },
+  {
     title: 'Delays and service changes',
     points: [
       'A train or bus card, and a line’s page, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',

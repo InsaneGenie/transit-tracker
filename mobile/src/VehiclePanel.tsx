@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   colorFor,
@@ -10,10 +11,11 @@ import {
   tidyStopName,
   transferLines,
 } from '../../web/src/vehicles';
+import { connectionHeading, connectionLines, connectionSummary, describeConnection, type ConnectionStatus } from '../../web/src/connections';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
-import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
+import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, StopConnections, UpcomingStop, VehicleDetail } from './api';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
@@ -38,8 +40,12 @@ interface Props {
   arrivals: ArrivalDirection[] | null;
   /** Delays and service changes on the vehicle's line; null while loading. */
   alerts: ServiceAlert[] | null;
+  /** The stations ahead where you can change, with how each connection lines up; null while loading. */
+  connections: StopConnections[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** Tapping a connection opens the vehicle you would catch. */
+  onConnection: (vehicleId: string) => void;
   /** Tapping a transfer line at the station shows that whole line. */
   onLine: (key: string) => void;
   dark: boolean;
@@ -171,6 +177,114 @@ export function Arrivals({
   );
 }
 
+/** Green when there's time to change, orange when it's tight, as on the website. */
+function statusColor(status: ConnectionStatus, dark: boolean, muted: string): string {
+  if (status === 'connects') return dark ? '#4ade80' : '#16a34a';
+  if (status === 'tight') return dark ? '#fb923c' : '#c2410c';
+  return muted;
+}
+
+/**
+ * The stations ahead where you can change, and whether each line's next vehicle each way will still be
+ * coming when you get there. The first station is open; the rest open with a tap, or when picked.
+ */
+export function Connections({
+  stops,
+  routes,
+  station,
+  dark,
+  onVehicle,
+}: {
+  /** Null while loading. */
+  stops: StopConnections[] | null;
+  routes: Map<string, RouteInfo>;
+  /** The picked station, opened when it's one of them. */
+  station: Station | null;
+  dark: boolean;
+  /** Tapping a connection opens the vehicle you would catch. */
+  onVehicle: (vehicleId: string) => void;
+}) {
+  const c = palette(dark);
+  // Stations opened or closed by hand, by stop id; the rest follow the default.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const shown = (stops ?? []).filter((s) => connectionLines(s, routes).length > 0);
+  if (!shown.length) return null;
+  return (
+    <View style={styles.connections} accessibilityLabel="Your transfers">
+      <Text style={[styles.arrivalsHeading, { color: c.muted }]}>Your transfers</Text>
+      {shown.map((s, i) => {
+        const lines = connectionLines(s, routes);
+        const running = lines.filter((l) => l.connection.directions.length > 0);
+        const idle = lines.filter((l) => l.connection.directions.length === 0);
+        const open = toggled[s.stopId] ?? (i === 0 || (station !== null && sameStation(s, station)));
+        return (
+          <View key={s.stopId} style={[styles.connectionStop, { backgroundColor: c.raised }]}>
+            <Pressable
+              onPress={() => setToggled((t) => ({ ...t, [s.stopId]: !open }))}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: open }}
+              style={({ pressed }) => [styles.connectionTop, pressed && styles.pressed]}
+            >
+              <View style={styles.stopText}>
+                <Text style={[styles.stopName, styles.bold, { color: c.text }]} numberOfLines={1}>
+                  {s.name ? tidyStopName(s.name) : s.stopId}
+                </Text>
+                <Text style={[styles.small, { color: c.muted }]}>{connectionSummary(s, routes)}</Text>
+              </View>
+              <Text style={[styles.eta, { color: c.muted }]}>{formatEta(s.time)}</Text>
+              <Text style={[styles.chevron, { color: c.muted }]}>{open ? '▴' : '▾'}</Text>
+            </Pressable>
+            {open &&
+              running.map(({ route, connection }) => (
+                <View key={route.key} style={[styles.connectionLine, route.mode !== 'subway' && styles.connectionLineNamed]}>
+                  <View style={route.mode === 'subway' ? styles.connectionBadge : styles.connectionBadgeNamed}>
+                    <Transfers lines={[route]} muted={c.muted} />
+                  </View>
+                  <View style={styles.stopText}>
+                    {connection.directions.map((d, j) => {
+                      const view = describeConnection(d, s.time);
+                      const vehicleId = view.vehicleId;
+                      return (
+                        <Pressable
+                          key={j}
+                          disabled={!vehicleId}
+                          onPress={() => vehicleId && onVehicle(vehicleId)}
+                          accessibilityRole={vehicleId ? 'button' : undefined}
+                          style={({ pressed }) => [styles.connectionWay, pressed && styles.pressed]}
+                        >
+                          <View style={styles.connectionRow}>
+                            <Text style={[styles.connectionTo, { color: c.text }]} numberOfLines={1}>
+                              {connectionHeading(d)}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.connectionStatus,
+                                { color: statusColor(view.status, dark, c.muted) },
+                                view.status === 'none' && styles.normal,
+                              ]}
+                            >
+                              {view.text}
+                            </Text>
+                          </View>
+                          {view.note && <Text style={[styles.small, { color: c.muted }]}>{view.note}</Text>}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            {open && idle.length > 0 && (
+              <Text style={[styles.small, styles.connectionIdle, { color: c.muted }]}>
+                None on the way now: {idle.map((l) => l.route.name).join(', ')}
+              </Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /** The tapped vehicle's line, where it is and its next stops, as a sheet along the bottom. */
 export function VehiclePanel({
   detail,
@@ -183,7 +297,9 @@ export function VehiclePanel({
   onShowTransfers,
   arrivals,
   alerts,
+  connections,
   onArrival,
+  onConnection,
   onLine,
   dark,
   bottomInset,
@@ -301,6 +417,8 @@ export function VehiclePanel({
             />
           </View>
         )}
+
+        <Connections key={vehicle.id} stops={connections} routes={routes} station={station} dark={dark} onVehicle={onConnection} />
 
         {upcoming.length > 0 ? (
           <View>
@@ -427,6 +545,22 @@ const styles = StyleSheet.create({
   swatch: { width: 8, height: 8, borderRadius: 4 },
   namedText: { fontSize: 12 },
   eta: { fontSize: 14, fontVariant: ['tabular-nums'] },
+  bold: { fontWeight: '700' },
+  normal: { fontWeight: '400' },
+  connections: { gap: 6, marginBottom: 8 },
+  connectionStop: { borderRadius: 10, paddingBottom: 4 },
+  connectionTop: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 10 },
+  chevron: { fontSize: 13 },
+  connectionLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 8 },
+  connectionBadge: { minWidth: 22, paddingTop: 5 },
+  // A railroad branch or bus route goes by name, too long to sit beside its ways, so it heads them.
+  connectionLineNamed: { flexDirection: 'column', alignItems: 'stretch', gap: 0 },
+  connectionBadgeNamed: { paddingTop: 4, paddingHorizontal: 4 },
+  connectionWay: { paddingVertical: 4, paddingHorizontal: 4, borderRadius: 6 },
+  connectionRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  connectionTo: { flex: 1, fontSize: 13 },
+  connectionStatus: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  connectionIdle: { paddingHorizontal: 10, paddingVertical: 4 },
 });
 
 /** Shared with the line panel, which is laid out the same way. */

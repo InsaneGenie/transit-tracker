@@ -1,7 +1,7 @@
-import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, StopConnections, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { AlertSeverity, Arrival, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, StopConnections, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = Pick<UpcomingStop, 'stopId' | 'name' | 'transfers' | 'access' | 'accessNote'> & { lon: number; lat: number };
@@ -76,4 +76,9 @@ export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record
 
 export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
   return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+/** The stations ahead of a vehicle where you can change, with whether each connection will still be coming. */
+export function fetchConnections(vehicleId: string, signal?: AbortSignal): Promise<{ stops: StopConnections[] }> {
+  return get(`/api/connections?vehicle=${encodeURIComponent(vehicleId)}`, signal);
 }

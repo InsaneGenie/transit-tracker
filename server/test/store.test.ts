@@ -472,6 +472,122 @@ describe('VehicleStore.arrivals', () => {
   });
 });
 
+describe('VehicleStore.connections', () => {
+  // Line 1 runs A -> B -> C; line 2 crosses it at Bravo, running D -> B -> E; line 3 runs alongside line 1.
+  const crossing: Record<string, string> = {
+    ...gtfs,
+    'stops.txt': `${gtfs['stops.txt']}D,Delta,40.79,-73.97\nE,Echo,40.79,-73.93\n`,
+    'routes.txt': `${gtfs['routes.txt']}2,2,Test Crosstown,00933C\n3,3,Test Twin,EE352E\n`,
+    'trips.txt': `${gtfs['trips.txt']}2,x1,wk,\n3,y1,wk,\n`,
+    'stop_times.txt': `${gtfs['stop_times.txt']}x1,D,08:00:00,08:00:00,1\nx1,B,08:03:00,08:03:00,2\nx1,E,08:06:00,08:06:00,3\ny1,A,09:00:00,09:00:00,1\ny1,B,09:02:00,09:02:00,2\ny1,C,09:05:00,09:05:00,3\n`,
+    'transfers.txt': `from_stop_id,to_stop_id,transfer_type,min_transfer_time\nB,B,2,180\n`,
+  };
+  const crossingFiles: GtfsFiles = (name) => (name in crossing ? Readable.from([crossing[name]]) : null);
+  const crosstown = (tripId: string, atB: number, endsAtB = false) => ({
+    id: tripId,
+    tripUpdate: {
+      trip: { tripId, routeId: '2' },
+      stopTimeUpdate: [
+        { stopId: 'D', departure: { time: atB - 180 } },
+        { stopId: 'B', arrival: { time: atB } },
+        ...(endsAtB ? [] : [{ stopId: 'E', arrival: { time: atB + 180 } }]),
+      ],
+    },
+  });
+
+  it('says, for each way of a line you can change to, which one you catch when you get there', async () => {
+    const feed = encodeFeed([
+      {
+        id: 'mine',
+        tripUpdate: {
+          trip: { tripId: 'tS', routeId: '1' },
+          stopTimeUpdate: [
+            { stopId: 'A', departure: { time: T - 30 } },
+            { stopId: 'B', arrival: { time: T + 120 } },
+            { stopId: 'C', arrival: { time: T + 300 } },
+          ],
+        },
+      },
+      { id: 'v', vehicle: { trip: { tripId: 'tS', routeId: '1' }, vehicle: { id: '5' }, position: { latitude: 40.795, longitude: -73.95 } } },
+      // Leaves Bravo a minute before you get there.
+      crosstown('x1', T + 60),
+      // Ends at Bravo, so it takes nobody on.
+      crosstown('x9', T + 130, true),
+      // Half a minute after you: less than the change takes.
+      crosstown('x2', T + 150),
+      crosstown('x3', T + 400),
+      { id: 'v3', vehicle: { trip: { tripId: 'x3', routeId: '2' }, vehicle: { id: '33' }, position: { latitude: 40.79, longitude: -73.96 } } },
+    ]);
+    const store = new VehicleStore([train], {}, async () => snapshotFromFeed(decodeFeed(feed), T), () => buildStaticIndex(crossingFiles));
+    await store.loadStatic();
+    await store.pollAll();
+    const stops = store.connections('test-train:5', T);
+    expect(stops.map((s) => [s.stopId, s.time])).toEqual([['B', T + 120]]);
+    // Line 3, which calls at the stops either side too, is no change.
+    expect(stops[0].lines).toEqual([
+      {
+        line: 'test-train:2',
+        directions: [
+          {
+            destinations: ['Echo'],
+            // The schedule's three minutes, capped for a change inside one station.
+            changeSeconds: 120,
+            catch: { time: T + 150, vehicleId: 'test-train:x2' },
+            next: { time: T + 400, vehicleId: 'test-train:33' },
+            missed: { time: T + 60, vehicleId: 'test-train:x1' },
+          },
+        ],
+      },
+    ]);
+    expect(store.connections('test-train:nope', T)).toEqual([]);
+  });
+
+  it('counts a railroad a short walk away, but only trains that leave from there', async () => {
+    const rail: FeedConfig = { ...train, id: 'test-rail', mode: 'rail', realtimeUrls: ['https://example.test/rail'] };
+    const railGtfs: Record<string, string> = {
+      'stops.txt': 'stop_id,stop_name,stop_lat,stop_lon\nR,Bravo Terminal,40.7905,-73.9505\nS,Suburb,40.70,-73.80\n',
+      'routes.txt': 'route_id,route_short_name,route_long_name,route_color\nL,Main Line,Main Line,00985F\n',
+      'trips.txt': 'route_id,trip_id,service_id,shape_id\nL,r1,wk,\n',
+      'stop_times.txt': 'trip_id,stop_id,arrival_time,departure_time,stop_sequence\nr1,R,08:00:00,08:00:00,1\nr1,S,08:40:00,08:40:00,2\n',
+    };
+    const railFiles: GtfsFiles = (name) => (name in railGtfs ? Readable.from([railGtfs[name]]) : null);
+    const feeds: Record<string, Uint8Array> = {
+      'https://example.test/train': encodeFeed([
+        {
+          id: 'mine',
+          tripUpdate: {
+            trip: { tripId: 'tS', routeId: '1' },
+            stopTimeUpdate: [
+              { stopId: 'A', departure: { time: T - 30 } },
+              { stopId: 'B', arrival: { time: T + 120 } },
+              { stopId: 'C', arrival: { time: T + 300 } },
+            ],
+          },
+        },
+      ]),
+      'https://example.test/rail': encodeFeed([
+        // Leaving for the suburbs 10 minutes after you get in: the walk takes 5.
+        { id: 'out', tripUpdate: { trip: { tripId: 'out', routeId: 'L' }, stopTimeUpdate: [{ stopId: 'R', departure: { time: T + 720 } }, { stopId: 'S', arrival: { time: T + 3000 } }] } },
+        // Arriving from them, ending here: nobody boards it.
+        { id: 'in', tripUpdate: { trip: { tripId: 'in', routeId: 'L' }, stopTimeUpdate: [{ stopId: 'S', departure: { time: T - 600 } }, { stopId: 'R', arrival: { time: T + 200 } }] } },
+      ]),
+    };
+    const store = new VehicleStore(
+      [train, rail],
+      {},
+      async (url) => snapshotFromFeed(decodeFeed(feeds[url]), T),
+      (config) => buildStaticIndex(config.id === 'test-rail' ? railFiles : crossingFiles),
+    );
+    await store.loadStatic();
+    await store.pollAll();
+    const [bravo] = store.connections('test-train:tS', T);
+    const main = bravo.lines.find((l) => l.line === 'test-rail:L');
+    expect(main?.directions).toEqual([
+      { destinations: ['Suburb'], changeSeconds: 300, catch: { time: T + 720 } },
+    ]);
+  });
+});
+
 describe('VehicleStore.lineVehicles', () => {
   it('places each vehicle along the line, with the way it is going', async () => {
     const feed = encodeFeed([
@@ -550,6 +666,8 @@ describe('API', () => {
     const one = await (await fetch(`${base}/api/vehicles/${encodeURIComponent('test-bus:MTA_1234')}`)).json();
     expect(one.vehicle.routeId).toBe('M15');
     expect((await fetch(`${base}/api/vehicles/missing`)).status).toBe(404);
+    expect(await (await fetch(`${base}/api/connections?vehicle=missing`)).json()).toEqual({ stops: [] });
+    expect((await fetch(`${base}/api/connections`)).status).toBe(400);
     const { lines } = await (await fetch(`${base}/api/route-lines?keys=test-train:1,test-train:nope`)).json();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ key: 'test-train:1', mode: 'subway', color: 'EE352E' });

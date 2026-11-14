@@ -3,7 +3,7 @@ import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } fr
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
-import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
+import { loadStaticIndex, type Access, type StaticIndex, type Stop } from './static-gtfs.js';
 
 export interface Vehicle {
   id: string;
@@ -80,6 +80,47 @@ export interface ArrivalDirection {
   /** Where they're headed; a line with branches has more than one. */
   destinations: string[];
   arrivals: Arrival[];
+}
+
+/** A connecting vehicle at the station where you change. */
+export interface ConnectionTrip {
+  /** Unix seconds it gets to the station. */
+  time: number;
+  /** Its vehicle, when it is out on the line, so it can be opened. */
+  vehicleId?: string;
+}
+
+/** One way a connecting line goes from the station where you change. */
+export interface ConnectionDirection {
+  /** Where it's headed; a line with branches has more than one. */
+  destinations: string[];
+  /** Seconds the change takes: walking to its platform, or to the station next door. */
+  changeSeconds: number;
+  /** The first one to get there after you do, or undefined when the feed lists none yet. */
+  catch?: ConnectionTrip;
+  /** When `catch` leaves less time than the change takes, the first one after it that leaves enough. */
+  next?: ConnectionTrip;
+  /** The last one to leave before you get there, when that is only a few minutes before. */
+  missed?: ConnectionTrip;
+}
+
+/** A line you can change to, both ways. */
+export interface LineConnection {
+  /** The line's key, `${feed}:${routeId}`. */
+  line: string;
+  /** Empty when none of its vehicles are on the way to the station. */
+  directions: ConnectionDirection[];
+}
+
+/** A station ahead of a vehicle where you can change, with how each connection lines up. */
+export interface StopConnections {
+  stopId: string;
+  name?: string;
+  lat?: number;
+  lon?: number;
+  /** Unix seconds the vehicle gets there. */
+  time: number;
+  lines: LineConnection[];
 }
 
 /** A vehicle placed along its line's stations, for the line's own page. */
@@ -241,6 +282,33 @@ const ESTIMATE_MARGIN = 0.03;
  * and the bus stop across the street, but never the next stop along the line.
  */
 const STATION_RADIUS_M = 150;
+
+/** Stations ahead with connections worth checking: the next few, within the hour. */
+const CONNECTION_STOPS = 4;
+const CONNECTION_HORIZON_S = 60 * 60;
+/** A connection that left this long or less before you get there is worth a mention, as one you just miss. */
+const MISSED_WINDOW_S = 5 * 60;
+/** Stations of another agency this close to a stop are ones you can walk to: Penn Station, Jamaica, Grand Central. */
+const WALK_TO_M = 250;
+/** Comfortably more than `WALK_TO_M` in degrees of latitude (longitude degrees are shorter here, so 1.4 times). */
+const WALK_BOX_DEG = 0.003;
+/** Seconds to change when the schedule doesn't say. */
+const CHANGE_SAME_STATION_S: Record<Mode, number> = { subway: 120, rail: 180, bus: 60 };
+const CHANGE_WALK_S = 300;
+/**
+ * The longest a change on one station's platforms is taken to need. The subway's schedule gives three
+ * minutes for every one, which would call a cross-platform change with a two-minute wait tight.
+ */
+const MAX_SAME_STATION_S = 120;
+/** Even across the platform (the schedule says no time at all), stepping off and across takes a moment. */
+const MIN_CHANGE_S = 30;
+
+/** A subway line's express twin (the 7X beside the 7) counts as that line. */
+function baseRoute(index: StaticIndex, mode: Mode, routeId: string): string {
+  return mode === 'subway' && routeId.length > 1 && routeId.endsWith('X') && index.routes.has(routeId.slice(0, -1))
+    ? routeId.slice(0, -1)
+    : routeId;
+}
 
 function inside(b: Bbox, lat: number, lon: number, margin = 0): boolean {
   return lon >= b[0] - margin && lat >= b[1] - margin && lon <= b[2] + margin && lat <= b[3] + margin;
@@ -789,6 +857,207 @@ export class VehicleStore {
     }
     for (const d of directions) d.arrivals.sort((a, b) => a.time - b.time);
     return directions.sort((a, b) => a.arrivals[0].time - b.arrivals[0].time);
+  }
+
+  /**
+   * The stations ahead of a vehicle where you can change, and for each line there whether its next
+   * vehicle each way will still be coming when you arrive, from live arrival times. Lines of other
+   * agencies a short walk away count too (the subway at Penn Station for a Long Island train), but
+   * from a train, buses don't: a big station has dozens.
+   */
+  connections(vehicleId: string, now = Date.now() / 1000): StopConnections[] {
+    const all = this.vehicles(now);
+    const vehicle = all.find((v) => v.id === vehicleId);
+    if (!vehicle) return [];
+    const feed = this.feeds.find((f) => f.config.id === vehicle.feed);
+    const index = feed?.index;
+    const trip = vehicle.tripId ? feed?.snapshot?.trips.find((t) => t.tripId === vehicle.tripId) : undefined;
+    if (!feed || !index || !trip) return [];
+    const byTrip = new Map(all.flatMap((v) => (v.tripId ? [[`${v.feed}|${v.tripId}`, v.id] as const] : [])));
+    const ownBase = vehicle.routeId && baseRoute(index, feed.config.mode, vehicle.routeId);
+    const walkable = this.feeds.filter((f) => f !== feed && f.index && f.snapshot && f.config.mode !== 'bus');
+
+    // Bus routes that share more than one stop with this trip run alongside it (the M15 and M15+ on 2nd
+    // Avenue, or two routes sharing a stretch of street) rather than crossing it, so they're no change.
+    const alongside = new Set<string>();
+    if (feed.config.mode === 'bus') {
+      const shared = new Map<string, number>();
+      for (const s of trip.stops) {
+        for (const r of index.stopRoutes.get(s.stopId) ?? []) shared.set(r, (shared.get(r) ?? 0) + 1);
+      }
+      for (const [r, n] of shared) if (n > 1) alongside.add(r);
+    }
+
+    // The stops ahead within the hour, with the stations of other agencies a short walk from each.
+    type Near = { feed: FeedState; station: string; meters: number };
+    const ahead: { stopId: string; stop: Stop; time: number; near: Near[]; parallel: Set<string> }[] = [];
+    for (const [k, s] of trip.stops.entries()) {
+      const when = s.arrival ?? s.departure;
+      if (when === undefined || (s.departure ?? s.arrival)! <= now) continue;
+      if (when > now + CONNECTION_HORIZON_S) break;
+      const stop = index.stops.get(s.stopId);
+      if (!stop) continue;
+      const near: Near[] = [];
+      for (const other of walkable) {
+        const otherIndex = other.index!;
+        for (const [id, place] of otherIndex.stops) {
+          // A quick look at the numbers first: this runs for every stop ahead.
+          if (Math.abs(place.lat - stop.lat) > WALK_BOX_DEG || Math.abs(place.lon - stop.lon) > WALK_BOX_DEG * 1.4) continue;
+          if (otherIndex.stationOf.has(id) || !otherIndex.stopRoutes.has(id)) continue;
+          const meters = distanceMeters(place, stop);
+          if (meters <= WALK_TO_M) near.push({ feed: other, station: id, meters });
+        }
+      }
+      // A line that also calls at the stops either side runs alongside here (the M beside the R in
+      // Queens): changing to it gets you nowhere new. Where it splits off, it counts.
+      const before = trip.stops[k - 1] && index.stopRoutes.get(trip.stops[k - 1].stopId);
+      const after = trip.stops[k + 1] && index.stopRoutes.get(trip.stops[k + 1].stopId);
+      const parallel = new Set(before && after ? before.filter((r) => after.includes(r)) : []);
+      ahead.push({ stopId: s.stopId, stop, time: Math.max(when, now), near, parallel });
+    }
+    // A station a short walk from several stops in a row (bus stops a block apart) belongs to the closest.
+    const closest = new Map<string, number>();
+    for (const a of ahead) {
+      for (const n of a.near) {
+        const key = `${n.feed.config.id}|${n.station}`;
+        closest.set(key, Math.min(closest.get(key) ?? Infinity, n.meters));
+      }
+    }
+
+    const out: StopConnections[] = [];
+    for (const { stopId, stop, time, near, parallel } of ahead) {
+      if (out.length >= CONNECTION_STOPS) break;
+      const station = index.stationOf.get(stopId) ?? stopId;
+
+      const lines: LineConnection[] = [];
+      // Lines of the vehicle's own agency that call here.
+      const own = new Set(
+        (index.stopRoutes.get(stopId) ?? [])
+          .filter((r) => !alongside.has(r) && !parallel.has(r))
+          .map((r) => baseRoute(index, feed.config.mode, r))
+          .filter((r) => r !== ownBase),
+      );
+      const here = new Set([station, ...(index.transfers.get(station)?.keys() ?? [])]);
+      const ownChange = (to: string) => {
+        const given = index.transfers.get(station)?.get(to);
+        if (to === station) return Math.max(MIN_CHANGE_S, Math.min(given ?? CHANGE_SAME_STATION_S[feed.config.mode], MAX_SAME_STATION_S));
+        return given ?? CHANGE_WALK_S;
+      };
+      for (const route of own) {
+        lines.push(
+          this.lineConnection(feed, route, time, now, byTrip, (id) => {
+            const at = index.stationOf.get(id) ?? id;
+            if (here.has(at)) return ownChange(at);
+            const other = index.stops.get(id);
+            // The bus stop across the street.
+            return other && distanceMeters(other, stop) <= STATION_RADIUS_M ? ownChange(station) : undefined;
+          }),
+        );
+      }
+
+      // Lines at stations of other agencies within a short walk.
+      for (const other of walkable) {
+        const otherIndex = other.index!;
+        const stations = near
+          .filter((n) => n.feed === other && closest.get(`${other.config.id}|${n.station}`) === n.meters)
+          .map((n) => n.station);
+        if (!stations.length) continue;
+        const reach = new Set(stations.flatMap((id) => [id, ...(otherIndex.transfers.get(id)?.keys() ?? [])]));
+        const routes = new Set(stations.flatMap((id) => otherIndex.stopRoutes.get(id) ?? []).map((r) => baseRoute(otherIndex, other.config.mode, r)));
+        for (const route of routes) {
+          lines.push(
+            this.lineConnection(other, route, time, now, byTrip, (id) =>
+              reach.has(otherIndex.stationOf.get(id) ?? id) ? CHANGE_WALK_S : undefined,
+            ),
+          );
+        }
+      }
+      // A stop whose lines have nothing running (the B on a weekend) isn't worth one of the few places.
+      if (lines.some((l) => l.directions.length > 0)) out.push({ stopId, name: stop.name, lat: stop.lat, lon: stop.lon, time, lines });
+    }
+    return out;
+  }
+
+  /**
+   * How one line's vehicles reach a station where you change, each way, against when you get there.
+   * `changeAt` gives the seconds needed to change to a stop of the line, or undefined when the stop isn't
+   * at the station.
+   */
+  private lineConnection(
+    feed: FeedState,
+    route: string,
+    arrive: number,
+    now: number,
+    byTrip: Map<string, string>,
+    changeAt: (stopId: string) => number | undefined,
+  ): LineConnection {
+    const index = feed.index!;
+    const line = `${feed.config.id}:${route}`;
+    // Each vehicle once, at its soonest call (one feed lists a vehicle on its current and next trip).
+    const calls: { platform: string; time: number; change: number; vehicleId?: string; destination?: string }[] = [];
+    const seen = new Map<string, number>();
+    for (const t of feed.snapshot?.trips ?? []) {
+      if (!t.routeId || baseRoute(index, feed.config.mode, t.routeId) !== route) continue;
+      const last = t.stops.at(-1);
+      for (const s of t.stops) {
+        const time = s.departure ?? s.arrival;
+        // Only calls still to come, from a few minutes before you get there.
+        if (time === undefined || time <= now || time < arrive - MISSED_WINDOW_S) continue;
+        // A trip ending here takes nobody on.
+        if (s === last) break;
+        const change = changeAt(s.stopId);
+        if (change === undefined) continue;
+        const vehicleId = byTrip.get(`${feed.config.id}|${t.tripId}`);
+        const destination = last && index.stops.get(last.stopId)?.name;
+        // Railroad trains both ways share one stop id at a station, so there each place they go is a way.
+        const platform = feed.config.mode === 'rail' && destination ? `to ${destination}` : s.stopId;
+        const call = { platform, time, change, vehicleId, destination };
+        const before = vehicleId === undefined ? undefined : seen.get(vehicleId);
+        if (before === undefined) {
+          if (vehicleId !== undefined) seen.set(vehicleId, calls.length);
+          calls.push(call);
+        } else if (time < calls[before].time) {
+          calls[before] = call;
+        }
+        break;
+      }
+    }
+
+    // The platform tells the two ways apart; platforms whose trips end at the same place are one way.
+    // (For a railroad, `platform` is already where it's going.)
+    const groups: { destinations: Set<string>; platforms: Set<string>; calls: typeof calls }[] = [];
+    for (const call of calls) {
+      const group =
+        groups.find((g) => g.platforms.has(call.platform)) ??
+        (call.destination ? groups.find((g) => g.destinations.has(call.destination!)) : undefined);
+      if (group) {
+        group.platforms.add(call.platform);
+        if (call.destination) group.destinations.add(call.destination);
+        group.calls.push(call);
+      } else {
+        groups.push({ destinations: new Set(call.destination ? [call.destination] : []), platforms: new Set([call.platform]), calls: [call] });
+      }
+    }
+
+    const trip = (c: (typeof calls)[number]): ConnectionTrip => ({ time: c.time, ...(c.vehicleId && { vehicleId: c.vehicleId }) });
+    const directions = groups.map((g): ConnectionDirection => {
+      const sorted = g.calls.sort((a, b) => a.time - b.time);
+      const changeSeconds = Math.min(...sorted.map((c) => c.change));
+      const first = sorted.find((c) => c.time >= arrive);
+      const next = first && first.time - arrive < changeSeconds ? sorted.find((c) => c.time >= arrive + changeSeconds) : undefined;
+      const missed = sorted.filter((c) => c.time < arrive && c.time >= arrive - MISSED_WINDOW_S).at(-1);
+      return {
+        destinations: [...g.destinations].sort(),
+        changeSeconds,
+        ...(first && { catch: trip(first) }),
+        ...(next && { next: trip(next) }),
+        ...(missed && { missed: trip(missed) }),
+      };
+    });
+    // In a steady order, so the ways don't swap places each time the times are checked again.
+    const label = (d: ConnectionDirection) => [...d.destinations].sort().join('|');
+    directions.sort((a, b) => label(a).localeCompare(label(b)));
+    return { line, directions };
   }
 
   /**
