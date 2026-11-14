@@ -53,6 +53,15 @@ export const GUIDE: GuideSection[] = [
     ],
   },
   {
+    title: 'Should I run? Leave-now alerts',
+    points: [
+      'Pick a station, then tap Alert me above the direction you want and choose how long your walk there takes.',
+      'You get a notification when it’s time to leave, so you reach the platform or stop just before the next train or bus you can still make. It follows where that vehicle really is, so a late train means you leave later.',
+      'A bar over the map counts down until then, even after you close the station. Tap it to see the station again, or ✕ to stop the alert.',
+      'Allow notifications when asked. On the website, keep the page open in a tab; on a phone’s browser, keep it on screen. In the app, the notification comes even when the app is closed, set from the latest arrival times it saw.',
+    ],
+  },
+  {
     title: 'Delays and service changes',
     points: [
       'A train or bus card, and a line’s page, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',

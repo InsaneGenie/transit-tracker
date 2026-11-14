@@ -8,6 +8,7 @@ import type { Station } from './MapView';
 import { shareTitle, shareUrl } from './share';
 import { ShareButton } from './ShareButton';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
+import type { LeaveControls } from './leaveAlert';
 import { Arrivals, Transfers } from './VehiclePanel';
 
 interface Props {
@@ -26,6 +27,8 @@ interface Props {
   onBack: () => void;
   onStop: (stop: UpcomingStop) => void;
   onArrival: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer at the picked station shows that line instead. */
   onLine: (key: string) => void;
   onClose: () => void;
@@ -33,7 +36,7 @@ interface Props {
 }
 
 /** A whole line, opened from a station's transfers: its stations here, its route and vehicles on the map. */
-export function LinePanel({ info, line, routes, station, arrivals, alerts, backLabel, onBack, onStop, onArrival, onLine, onClose, ref }: Props) {
+export function LinePanel({ info, line, routes, station, arrivals, alerts, backLabel, onBack, onStop, onArrival, leave, onLine, onClose, ref }: Props) {
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
@@ -82,7 +85,7 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
               )}
             </div>
           </div>
-          <Arrivals directions={arrivals} noun={noun} onPick={onArrival} />
+          <Arrivals directions={arrivals} noun={noun} leave={leave} onPick={onArrival} />
         </section>
       )}
 
