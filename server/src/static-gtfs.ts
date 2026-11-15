@@ -6,6 +6,7 @@ import { createInflateRaw } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import { parse } from 'csv-parse';
 import { Polyline, type LatLon } from './geo.js';
+import { emptyCalendar, type ServiceCalendar, type TimingPoint, type TripEnd } from './schedule.js';
 import type { Timetable } from './timetable.js';
 
 export interface Stop extends LatLon {
@@ -50,6 +51,15 @@ export interface StaticIndex {
   stopRoutes: Map<string, string[]>;
   /** The stations each route regularly calls at, as station ids; for stops-only schedules, in order, one way. */
   routeStations: Map<string, string[]>;
+  /** Which days each service runs. */
+  calendar: ServiceCalendar;
+  /** For the report cards: one stop mid-line each way, with when trips are due there (see ReportKind). */
+  timingPoints: TimingPoint[];
+  /**
+   * For the report cards: when each trip is due at the end of its run, by trip id and by
+   * `${routeId}|${firstStopId}|${startSeconds}`, which several days' services can share (see ReportKind).
+   */
+  tripEnds: Map<string, TripEnd[]>;
   /** The station each platform belongs to (127N and 127S are in 127). Stops without one are left out. */
   stationOf: Map<string, string>;
   /**
@@ -102,6 +112,16 @@ export interface BusSchedule {
   routes: Map<string, RouteTrips>;
 }
 
+/**
+ * What the report cards need from a schedule. "gaps" times trips at a stop mid-line, for how evenly they
+ * come (subway and bus). "ontime" keeps when each trip is due at the end of its run (rail, which runs
+ * to a timetable). Either is small next to the rest of the index.
+ */
+export type ReportKind = 'gaps' | 'ontime' | 'none';
+
+/** Rail feeds whose realtime trip ids are the schedule's also keep each trip's end by its id. */
+export type ReportOptions = ReportKind | 'ontime-by-id';
+
 /** Opens a file inside a GTFS feed, or returns null when the feed doesn't have it. */
 export type GtfsFiles = (name: string) => Readable | null;
 
@@ -141,6 +161,18 @@ function splitCsv(line: string): string[] {
   }
   out.push(field);
   return out;
+}
+
+/** The field at `at` in a line with no quotes. */
+function fieldAt(line: string, at: number): string {
+  let start = 0;
+  for (let i = 0; i < at; i++) {
+    const comma = line.indexOf(',', start);
+    if (comma < 0) return '';
+    start = comma + 1;
+  }
+  const end = line.indexOf(',', start);
+  return end < 0 ? line.slice(start) : line.slice(start, end);
 }
 
 /**
@@ -186,7 +218,8 @@ async function* rowsWhere(
       }
       if (!line) continue;
       // The trip id usually leads the row, so most rows are passed over on their first field.
-      const value = at === 0 && !line.startsWith('"') ? line.slice(0, line.indexOf(',')) : splitCsv(line)[at];
+      // Another column is found without splitting the whole line, unless it has quotes.
+      const value = line.includes('"') ? splitCsv(line)[at] : at === 0 ? line.slice(0, line.indexOf(',')) : fieldAt(line, at);
       if (spans) {
         if (value !== runValue) {
           endRun();
@@ -259,7 +292,12 @@ export function parseGtfsTime(value: string | undefined): number | undefined {
   return h * 3600 + m * 60 + s;
 }
 
-export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops' = 'full'): Promise<StaticIndex> {
+export async function buildStaticIndex(
+  files: GtfsFiles,
+  detail: 'full' | 'stops' = 'full',
+  options: ReportOptions = 'none',
+): Promise<StaticIndex> {
+  const report: ReportKind = options === 'ontime-by-id' ? 'ontime' : options;
   const stops = new Map<string, Stop>();
   // Platforms (127N, 127S) belong to a station (127).
   const stationOf = new Map<string, string>();
@@ -287,7 +325,7 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
     });
   }
 
-  const trips = new Map<string, { routeId: string; shapeId?: string }>();
+  const trips = new Map<string, { routeId: string; shapeId?: string; serviceId: string; direction: string }>();
   const tripShapes = new Map<string, string>();
   const routeShapes = new Map<string, Set<string>>();
   // Without every stop time, a route's stops come from one typical trip each way: one that follows the
@@ -295,9 +333,9 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   const patterns = new Map<string, Map<string, { count: number; tripId: string }>>();
   const timed = detail === 'stops' ? new BusScheduleBuilder() : undefined;
   for await (const r of rows(files, 'trips.txt')) {
-    trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined });
+    trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined, serviceId: r.service_id ?? '', direction: r.direction_id ?? '' });
     timed?.addTrip(r);
-    if (detail === 'stops') {
+    if (detail === 'stops' || report === 'gaps') {
       const way = `${r.route_id}|${r.direction_id ?? ''}`;
       let byShape = patterns.get(way);
       if (!byShape) patterns.set(way, (byShape = new Map()));
@@ -351,6 +389,26 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
       if (!byRoute) calls.set(station, (byRoute = new Map()));
       byRoute.set(trip.routeId, (byRoute.get(trip.routeId) ?? 0) + 1);
     }
+    if (typicalWay.has(tripId)) typicalStops.set(tripId, times.map((t) => t.stopId));
+    if (report === 'ontime' && times.length >= 2) {
+      const first = times[0];
+      const last = times.at(-1)!;
+      const start = first.departure ?? first.arrival;
+      const seconds = last.arrival ?? last.departure;
+      if (seconds !== undefined) {
+        const service = intern(trip.serviceId);
+        if (options === 'ontime-by-id') tripEnds.set(tripId, [{ routeId: trip.routeId, serviceIds: [service], stopId: last.stopId, seconds }]);
+        // The same train runs under many services (Metro-North has one per week or so), so they share one entry.
+        if (start !== undefined) {
+          const key = `${trip.routeId}|${first.stopId}|${start}`;
+          let ends = tripEnds.get(key);
+          if (!ends) tripEnds.set(key, (ends = []));
+          const same = ends.find((e) => e.stopId === last.stopId && e.seconds === seconds);
+          if (!same) ends.push({ routeId: trip.routeId, serviceIds: [service], stopId: last.stopId, seconds });
+          else if (!same.serviceIds.includes(service)) same.serviceIds.push(service);
+        }
+      }
+    }
     // One typical trip says nothing about usual travel times.
     if (detail === 'stops') {
       if (listed.get(trip.routeId)?.tripId === tripId) listedStops.set(trip.routeId, times.map((t) => t.stopId));
@@ -370,11 +428,19 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   let currentTrip: string | undefined;
   let buffer: StopTime[] = [];
   const typical = new Set<string>();
+  // Each way's typical trip, and the stops it makes, for picking the stops the report cards time trips at.
+  const typicalWay = new Map<string, string>();
+  const typicalStops = new Map<string, string[]>();
+  const tripEnds = new Map<string, TripEnd[]>();
+  // One copy of each service id, however many trips name it.
+  const serviceIds = new Map<string, string>();
+  const intern = (id: string) => serviceIds.get(id) ?? (serviceIds.set(id, id), id);
   // The busier direction's typical trip lists the route's stops, in order, one side of the street.
   const listed = new Map<string, { tripId: string; trips: number }>();
   for (const [way, byShape] of patterns) {
     const usual = [...byShape.values()].reduce((a, b) => (b.count > a.count ? b : a));
     typical.add(usual.tripId);
+    if (report === 'gaps') typicalWay.set(usual.tripId, way);
     const routeId = way.slice(0, way.lastIndexOf('|'));
     const trips = [...byShape.values()].reduce((n, b) => n + b.count, 0);
     if (trips > (listed.get(routeId)?.trips ?? 0)) listed.set(routeId, { tripId: usual.tripId, trips });
@@ -399,6 +465,8 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
     });
   }
   if (currentTrip) flushTrip(currentTrip, buffer);
+  const timingPoints = report === 'gaps' ? await timeTrips(files, trips, typicalWay, typicalStops) : [];
+  typicalStops.clear();
 
   const segments = new Map<string, Segment>();
   for (const [key, byFrom] of tallies) {
@@ -440,7 +508,83 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
     for await (const r of rows(files, 'calendar_dates.txt')) timed.addException(r);
     busSchedules.push(timed.build(new Map([...listed].map(([routeId, l]) => [routeId, l.tripId]))));
   }
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop, busSchedules, stationOf, transfers: transferTimes };
+
+  const calendar = await readCalendar(files);
+  return {
+    stops,
+    routes,
+    segments,
+    shapes,
+    tripShapes,
+    routeShapes,
+    ...byStop,
+    calendar,
+    timingPoints,
+    tripEnds,
+    busSchedules,
+    stationOf,
+    transfers: transferTimes,
+  };
+}
+
+/** Fewer stops than this and a trip has no middle worth timing. */
+const MIN_TIMED_STOPS = 3;
+
+/**
+ * Picks the stop halfway along each way's typical trip and reads when every trip that way is due there.
+ * That means reading the stop times a second time, keeping only the rows at those stops: for the buses,
+ * about four seconds on a laptop, where reading every row with a full parse would take far longer.
+ */
+async function timeTrips(
+  files: GtfsFiles,
+  trips: Map<string, { routeId: string; serviceId: string; direction: string }>,
+  typicalWay: Map<string, string>,
+  typicalStops: Map<string, string[]>,
+): Promise<TimingPoint[]> {
+  const points = new Map<string, TimingPoint>();
+  for (const [tripId, stopIds] of typicalStops) {
+    const trip = trips.get(tripId);
+    if (!trip || !typicalWay.has(tripId) || stopIds.length < MIN_TIMED_STOPS) continue;
+    const stopId = stopIds[Math.floor(stopIds.length / 2)];
+    points.set(`${trip.routeId}|${trip.direction}|${stopId}`, {
+      routeId: trip.routeId,
+      direction: trip.direction,
+      stopId,
+      towardStopId: stopIds.at(-1),
+      times: new Map(),
+    });
+  }
+  const stopIds = new Set([...points.values()].map((p) => p.stopId));
+  for await (const r of rowsWhere(files, 'stop_times.txt', 'stop_id', stopIds)) {
+    const trip = trips.get(r.trip_id);
+    const point = trip && points.get(`${trip.routeId}|${trip.direction}|${r.stop_id}`);
+    const seconds = parseGtfsTime(r.arrival_time) ?? parseGtfsTime(r.departure_time);
+    if (!point || seconds === undefined) continue;
+    let times = point.times.get(trip.serviceId);
+    if (!times) point.times.set(trip.serviceId, (times = []));
+    times.push(seconds);
+  }
+  for (const point of points.values()) for (const times of point.times.values()) times.sort((a, b) => a - b);
+  return [...points.values()].filter((p) => p.times.size);
+}
+
+/** Which days each service runs, from calendar.txt and calendar_dates.txt (either may be missing). */
+async function readCalendar(files: GtfsFiles): Promise<ServiceCalendar> {
+  const calendar = emptyCalendar();
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for await (const r of rows(files, 'calendar.txt')) {
+    const days = DAYS.reduce((bits, day, i) => (r[day]?.trim() === '1' ? bits | (1 << i) : bits), 0);
+    calendar.weekly.set(r.service_id, { days, start: r.start_date?.trim() ?? '', end: r.end_date?.trim() ?? '' });
+  }
+  for await (const r of rows(files, 'calendar_dates.txt')) {
+    const date = r.date?.trim();
+    const into = r.exception_type?.trim() === '1' ? calendar.added : r.exception_type?.trim() === '2' ? calendar.removed : undefined;
+    if (!date || !into) continue;
+    let set = into.get(date);
+    if (!set) into.set(date, (set = new Set()));
+    set.add(r.service_id);
+  }
+  return calendar;
 }
 
 /** Gathers a stops-only schedule's trips, then packs them into a BusSchedule. */
@@ -573,6 +717,8 @@ function routesByStop(
   return { stopRoutes: out, routeStations };
 }
 
+const tripCount = (p: TimingPoint) => [...p.times.values()].reduce((n, t) => n + t.length, 0);
+
 /** Combines several schedules, such as one per borough, into one index. */
 export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
   const merged: StaticIndex = {
@@ -584,6 +730,9 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     routeShapes: new Map(),
     stopRoutes: new Map(),
     routeStations: new Map(),
+    calendar: emptyCalendar(),
+    timingPoints: [],
+    tripEnds: new Map(),
     stationOf: new Map(),
     transfers: new Map(),
     busSchedules: [],
@@ -591,7 +740,7 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
   for (const index of indexes) {
     merged.busSchedules.push(...index.busSchedules);
     for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {
-      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes' || key === 'busSchedules') continue;
+      if (['routeShapes', 'routeStations', 'stopRoutes', 'calendar', 'timingPoints', 'tripEnds', 'busSchedules'].includes(key)) continue;
       const target = merged[key] as Map<string, unknown>;
       for (const [k, v] of index[key] as Map<string, unknown>) if (!target.has(k)) target.set(k, v);
     }
@@ -602,6 +751,19 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     for (const key of ['routeStations', 'stopRoutes'] as const) {
       for (const [id, list] of index[key]) merged[key].set(id, [...new Set([...(merged[key].get(id) ?? []), ...list])]);
     }
+    // Each borough's buses have their own service ids, so their calendars just add up.
+    for (const [id, s] of index.calendar.weekly) merged.calendar.weekly.set(id, s);
+    for (const key of ['added', 'removed'] as const) {
+      for (const [date, ids] of index.calendar[key]) merged.calendar[key].set(date, new Set([...(merged.calendar[key].get(date) ?? []), ...ids]));
+    }
+    for (const point of index.timingPoints) {
+      const same = merged.timingPoints.find((p) => p.routeId === point.routeId && p.direction === point.direction);
+      if (!same) merged.timingPoints.push(point);
+      else if (same.stopId === point.stopId) {
+        for (const [service, times] of point.times) same.times.set(service, [...(same.times.get(service) ?? []), ...times].sort((a, b) => a - b));
+      } else if (tripCount(point) > tripCount(same)) merged.timingPoints[merged.timingPoints.indexOf(same)] = point;
+    }
+    for (const [key, ends] of index.tripEnds) merged.tripEnds.set(key, [...(merged.tripEnds.get(key) ?? []), ...ends]);
   }
   return merged;
 }
@@ -630,9 +792,10 @@ export async function loadStaticIndex(
   feedId: string,
   urls: string[],
   detail: 'full' | 'stops' = 'full',
+  report: ReportOptions = 'none',
 ): Promise<StaticIndex> {
   const indexes = [];
-  for (const url of urls) indexes.push(await buildStaticIndex(zipFiles(await download(feedId, url)), detail));
+  for (const url of urls) indexes.push(await buildStaticIndex(zipFiles(await download(feedId, url)), detail, report));
   return indexes.length === 1 ? indexes[0] : mergeIndexes(indexes);
 }
 

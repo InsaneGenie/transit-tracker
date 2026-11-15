@@ -35,6 +35,8 @@ export interface FeedConfig {
    * GTFS-Realtime feed) rather than GTFS-Realtime's clockwise from north.
    */
   bearingFromEast?: boolean;
+  /** Realtime trip ids are the schedule's own (the LIRR's), so the report cards can look trips up by id. */
+  tripIdsMatchSchedule?: boolean;
   /**
    * Not needed for the site to count as ready: a feed run by a smaller operator that may be down without
    * holding up a deploy (the server otherwise waits for every feed's first positions).
@@ -83,6 +85,7 @@ export const FEEDS: FeedConfig[] = [
     realtimeUrls: [`${MTA_RT}lirr%2Fgtfs-lirr`],
     staticUrls: [`${MTA_STATIC}gtfslirr.zip`],
     keepsPastStops: true,
+    tripIdsMatchSchedule: true,
     pollSeconds: 30,
   },
   {

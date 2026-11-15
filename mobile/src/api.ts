@@ -1,6 +1,7 @@
 import { EXTRA_MODES } from '../../web/src/vehicles';
 import type { BikeDocks } from '../../web/src/api';
 import type { AlertSeverity, ArrivalDirection, LineService, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, StopConnections, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { LineReport } from '../../web/src/report';
 import type { Bounds } from './region';
 
 export type { AlertSeverity, Arrival, BikeDock, BikeDocks, ArrivalDirection, Gap, LineService, LineVehicle, MissingTrip, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, StopConnections, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
@@ -83,6 +84,11 @@ export function fetchAlertSummary(signal?: AbortSignal): Promise<{ lines: Record
 
 export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ alerts: ServiceAlert[] }> {
   return get(`/api/alerts?lines=${keys.map(encodeURIComponent).join(',')}`, signal);
+}
+
+/** A line's daily report cards, today's first. */
+export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
+  return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
 }
 
 /** The stations ahead of a vehicle where you can change, with whether each connection will still be coming. */

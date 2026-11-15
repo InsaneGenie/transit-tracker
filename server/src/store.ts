@@ -6,6 +6,7 @@ import { applyStationAccess, loadStationAccess } from './accessibility.js';
 import { download, loadStaticIndex, zipFiles, type Access, type StaticIndex, type Stop } from './static-gtfs.js';
 import { loadTimetable, tripsAt, type Timetable } from './timetable.js';
 import { blocksAtWork, gapsAlong, lineService, type AtWork, type Gap, type LineService } from './service.js';
+import type { LineReport, ReportBook } from './reports.js';
 
 export interface Vehicle {
   id: string;
@@ -379,9 +380,21 @@ function alongPaths<T extends { lat?: number; lon?: number }>(stops: T[], paths:
 
 export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 
+/** Lines with live positions from the subway, buses and railroads get report cards. */
+const hasReportCard = (config: FeedConfig) => !config.timetable && config.mode !== 'ferry';
+
 /** A feed's schedule, with which stations are accessible when that comes from elsewhere. */
 async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
-  const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail);
+  // Rail runs to a timetable, so its report card says how many trains were on time; subway and buses
+  // come often enough that how evenly they come matters more. Ferries have no report card yet.
+  const report = hasReportCard(config)
+    ? config.mode === 'rail'
+      ? config.tripIdsMatchSchedule
+        ? 'ontime-by-id'
+        : 'ontime'
+      : 'gaps'
+    : 'none';
+  const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail, report);
   if (config.timetable) {
     const tables: Timetable[] = [];
     // Already downloaded for the index, so read from the copy kept on disk.
@@ -441,6 +454,8 @@ export class VehicleStore {
   private fixes = new Map<string, FixHistory>();
   /** Each GPS vehicle's way from its position to its next stop, by vehicle id, reused until either changes. */
   private fixTracks = new Map<string, { key: string; track: Polyline; fromMeters?: number }>();
+  /** Takes in each full poll for the lines' daily report cards, when set. */
+  reports?: ReportBook;
 
   constructor(
     configs: FeedConfig[],
@@ -501,6 +516,15 @@ export class VehicleStore {
       let merged = mergeSnapshots(ok);
       if (feed.config.agencyPrefixedIds) merged = withoutAgencyPrefixes(merged);
       feed.snapshot = feed.config.matchTripsByVehicle ? linkTripsByVehicle(merged) : merged;
+    }
+    // Only polls where every URL answered, so a stretch counted as watched was watched for every line.
+    if (this.reports && feed.snapshot && !failed.length && hasReportCard(feed.config)) {
+      try {
+        this.reports.observe(feed.config.id, feed.config.mode, feed.config.pollSeconds, feed.snapshot, feed.index);
+      } catch (err) {
+        // The report cards must never stop the map.
+        console.warn(`${feed.config.id}: report cards: ${(err as Error).stack ?? err}`);
+      }
     }
     feed.lastError = failed.length ? failed.join('; ') : undefined;
   }
@@ -1262,6 +1286,14 @@ export class VehicleStore {
     const atWork = this.busesAtWork(feed, now);
     if (!atWork || atWork.work.running < atWork.work.scheduled * MIN_RUNNING_SHARE) return undefined;
     return lineService(index.busSchedules, routeId, atWork.covered, atWork.work.blocks, now);
+  }
+
+  /** A line's daily report cards, by legend key, or null for a line no schedule lists. */
+  report(key: string, now = Date.now() / 1000): LineReport | null {
+    const split = key.indexOf(':');
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    if (!feed || !this.reports || !hasReportCard(feed.config) || !feed.index?.routes.has(key.slice(split + 1))) return null;
+    return this.reports.report(key, feed.config.mode, feed.index, now);
   }
 
   private counts?: { at: number; lines: Record<string, number> };

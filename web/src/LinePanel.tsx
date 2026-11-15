@@ -1,6 +1,7 @@
 import type { CSSProperties, Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
+import { ReportCard } from './ReportCard';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, UpcomingStop } from './api';
 import { BackButton } from './BackButton';
 import { CloseButton } from './CloseButton';
@@ -71,6 +72,8 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
       </div>
 
       <AlertList alerts={alerts} routes={routes} empty="No delays or service changes on this line right now." />
+      {/* With a station picked, its arrivals come first; the card is for the line as a whole. */}
+      {!station && !!(info?.key ?? line?.key) && <ReportCard lineKey={(info?.key ?? line?.key)!} mode={mode} />}
 
       {station && (
         <section className="station-card" aria-label="Picked station">

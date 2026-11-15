@@ -1,4 +1,5 @@
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import { parseGtfsTime } from './static-gtfs.js';
 
 const { transit_realtime: rt } = GtfsRealtimeBindings;
 type FeedMessage = GtfsRealtimeBindings.transit_realtime.FeedMessage;
@@ -27,6 +28,10 @@ export interface TripState {
   tripId: string;
   routeId?: string;
   vehicleId?: string;
+  /** When the trip was scheduled to leave its first stop, in seconds from the start of its service day. */
+  startTime?: number;
+  /** The service day it was scheduled on, as YYYYMMDD. */
+  startDate?: string;
   stops: StopEstimate[];
   /** From a position-less vehicle entity, which NYC subway feeds send. */
   status?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
@@ -76,6 +81,8 @@ export function snapshotFromFeed(message: FeedMessage, fetchedAt = Date.now() / 
         tripId: tu.trip.tripId,
         routeId: tu.trip.routeId || undefined,
         vehicleId: tu.vehicle?.id || tu.vehicle?.label || undefined,
+        startTime: parseGtfsTime(tu.trip.startTime || undefined),
+        startDate: /^\d{8}$/.test(tu.trip.startDate ?? '') ? tu.trip.startDate! : undefined,
         stops: (tu.stopTimeUpdate ?? [])
           .filter((s) => s.stopId)
           .map((s) => ({

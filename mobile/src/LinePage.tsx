@@ -6,6 +6,7 @@ import { WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import { fetchLineVehicles, type LineService, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { LineBadge, vehicleCount } from './LineBadge';
+import { ReportCard } from './ReportCard';
 import { ServiceCheck, StripMarks } from './ServiceCheck';
 import { palette } from './theme';
 import { Transfers } from './VehiclePanel';
@@ -131,6 +132,8 @@ export function LinePage({
         </View>
 
         <AlertList alerts={alerts} routes={routes} dark={dark} empty="No delays or service changes on this line right now." />
+
+        <ReportCard lineKey={lineKey} mode={mode} active={active} dark={dark} />
 
         {!line ? (
           <Text style={[styles.muted, { color: c.muted }]}>Loading the line…</Text>

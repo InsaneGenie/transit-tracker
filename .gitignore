@@ -3,3 +3,5 @@ node_modules/
 server/data/cache/
 web/dist/
 web/.env
+server/data/reports.json
+server/data/reports.json.tmp

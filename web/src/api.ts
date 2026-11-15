@@ -1,3 +1,4 @@
+import type { LineReport } from './report';
 import { EXTRA_MODES } from './vehicles';
 
 export type Mode = 'subway' | 'bus' | 'rail' | 'ferry';
@@ -260,6 +261,11 @@ export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{
 /** How many vehicles are out on each line, by line key. */
 export function fetchLineCounts(signal?: AbortSignal): Promise<{ lines: Record<string, number> }> {
   return get('/api/line-counts', signal);
+}
+
+/** A line's daily report cards, today's first. */
+export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
+  return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
 }
 
 /** The stations ahead of a vehicle where you can change, with whether each connection will still be coming. */
