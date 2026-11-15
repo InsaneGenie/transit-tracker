@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { alertStatus, sameDirection, WALK_CHOICES, watchLabel, type LeaveControls } from '../../web/src/leaveAlert';
 import { tidyStopName } from '../../web/src/vehicles';
 import { palette } from './theme';
+import { CoachRing } from './Tip';
 import type { LeaveAlert } from './useLeaveAlert';
 
 const GO = '#15803d';
@@ -35,6 +36,7 @@ export function DirectionHeading({
             style={({ pressed }) => [styles.bell, { borderColor: c.border, backgroundColor: c.card }, pressed && styles.pressed]}
           >
             <Text style={[styles.bellText, { color: c.text }]}>🔔 Alert me</Text>
+            <CoachRing id="station" radius={14} />
           </Pressable>
         )}
       </View>

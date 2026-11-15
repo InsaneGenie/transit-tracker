@@ -818,7 +818,7 @@ export function App() {
 
       {helpButton('help-float')}
       {routesButton('routes-float')}
-      {guideOpen && <Guide onClose={closeGuide} />}
+      {guideOpen && <Guide dark={theme === 'dark'} onClose={closeGuide} />}
 
       <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}

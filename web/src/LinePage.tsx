@@ -1,3 +1,4 @@
+import { Tip } from './Tip';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { AccessIcon } from './AccessIcon';
 import { AlertList } from './AlertList';
@@ -116,6 +117,7 @@ export function LinePage({ lineKey, info, line, routes, alerts, count, starred, 
             ))}
           </div>
           {vehicles === null && <p className="muted small">Finding the {noun} on this line…</p>}
+          {!!going.length && <Tip id="line" noun={noun} />}
           {mode === 'bus' && service && <ServiceCheck service={service} going={going} heading={heading} />}
 
           <div className="strip" style={{ height: ordered.length * ROW }}>

@@ -3,6 +3,7 @@ import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines, vehicleNoun } from '../../web/src/vehicles';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
+import { Tip } from './Tip';
 import { ReportCard } from './ReportCard';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
 import type { LeaveControls } from '../../web/src/leaveAlert';
@@ -124,6 +125,7 @@ export function LinePanel({
               )}
             </View>
             {widget && <WidgetButton widget={widget} dark={dark} />}
+            {leave && <Tip id="station" dark={dark} />}
             <Arrivals directions={arrivals} noun={noun} dark={dark} leave={leave} onPick={onArrival} />
           </View>
         )}

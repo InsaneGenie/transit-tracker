@@ -4,6 +4,7 @@ import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines, vehicl
 import { towards } from '../../web/src/lines';
 import { WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
+import { Tip } from './Tip';
 import { fetchLineVehicles, type LineService, type LineVehicle, type RouteInfo, type RouteLine, type ServiceAlert, type UpcomingStop } from './api';
 import { LineBadge, vehicleCount } from './LineBadge';
 import { ReportCard } from './ReportCard';
@@ -161,6 +162,7 @@ export function LinePage({
             {vehicles === null && (
               <Text style={[styles.muted, styles.note, { color: c.muted }]}>Finding the {noun} on this line…</Text>
             )}
+            {!!going.length && <Tip id="line" noun={noun} dark={dark} />}
             {mode === 'bus' && service && <ServiceCheck service={service} going={going} heading={heading} dark={dark} />}
 
             <View style={{ height: ordered.length * ROW }}>

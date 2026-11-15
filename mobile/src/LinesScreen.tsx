@@ -5,6 +5,7 @@ import { legendGroups, MODE_LABELS } from '../../web/src/vehicles';
 import type { AlertSeverity, Mode, RouteInfo } from './api';
 import { LineBadge, lineStatus } from './LineBadge';
 import { MyLineBadges } from './MyLineBadges';
+import { Tip } from './Tip';
 import { palette } from './theme';
 
 const BROWSE_MODES: Mode[] = ['subway', 'rail', 'ferry', 'bus'];
@@ -174,6 +175,11 @@ export function LinesScreen({
               onDragging={setDragging}
             />
           )}
+          {mine.length > 0 && (
+            <View style={styles.tipWrap}>
+              <Tip id="myLines" dark={dark} />
+            </View>
+          )}
         </View>
       );
     }
@@ -266,6 +272,7 @@ export function LinesScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  tipWrap: { marginTop: 12 },
   search: { borderRadius: 11, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, marginHorizontal: 16, marginBottom: 4 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

@@ -2,7 +2,7 @@
   "expo": {
     "name": "NY Transit Live",
     "slug": "ny-transit-live",
-    "version": "1.0.42",
+    "version": "1.0.43",
     "orientation": "portrait",
     "scheme": "nytransitlive",
     "icon": "./assets/icon.png",
