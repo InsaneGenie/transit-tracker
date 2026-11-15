@@ -35,6 +35,7 @@ import {
   fetchAlerts,
   fetchAlertSummary,
   fetchArrivals,
+  fetchConnections,
   fetchLineCounts,
   fetchRouteLines,
   fetchRoutePaths,
@@ -44,6 +45,7 @@ import {
   NotFoundError,
   type AlertSeverity,
   type ArrivalDirection,
+  type StopConnections,
   type LineVehicle,
   type Mode,
   type RouteInfo,
@@ -93,6 +95,8 @@ const TRANSFER_TAG_WIDTH = 220;
 const WIDE_MIN_WIDTH = 700;
 /** How often the tapped vehicle is refreshed. */
 const SELECTED_POLL_MS = 3000;
+/** How often the tapped vehicle's connections are checked again. */
+const CONNECTIONS_POLL_MS = 15_000;
 /**
  * A path as the map wants it, worked out once per path. Handing a line the same array again lets it be
  * skipped, instead of every route's points being sent across to the map on each update.
@@ -300,6 +304,7 @@ function TransitMap() {
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
   const [arrivals, setArrivals] = useState<ArrivalDirection[] | null>(null);
+  const [connections, setConnections] = useState<StopConnections[] | null>(null);
   // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
   const keepStation = useRef(false);
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
@@ -586,6 +591,27 @@ function TransitMap() {
     const known = given ?? vehiclesRef.current.find((v) => v.id === id);
     setDetail((d) => (d?.vehicle.id === id || !known ? d : { vehicle: known, upcoming: [], path: [], loading: true }));
   }, []);
+
+  // Whether the tapped vehicle's connections will still be there when it gets to each station where you
+  // can change. Arrival times shift slowly, so this is asked for less often than the vehicle itself.
+  useEffect(() => {
+    if (!selectedId) return;
+    setConnections(null);
+  }, [selectedId]);
+  useEffect(() => {
+    if (!selectedId || !active) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchConnections(selectedId, controller.signal)
+        .then((r) => setConnections(r.stops))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, CONNECTIONS_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [selectedId, active]);
 
   // Keep the tapped vehicle's position, stops and arrival times fresh.
   useEffect(() => {
@@ -1115,9 +1141,11 @@ function TransitMap() {
         onShowTransfers={setShowTransfers}
         arrivals={arrivals}
         alerts={panelAlerts}
+        connections={connections}
         backLabel={history[history.length - 1]?.label}
         onBack={goBack}
         onArrival={(id) => openVehicle(id, true)}
+        onConnection={(id) => openVehicle(id)}
         leave={leaveControls}
         onLine={(key) => openLine(key)}
         onStop={pickStation}

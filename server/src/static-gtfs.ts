@@ -60,6 +60,13 @@ export interface StaticIndex {
    * `${routeId}|${firstStopId}|${startSeconds}`, which several days' services can share (see ReportKind).
    */
   tripEnds: Map<string, TripEnd[]>;
+  /** The station each platform belongs to (127N and 127S are in 127). Stops without one are left out. */
+  stationOf: Map<string, string>;
+  /**
+   * The stations you can change trains to from each station, with the seconds the schedule
+   * allows for it when it says. A station listed as its own transfer is changing platforms there.
+   */
+  transfers: Map<string, Map<string, number | undefined>>;
   /** Every trip with its times and days, for a feed placed from its timetable (FeedConfig.timetable). */
   timetable?: Timetable;
   /**
@@ -476,10 +483,18 @@ export async function buildStaticIndex(
   }
 
   const transfers = new Map<string, Set<string>>();
+  const transferTimes = new Map<string, Map<string, number | undefined>>();
   for await (const r of rows(files, 'transfers.txt')) {
     const from = stationOf.get(r.from_stop_id) ?? r.from_stop_id;
     const to = stationOf.get(r.to_stop_id) ?? r.to_stop_id;
-    if (from === to || r.transfer_type === '3') continue; // 3 means no transfer is possible
+    if (r.transfer_type === '3') continue; // 3 means no transfer is possible
+    const given = r.min_transfer_time?.trim() ? Number(r.min_transfer_time) : NaN;
+    let times = transferTimes.get(from);
+    if (!times) transferTimes.set(from, (times = new Map()));
+    const known = times.get(to);
+    // Platforms of one station can be listed one by one; the quickest change counts.
+    times.set(to, Number.isFinite(given) ? Math.min(known ?? Infinity, given) : known);
+    if (from === to) continue;
     let set = transfers.get(from);
     if (!set) transfers.set(from, (set = new Set()));
     set.add(to);
@@ -495,7 +510,21 @@ export async function buildStaticIndex(
   }
 
   const calendar = await readCalendar(files);
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop, calendar, timingPoints, tripEnds, busSchedules };
+  return {
+    stops,
+    routes,
+    segments,
+    shapes,
+    tripShapes,
+    routeShapes,
+    ...byStop,
+    calendar,
+    timingPoints,
+    tripEnds,
+    busSchedules,
+    stationOf,
+    transfers: transferTimes,
+  };
 }
 
 /** Fewer stops than this and a trip has no middle worth timing. */
@@ -704,6 +733,8 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     calendar: emptyCalendar(),
     timingPoints: [],
     tripEnds: new Map(),
+    stationOf: new Map(),
+    transfers: new Map(),
     busSchedules: [],
   };
   for (const index of indexes) {

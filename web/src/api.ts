@@ -125,6 +125,42 @@ export interface ArrivalDirection {
   arrivals: Arrival[];
 }
 
+/** Mirrors `ConnectionTrip` in server/src/store.ts. */
+export interface ConnectionTrip {
+  time: number;
+  vehicleId?: string;
+}
+
+/** Mirrors `ConnectionDirection` in server/src/store.ts. */
+export interface ConnectionDirection {
+  destinations: string[];
+  /** Seconds the change takes. */
+  changeSeconds: number;
+  /** The first one to get there after you do. */
+  catch?: ConnectionTrip;
+  /** When `catch` is tight, the first one after it that leaves time to change. */
+  next?: ConnectionTrip;
+  /** One that leaves a few minutes or less before you get there. */
+  missed?: ConnectionTrip;
+}
+
+/** Mirrors `LineConnection` in server/src/store.ts. */
+export interface LineConnection {
+  line: string;
+  directions: ConnectionDirection[];
+}
+
+/** Mirrors `StopConnections` in server/src/store.ts. */
+export interface StopConnections {
+  stopId: string;
+  name?: string;
+  lat?: number;
+  lon?: number;
+  /** When the vehicle gets there, Unix seconds. */
+  time: number;
+  lines: LineConnection[];
+}
+
 /** A Citi Bike dock. Mirrors `BikeDock` in server/src/bikes.ts. */
 export interface BikeDock {
   id: string;
@@ -230,4 +266,9 @@ export function fetchLineCounts(signal?: AbortSignal): Promise<{ lines: Record<s
 /** A line's daily report cards, today's first. */
 export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
   return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
+}
+
+/** The stations ahead of a vehicle where you can change, with whether each connection will still be coming. */
+export function fetchConnections(vehicleId: string, signal?: AbortSignal): Promise<{ stops: StopConnections[] }> {
+  return get(`/api/connections?vehicle=${encodeURIComponent(vehicleId)}`, signal);
 }
