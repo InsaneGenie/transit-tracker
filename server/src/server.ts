@@ -5,6 +5,7 @@ import type { AlertStore } from './alerts.js';
 import { MAX_SPAN_DEG, type BikeStore } from './bikes.js';
 import { compress, compressFile, pickEncoding, shouldCompress } from './compress.js';
 import { OPT_IN_MODES, type Mode } from './feeds.js';
+import { parseRegistration, type LiveActivityPusher } from './liveActivities.js';
 import { originOf, pageFor } from './preview.js';
 import type { Bbox, VehicleStore } from './store.js';
 
@@ -91,6 +92,36 @@ const MAX_ROUTE_LINES = 60;
 
 const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
 
+/** A Live Activity sign-up is a few hundred bytes; anything much bigger isn't one. */
+const MAX_BODY_BYTES = 4096;
+
+/** Reads a small JSON request body, or null when it is too big or not JSON. */
+function readJson(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    // A body that is too big is read to its end and thrown away, so the answer still gets through.
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= MAX_BODY_BYTES) chunks.push(chunk);
+      // Far too big to be a mistake: stop reading.
+      else if (size > 64 * MAX_BODY_BYTES) {
+        resolve(null);
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (size > MAX_BODY_BYTES) return resolve(null);
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
 /** Whether a request may get vehicles or lines of this mode: older apps are only sent the modes they know. */
 function modeAllowed(url: URL): (mode: Mode) => boolean {
   const extra = new Set([...(url.searchParams.get('extra')?.split(',') ?? []), ...(url.searchParams.get('mode')?.split(',') ?? [])]);
@@ -110,6 +141,7 @@ export function createApiServer(
   webDir = WEB_DIR,
   alerts?: AlertStore,
   bikes?: BikeStore,
+  liveActivities?: LiveActivityPusher,
 ): Server {
   const started = Date.now();
   return createServer((req, res) => {
@@ -122,6 +154,25 @@ export function createApiServer(
         { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
         Buffer.from(JSON.stringify(body)),
       );
+
+    // The iPhone app signs its Live Activities up here so the server can keep them up to date.
+    const activity = url.pathname.match(/^\/api\/live-activities(?:\/([0-9a-fA-F]+))?$/);
+    if (activity) {
+      if (req.method === 'POST' && !activity[1]) {
+        void readJson(req).then((body) => {
+          if (!liveActivities?.enabled) return send(200, { push: false });
+          const registration = parseRegistration(body, Date.now());
+          if (typeof registration === 'string') return send(400, { error: registration });
+          return send(200, { push: liveActivities.register(registration) });
+        });
+        return;
+      }
+      if (req.method === 'DELETE' && activity[1]) {
+        liveActivities?.unregister(activity[1]);
+        return send(200, { ok: true });
+      }
+      return send(405, { error: 'POST to sign up, DELETE /api/live-activities/<token> to stop' });
+    }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { error: 'GET only' });
 
@@ -213,10 +264,12 @@ export function createApiServer(
     if (url.pathname === '/api/health') {
       const alertStatus = alerts && { updatedAt: alerts.updatedAt, lastError: alerts.lastError };
       const ready = store.ready() || Date.now() - started > READY_WAIT_MS;
+      const pushes = liveActivities && { enabled: liveActivities.enabled, following: liveActivities.count };
       return send(ready ? 200 : 503, {
         ready,
         feeds: store.status(),
         ...(alertStatus && { alerts: alertStatus }),
+        ...(pushes && { liveActivities: pushes }),
         ...(bikes && { bikes: bikes.health() }),
       });
     }
