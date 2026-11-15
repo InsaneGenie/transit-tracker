@@ -515,7 +515,8 @@ export class VehicleStore {
           if (!stop || !inside(bbox, stop.lat, stop.lon, ESTIMATE_MARGIN)) continue;
         }
         const id = `${config.id}:${trip.tripId}`;
-        const estimate = estimatePosition(trip, now, index, config.keepsPastStops);
+        // A timetable lists every stop, so its first is where the boat leaves from, not one it's heading into.
+        const estimate = estimatePosition(trip, now, index, config.keepsPastStops || config.timetable);
         const pos = estimate && this.forwardOnly(id, estimate, now);
         if (!pos || (bbox && !inside(bbox, pos.lat, pos.lon))) continue;
         const r = route(trip.routeId);
