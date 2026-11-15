@@ -321,6 +321,21 @@ describe('NYC Ferry as it really sends', () => {
     expect(near.flatMap((d) => d.arrivals.map((a) => a.time))).toEqual([T + 180]);
   });
 
+  it('keeps a docked boat on the map while it reports, though its trip says it left seconds ago', async () => {
+    // As sent on Nov 15: a boat at a landing has a one-stop trip there, leaving 2 seconds after the feed's time.
+    const docked = encodeFeed([
+      { id: 'p', vehicle: { vehicle: { id: '19' }, trip: { tripId: 't1' }, position: { latitude: 40.78, longitude: -73.95 }, timestamp: T } },
+      { id: 'u', tripUpdate: { trip: { tripId: 't1' }, vehicle: { id: '19' }, stopTimeUpdate: [{ stopId: 'C', arrival: { time: T }, departure: { time: T + 2 } }] } },
+    ]);
+    const s = new VehicleStore([{ ...ferry, realtimeUrls: ['https://example.test/ferry/all'] }], {}, async () => snapshotFromFeed(decodeFeed(docked), T), () => indexPromise);
+    await s.loadStatic();
+    await s.pollAll();
+    expect(s.vehicles(T + 30)).toMatchObject([{ id: 'test-ferry:19', routeId: '1', source: 'gps', lat: expect.closeTo(40.78, 4) }]);
+    expect(s.lineCounts(T + 30)).toEqual({ 'test-ferry:1': 1 });
+    // Once it stops reporting, it goes like any other old fix.
+    expect(s.vehicles(T + 200)).toEqual([]);
+  });
+
   it("doesn't pair a boat with a trip placed far from it", async () => {
     const far = snapshotFromFeed(decodeFeed(positions), T);
     far.gps[0].lat = 40.7;

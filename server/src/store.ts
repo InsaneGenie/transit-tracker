@@ -619,7 +619,10 @@ export class VehicleStore {
       const canEstimate = config.staticDetail !== 'stops';
       const live = snapshot.gps.filter((g) => {
         const trip = g.tripId ? trips.get(g.tripId) : undefined;
-        if (trip && !trip.stops.some((s) => (s.departure ?? s.arrival ?? 0) > now)) return false;
+        // NYC Ferry lists a docked boat's trip as leaving the second it was sent, so a boat still reporting
+        // stays on the map whatever its trip's times say.
+        const done = trip && !trip.stops.some((s) => (s.departure ?? s.arrival ?? 0) > now);
+        if (done && !config.matchTripsByVehicle) return false;
         const age = g.timestamp ? now - g.timestamp : 0;
         return age <= (trip && canEstimate ? OLD_FIX_S : STALE_FIX_S);
       });
