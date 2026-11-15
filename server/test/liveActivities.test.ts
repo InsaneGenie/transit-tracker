@@ -246,7 +246,7 @@ describe('apnsSender', () => {
 describe('/api/live-activities', () => {
   it('signs a Live Activity up and off', async () => {
     const pusher = new LiveActivityPusher({ detail: () => null }, async () => ({ status: 200 }));
-    const server = createApiServer(new VehicleStore([]), () => NOW / 1000, undefined, undefined, pusher).listen(0);
+    const server = createApiServer(new VehicleStore([]), () => NOW / 1000, undefined, undefined, undefined, pusher).listen(0);
     const base = `http://localhost:${(server.address() as AddressInfo).port}/api/live-activities`;
     try {
       const ok = await fetch(base, { method: 'POST', body: JSON.stringify(signUp) });

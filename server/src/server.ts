@@ -2,8 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type OutgoingHttpHeaders, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AlertStore } from './alerts.js';
+import { MAX_SPAN_DEG, type BikeStore } from './bikes.js';
 import { compress, compressFile, pickEncoding, shouldCompress } from './compress.js';
-import type { Mode } from './feeds.js';
+import { OPT_IN_MODES, type Mode } from './feeds.js';
 import { parseRegistration, type LiveActivityPusher } from './liveActivities.js';
 import { originOf, pageFor } from './preview.js';
 import type { Bbox, VehicleStore } from './store.js';
@@ -121,6 +122,12 @@ function readJson(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+/** Whether a request may get vehicles or lines of this mode: older apps are only sent the modes they know. */
+function modeAllowed(url: URL): (mode: Mode) => boolean {
+  const extra = new Set([...(url.searchParams.get('extra')?.split(',') ?? []), ...(url.searchParams.get('mode')?.split(',') ?? [])]);
+  return (mode) => !OPT_IN_MODES.includes(mode) || extra.has(mode);
+}
+
 function parseBbox(value: string | null): Bbox | null | 'invalid' {
   if (!value) return null;
   const parts = value.split(',').map(Number);
@@ -133,6 +140,7 @@ export function createApiServer(
   now = () => Date.now() / 1000,
   webDir = WEB_DIR,
   alerts?: AlertStore,
+  bikes?: BikeStore,
   liveActivities?: LiveActivityPusher,
 ): Server {
   const started = Date.now();
@@ -172,9 +180,10 @@ export function createApiServer(
       const bbox = parseBbox(url.searchParams.get('bbox'));
       if (bbox === 'invalid') return send(400, { error: 'bbox must be west,south,east,north' });
       const modes = url.searchParams.get('mode')?.split(',');
+      const allowed = modeAllowed(url);
       const vehicles = store
         .vehicles(now(), bbox ?? undefined)
-        .filter((v) => !modes || modes.includes(v.mode))
+        .filter((v) => (!modes || modes.includes(v.mode)) && allowed(v.mode))
         // About a meter is as close as anyone can see on a map, and shorter numbers send smaller.
         .map((v) => ({ ...v, lat: round5(v.lat), lon: round5(v.lon) }));
       return send(200, { updatedAt: new Date().toISOString(), count: vehicles.length, vehicles });
@@ -186,7 +195,10 @@ export function createApiServer(
       return found ? send(200, found) : send(404, { error: 'vehicle not found' });
     }
 
-    if (url.pathname === '/api/routes') return send(200, { routes: store.routes() });
+    if (url.pathname === '/api/routes') {
+      const allowed = modeAllowed(url);
+      return send(200, { routes: store.routes().filter((r) => allowed(r.mode)) });
+    }
 
     if (url.pathname === '/api/route-lines') {
       const keys = (url.searchParams.get('keys') ?? '').split(',').filter(Boolean);
@@ -196,7 +208,9 @@ export function createApiServer(
 
     if (url.pathname === '/api/route-paths') {
       // Buses are left out: hundreds of routes would cover the map.
-      const modes = (url.searchParams.get('modes') ?? 'subway,rail').split(',').filter((m): m is Mode => m === 'subway' || m === 'rail');
+      const modes = (url.searchParams.get('modes') ?? 'subway,rail')
+        .split(',')
+        .filter((m): m is Mode => m === 'subway' || m === 'rail' || m === 'ferry');
       return send(200, { lines: store.routePaths(modes) });
     }
 
@@ -213,7 +227,9 @@ export function createApiServer(
     if (url.pathname === '/api/line-vehicles') {
       const line = url.searchParams.get('line');
       if (!line) return send(400, { error: 'line is required' });
-      return send(200, { vehicles: store.lineVehicles(line, now()) });
+      const at = now();
+      const service = store.lineService(line, at);
+      return send(200, { vehicles: store.lineVehicles(line, at), ...(service && { service }) });
     }
 
     if (url.pathname === '/api/line-counts') return send(200, { lines: store.lineCounts(now()) });
@@ -226,6 +242,19 @@ export function createApiServer(
       return keys.length ? send(200, { alerts: alerts.forLines(keys, now()) }) : send(200, { lines: alerts.summary(now()) });
     }
 
+    if (url.pathname === '/api/bikes') {
+      const bbox = parseBbox(url.searchParams.get('bbox'));
+      if (!bbox || bbox === 'invalid') return send(400, { error: 'bbox must be west,south,east,north' });
+      // Zoomed out too far: no docks, and nothing fetched for them.
+      if (bbox[2] - bbox[0] > MAX_SPAN_DEG || bbox[3] - bbox[1] > MAX_SPAN_DEG) return send(200, { zoomIn: true, docks: [] });
+      if (!bikes) return send(200, { docks: [] });
+      bikes
+        .docks(bbox)
+        .then((r) => send(200, r))
+        .catch(() => send(200, { docks: [] }));
+      return;
+    }
+
     if (url.pathname === '/api/health') {
       const alertStatus = alerts && { updatedAt: alerts.updatedAt, lastError: alerts.lastError };
       const ready = store.ready() || Date.now() - started > READY_WAIT_MS;
@@ -235,6 +264,7 @@ export function createApiServer(
         feeds: store.status(),
         ...(alertStatus && { alerts: alertStatus }),
         ...(pushes && { liveActivities: pushes }),
+        ...(bikes && { bikes: bikes.health() }),
       });
     }
 

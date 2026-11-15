@@ -11,7 +11,7 @@
 export interface TrackDetail {
   vehicle: {
     id: string;
-    mode: 'subway' | 'bus' | 'rail';
+    mode: 'subway' | 'bus' | 'rail' | 'ferry';
     status?: 'STOPPED_AT' | 'IN_TRANSIT_TO';
     stopId?: string;
     stopName?: string;
@@ -46,7 +46,7 @@ export interface TrackProps {
   /** Badge colors, `#rrggbb`. */
   color: string;
   textColor: string;
-  mode: 'subway' | 'bus' | 'rail';
+  mode: 'subway' | 'bus' | 'rail' | 'ferry';
   /** The station it is followed to. */
   stop: string;
   /** When it is due there; missing when the feed gives no time. */

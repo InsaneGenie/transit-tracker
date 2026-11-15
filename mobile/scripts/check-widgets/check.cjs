@@ -139,6 +139,7 @@ const coming = {
 const activityStates = {
   'on its way': coming,
   'next stop, live GPS bus': { ...coming, mode: 'bus', line: 'M15', gps: true, stopsAway: 0 },
+  'ferry': { ...coming, mode: 'ferry', line: 'SIF', color: '#f58025', stop: 'St George', where: 'Heading to St George' },
   'no time given': { ...coming, arrival: undefined },
   'due, no update yet': { ...coming, arrival: now - 5_000 },
   'arriving': { ...coming, phase: 'arriving', arrival: now + 20_000 },

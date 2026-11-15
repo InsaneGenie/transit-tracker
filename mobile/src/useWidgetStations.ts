@@ -22,7 +22,7 @@ export interface WidgetStation extends WidgetStationPick {
   badge: string;
   color: string;
   textColor: string;
-  mode: 'subway' | 'bus' | 'rail';
+  mode: 'subway' | 'bus' | 'rail' | 'ferry';
 }
 
 function parseStations(saved: string | null): WidgetStation[] {

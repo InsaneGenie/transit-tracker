@@ -25,7 +25,7 @@ export interface WidgetStationArrivals {
   badge: string;
   color: string;
   textColor: string;
-  mode: 'subway' | 'bus' | 'rail';
+  mode: 'subway' | 'bus' | 'rail' | 'ferry';
   station: string;
   directions: {
     /** Where its trains or buses are headed, like "Inwood - 207 St". */

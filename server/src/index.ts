@@ -1,4 +1,5 @@
 import { AlertStore } from './alerts.js';
+import { BikeStore } from './bikes.js';
 import { FEEDS } from './feeds.js';
 import { apnsConfigFromEnv, apnsSender, LiveActivityPusher } from './liveActivities.js';
 import { createApiServer } from './server.js';
@@ -9,6 +10,9 @@ const store = new VehicleStore(FEEDS);
 const alerts = new AlertStore();
 // Alerts don't need the schedules, so they're ready while those load.
 alerts.start();
+
+// Citi Bike docks are only fetched while someone has them on the map.
+const bikes = new BikeStore();
 
 // Live Activity pushes, when an Apple push key is set (see liveActivities.ts).
 const apns = apnsConfigFromEnv();
@@ -22,7 +26,7 @@ const liveActivities = new LiveActivityPusher(store, sender);
 liveActivities.start();
 console.log(sender ? 'Live Activity pushes are on.' : 'Live Activity pushes are off (no APNS_KEY, APNS_KEY_ID and APNS_TEAM_ID).');
 
-createApiServer(store, undefined, undefined, alerts, liveActivities).listen(port, () => {
+createApiServer(store, undefined, undefined, alerts, bikes, liveActivities).listen(port, () => {
   console.log(`Transit tracker API on http://localhost:${port}/api/vehicles`);
 });
 

@@ -1,9 +1,10 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
-import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
+import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines, vehicleNoun } from '../../web/src/vehicles';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
+import type { LeaveControls } from '../../web/src/leaveAlert';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
@@ -30,6 +31,8 @@ interface Props {
   onBack: () => void;
   onStop: (stop: UpcomingStop) => void;
   onArrival: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer at the picked station shows that line instead. */
   onLine: (key: string) => void;
   onClose: () => void;
@@ -52,6 +55,7 @@ export function LinePanel({
   onBack,
   onStop,
   onArrival,
+  leave,
   onLine,
   onClose,
   widget,
@@ -60,7 +64,7 @@ export function LinePanel({
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
-  const noun = mode === 'bus' ? 'bus' : 'train';
+  const noun = vehicleNoun(mode);
   const stationTransfers = transferLines(station?.transfers, routes).filter((r) => r.key !== line?.key);
   const key = info?.key ?? line?.key;
 
@@ -117,7 +121,7 @@ export function LinePanel({
               )}
             </View>
             {widget && <WidgetButton widget={widget} dark={dark} />}
-            <Arrivals directions={arrivals} noun={noun} dark={dark} onPick={onArrival} />
+            <Arrivals directions={arrivals} noun={noun} dark={dark} leave={leave} onPick={onArrival} />
           </View>
         )}
 
@@ -154,7 +158,7 @@ export function LinePanel({
           </View>
         ) : (
           <Text style={[styles.muted, { color: c.muted }]}>
-            The schedule doesn't list this line's stops, but its route and {noun === 'bus' ? 'buses' : 'trains'} are on
+            The schedule doesn't list this line's stops, but its route and {vehicleNoun(mode, true)} are on
             the map.
           </Text>
         )}
