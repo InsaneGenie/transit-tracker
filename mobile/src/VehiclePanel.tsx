@@ -6,6 +6,7 @@ import {
   MODE_LABELS,
   routeKey,
   sameStation,
+  sourceText,
   textColorFor,
   tidyStopName,
   transferLines,
@@ -235,7 +236,8 @@ export function VehiclePanel({
         {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
         <View style={styles.meta}>
           <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
-            {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
+            {vehicle.source === 'gps' ? '● ' : '○ '}
+            {sourceText(vehicle)}
           </Text>
           <View style={styles.actions}>
             <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>

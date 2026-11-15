@@ -19,6 +19,8 @@ export interface Vehicle {
   stopId?: string;
   stopName?: string;
   source: 'gps' | 'estimated';
+  /** Placed from the published timetable, with no live data at all (the Staten Island Ferry). */
+  scheduled?: boolean;
 }
 
 export interface UpcomingStop {

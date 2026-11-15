@@ -3,7 +3,8 @@ import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } fr
 import type { FeedConfig, Mode } from './feeds.js';
 import { fetchFeed, linkTripsByVehicle, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
-import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
+import { download, loadStaticIndex, zipFiles, type Access, type StaticIndex } from './static-gtfs.js';
+import { loadTimetable, tripsAt, type Timetable } from './timetable.js';
 
 export interface Vehicle {
   id: string;
@@ -22,6 +23,8 @@ export interface Vehicle {
   stopName?: string;
   /** "gps" when the vehicle reported its position, "estimated" when placed from predicted arrival times. */
   source: 'gps' | 'estimated';
+  /** Placed from the published timetable, with no realtime data at all (the Staten Island Ferry). */
+  scheduled?: boolean;
 }
 
 export interface UpcomingStop {
@@ -117,6 +120,10 @@ export interface FeedStatus {
   lastError?: string;
   gpsVehicles: number;
   estimatedTrips: number;
+  /** What each realtime URL last sent, in `realtimeUrls` order, to tell an empty feed from one misread. */
+  sent?: ({ bytes: number; entities: number; publishedAt?: string } | null)[];
+  /** Placed from the timetable: how many of its trips it holds. */
+  timetableTrips?: number;
 }
 
 interface FeedState {
@@ -294,6 +301,17 @@ export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 /** A feed's schedule, with which stations are accessible when that comes from elsewhere. */
 async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
   const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail);
+  if (config.timetable) {
+    const tables: Timetable[] = [];
+    // Already downloaded for the index, so read from the copy kept on disk.
+    for (const url of config.staticUrls!) tables.push(await loadTimetable(zipFiles(await download(config.id, url))));
+    index.timetable = {
+      trips: tables.flatMap((t) => t.trips),
+      services: new Map(tables.flatMap((t) => [...t.services])),
+      exceptions: new Map(tables.flatMap((t) => [...t.exceptions])),
+    };
+    addStraightShapes(index);
+  }
   if (config.accessibilityUrl) {
     try {
       applyStationAccess(index, await loadStationAccess(config.id, config.accessibilityUrl));
@@ -303,6 +321,27 @@ async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
     }
   }
   return index;
+}
+
+/**
+ * A route whose schedule has no shapes gets one through its stops, in order, from its trip with the most
+ * stops, so its line can be drawn and opened like any other. A ferry crosses open water, so stop to stop
+ * is close to the way it goes.
+ */
+export function addStraightShapes(index: StaticIndex): void {
+  const longest = new Map<string, string[]>();
+  for (const trip of index.timetable?.trips ?? []) {
+    if (index.routeShapes.get(trip.routeId)?.size) continue;
+    const stops = trip.stops.map((s) => s.stopId).filter((id) => index.stops.has(id));
+    if (stops.length >= 2 && stops.length > (longest.get(trip.routeId)?.length ?? 0)) longest.set(trip.routeId, stops);
+  }
+  for (const [routeId, stops] of longest) {
+    const id = `straight:${routeId}`;
+    index.shapes.set(id, new Polyline(stops.map((s) => index.stops.get(s)!)));
+    index.routeShapes.set(routeId, new Set([id]));
+    // Its stations, in order, for the line's page, when calls per station didn't list them.
+    if (!index.routeStations.get(routeId)?.length) index.routeStations.set(routeId, stops);
+  }
 }
 
 /** A stop's accessibility, for the API. */
@@ -327,6 +366,8 @@ export class VehicleStore {
     env: Record<string, string | undefined> = process.env,
     private fetcher: Fetcher = (url) => fetchFeed(url, AbortSignal.timeout(15_000)),
     private loadIndex: (config: FeedConfig) => Promise<StaticIndex> = loadWithAccess,
+    /** Now, in Unix seconds: when a timetable feed's trips are listed for. */
+    private clock: () => number = () => Date.now() / 1000,
   ) {
     this.feeds = configs.map((config) => ({
       config,
@@ -350,6 +391,17 @@ export class VehicleStore {
   }
 
   async poll(feed: FeedState): Promise<void> {
+    if (feed.config.timetable) {
+      const timetable = feed.index?.timetable;
+      if (!timetable) {
+        feed.lastError = feed.staticError ?? 'timetable not loaded yet';
+        return;
+      }
+      const now = this.clock();
+      feed.snapshot = { fetchedAt: now, gps: [], trips: tripsAt(timetable, now) };
+      feed.lastError = undefined;
+      return;
+    }
     const urls = feed.config.realtimeUrls.map((u) => {
       if (!feed.apiKey) return u;
       const url = new URL(u);
@@ -468,6 +520,7 @@ export class VehicleStore {
           stopId: pos.stopId,
           stopName: index.stops.get(pos.stopId)?.name,
           source: 'estimated',
+          ...(config.timetable && { scheduled: true }),
         });
       }
     }
@@ -899,6 +952,21 @@ export class VehicleStore {
       lastError: this.enabled(f) ? f.lastError : `set ${f.config.apiKeyEnv} to enable`,
       gpsVehicles: f.snapshot?.gps.length ?? 0,
       estimatedTrips: f.snapshot?.trips.length ?? 0,
+      ...(f.parts &&
+        f.config.realtimeUrls.length && {
+          sent: f.parts.map((p) =>
+            p?.snapshot.sent
+              ? {
+                  bytes: p.snapshot.sent.bytes,
+                  entities: p.snapshot.sent.entities,
+                  ...(p.snapshot.sent.publishedAt !== undefined && {
+                    publishedAt: new Date(p.snapshot.sent.publishedAt * 1000).toISOString(),
+                  }),
+                }
+              : null,
+          ),
+        }),
+      ...(f.index?.timetable && { timetableTrips: f.index.timetable.trips.length }),
     }));
   }
 }

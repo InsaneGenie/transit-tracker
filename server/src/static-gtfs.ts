@@ -6,6 +6,7 @@ import { createInflateRaw } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import { parse } from 'csv-parse';
 import { Polyline, type LatLon } from './geo.js';
+import type { Timetable } from './timetable.js';
 
 export interface Stop extends LatLon {
   name: string;
@@ -49,6 +50,8 @@ export interface StaticIndex {
   stopRoutes: Map<string, string[]>;
   /** The stations each route regularly calls at, as station ids; for stops-only schedules, in order, one way. */
   routeStations: Map<string, string[]>;
+  /** Every trip with its times and days, for a feed placed from its timetable (FeedConfig.timetable). */
+  timetable?: Timetable;
 }
 
 /** Opens a file inside a GTFS feed, or returns null when the feed doesn't have it. */
