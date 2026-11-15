@@ -15,6 +15,8 @@
   --subway: #475569;
   --rail: #7c3aed;
   --bus: #2563eb;
+  --ferry: #0e7490;
+  --bike: #0369a1;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
@@ -36,6 +38,8 @@
   --subway: #94a3b8;
   --rail: #a78bfa;
   --bus: #60a5fa;
+  --ferry: #22b8cf;
+  --bike: #38bdf8;
   color-scheme: dark;
 }
 
@@ -169,6 +173,9 @@ button {
 }
 .chip-bus {
   --mode: var(--bus);
+}
+.chip-ferry {
+  --mode: var(--ferry);
 }
 
 .chip[aria-pressed='true'] {
@@ -609,6 +616,76 @@ button {
   box-shadow: var(--shadow);
   color: var(--ink);
   font-size: 12px;
+}
+
+/* A tapped Citi Bike dock: its name, bikes and open docks, above its dot. */
+.bike-tag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  max-width: 240px;
+  padding: 7px 8px 7px 11px;
+  border-radius: 12px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.bike-tag-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.bike-tag-head strong {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.bike-tag-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -3px -2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bike-tag-close:hover {
+  background: var(--hover);
+}
+
+.bike-tag-count {
+  color: var(--bike);
+  font-weight: 600;
+}
+
+.bike-tag-none {
+  color: var(--muted);
+}
+
+.bike-tag .small {
+  margin-top: 2px;
+}
+
+.chip-bikes {
+  --mode: var(--bike);
+}
+
+.bike-icon .bike-glyph {
+  stroke: #fff;
+  transition: stroke 0.15s;
+}
+.chip[aria-pressed='false'] .bike-icon .bike-glyph {
+  stroke: var(--mode);
 }
 
 .station-tag .transfers {

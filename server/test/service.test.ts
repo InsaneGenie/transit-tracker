@@ -109,13 +109,13 @@ describe('lineService', () => {
   const at = async (now: number, covered: string[], extra: Record<string, string> = {}) => {
     const index = await buildStaticIndex(filesOf({ ...schedule, ...extra }), 'stops');
     const set = new Set(covered);
-    const work = blocksAtWork(index.timetables, set, now);
-    return { work, service: lineService(index.timetables, 'M1', set, work.blocks, now) };
+    const work = blocksAtWork(index.busSchedules, set, now);
+    return { work, service: lineService(index.busSchedules, 'M1', set, work.blocks, now) };
   };
 
   it('reads when each trip runs from the first and last of its stop times', async () => {
     const index = await buildStaticIndex(filesOf(schedule), 'stops');
-    const trips = index.timetables[0].routes.get('M1')!;
+    const trips = index.busSchedules[0].routes.get('M1')!;
     const i = trips.tripIds.indexOf('n1');
     expect([trips.start[i], trips.end[i], trips.direction[i]]).toEqual([17 * 3600, 17 * 3600 + 2400, 0]);
     expect(trips.headsigns[trips.headsign[i]]).toBe('CHARLIE');
@@ -149,7 +149,7 @@ describe('lineService', () => {
 
   it('knows nothing of routes the schedule lacks', async () => {
     const index = await buildStaticIndex(filesOf(schedule), 'stops');
-    expect(lineService(index.timetables, 'nope', new Set(), [], T)).toBeUndefined();
+    expect(lineService(index.busSchedules, 'nope', new Set(), [], T)).toBeUndefined();
   });
 });
 

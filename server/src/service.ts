@@ -1,4 +1,4 @@
-import type { RouteTrips, Service, Timetable } from './static-gtfs.js';
+import type { BusSchedule, RouteTrips, Service } from './static-gtfs.js';
 
 /**
  * Ghost buses and bunching: how a bus line's service on the road compares with its schedule.
@@ -82,9 +82,9 @@ export function runsOn(service: Service | undefined, day: ServiceDay): boolean {
   return (service.days & (1 << day.weekday)) !== 0 && service.start <= day.date && day.date <= service.end;
 }
 
-/** Each timetable's services that run on each of the days, by their index in `serviceIds`. */
-export function servicesOn(timetable: Timetable, days: ServiceDay[]): boolean[][] {
-  return days.map((day) => timetable.serviceIds.map((id) => runsOn(timetable.services.get(id), day)));
+/** Each schedule's services that run on each of the days, by their index in `serviceIds`. */
+export function servicesOn(schedule: BusSchedule, days: ServiceDay[]): boolean[][] {
+  return days.map((day) => schedule.serviceIds.map((id) => runsOn(schedule.services.get(id), day)));
 }
 
 /** Calls `fn` for each trip of a route that is scheduled out on the road at the time of `days`. */
@@ -110,7 +110,7 @@ function eachScheduled(
 
 /** What every bus reporting in says about the whole feed's schedule at once. */
 export interface AtWork {
-  /** Every block with a bus at work on it now, by timetable, with when its earliest trip with a bus was due out (Unix seconds). */
+  /** Every block with a bus at work on it now, by schedule, with when its earliest trip with a bus was due out (Unix seconds). */
   blocks: Map<number, number>[];
   /** Trips scheduled out now, past MISSING_AFTER_S, across every route, and how many of them have a bus at work on them. */
   scheduled: number;
@@ -121,14 +121,14 @@ export interface AtWork {
  * Which blocks have a bus at work on them now: the bus doing a block's earlier trip late still counts for
  * the block's next trip. `covered` holds the trips a bus reports it is running.
  */
-export function blocksAtWork(timetables: Timetable[], covered: Set<string>, now: number): AtWork {
+export function blocksAtWork(schedules: BusSchedule[], covered: Set<string>, now: number): AtWork {
   const days = serviceDays(now);
   let scheduled = 0;
   let running = 0;
-  const runs = timetables.map((timetable) => servicesOn(timetable, days));
-  const blocks = timetables.map((timetable, t) => {
+  const runs = schedules.map((schedule) => servicesOn(schedule, days));
+  const blocks = schedules.map((schedule, t) => {
     const blocks = new Map<number, number>();
-    for (const trips of timetable.routes.values()) {
+    for (const trips of schedule.routes.values()) {
       // A late bus is at most a couple of hours behind.
       eachScheduled(trips, runs[t], days, (i, day) => {
         const block = trips.block[i];
@@ -139,8 +139,8 @@ export function blocksAtWork(timetables: Timetable[], covered: Set<string>, now:
     }
     return blocks;
   });
-  timetables.forEach((timetable, t) => {
-    for (const trips of timetable.routes.values()) {
+  schedules.forEach((schedule, t) => {
+    for (const trips of schedule.routes.values()) {
       eachScheduled(trips, runs[t], days, (i, day) => {
         if (day.seconds - trips.start[i] < MISSING_AFTER_S) return;
         scheduled++;
@@ -171,7 +171,7 @@ function median(values: number[]): number | undefined {
  * `blocks` what blocksAtWork found for them.
  */
 export function lineService(
-  timetables: Timetable[],
+  schedules: BusSchedule[],
   routeId: string,
   covered: Set<string>,
   blocks: Map<number, number>[],
@@ -185,12 +185,12 @@ export function lineService(
   let found = false;
   // The station list runs the way its trip did: the first schedule's to list the route (as merging keeps
   // that one's stops first). Without it, direction 0 is taken as toward the end of the list.
-  const forwardDirection = timetables.map((x) => x.routes.get(routeId)?.listedDirection).find((d) => d !== undefined) ?? 0;
-  timetables.forEach((timetable, t) => {
-    const trips = timetable.routes.get(routeId);
+  const forwardDirection = schedules.map((x) => x.routes.get(routeId)?.listedDirection).find((d) => d !== undefined) ?? 0;
+  schedules.forEach((schedule, t) => {
+    const trips = schedule.routes.get(routeId);
     if (!trips) return;
     found = true;
-    const running = servicesOn(timetable, days);
+    const running = servicesOn(schedule, days);
     eachScheduled(trips, running, days, (i, day) => {
       const heading = trips.direction[i] === forwardDirection ? 1 : -1;
       out[heading === 1 ? 'forward' : 'back']++;

@@ -6,6 +6,7 @@ import { createInflateRaw } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import { parse } from 'csv-parse';
 import { Polyline, type LatLon } from './geo.js';
+import type { Timetable } from './timetable.js';
 
 export interface Stop extends LatLon {
   name: string;
@@ -49,11 +50,13 @@ export interface StaticIndex {
   stopRoutes: Map<string, string[]>;
   /** The stations each route regularly calls at, as station ids; for stops-only schedules, in order, one way. */
   routeStations: Map<string, string[]>;
+  /** Every trip with its times and days, for a feed placed from its timetable (FeedConfig.timetable). */
+  timetable?: Timetable;
   /**
    * When each scheduled trip runs, for stops-only schedules (buses), to tell which trips should be out on
    * the road. One per schedule read: a merged index keeps each, as their service and block ids are their own.
    */
-  timetables: Timetable[];
+  busSchedules: BusSchedule[];
 }
 
 /** The days a service runs, from calendar.txt and calendar_dates.txt. */
@@ -70,7 +73,7 @@ export interface Service {
 /** One route's scheduled trips, column by column so a city's worth of bus trips stays small. */
 export interface RouteTrips {
   tripIds: string[];
-  /** Index into the timetable's `serviceIds`. */
+  /** Index into the schedule's `serviceIds`. */
   service: Uint16Array;
   /** direction_id: 0 or 1. */
   direction: Uint8Array;
@@ -86,7 +89,7 @@ export interface RouteTrips {
   listedDirection?: number;
 }
 
-export interface Timetable {
+export interface BusSchedule {
   serviceIds: string[];
   services: Map<string, Service>;
   routes: Map<string, RouteTrips>;
@@ -283,7 +286,7 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   // Without every stop time, a route's stops come from one typical trip each way: one that follows the
   // shape most of its trips that way take.
   const patterns = new Map<string, Map<string, { count: number; tripId: string }>>();
-  const timed = detail === 'stops' ? new TimetableBuilder() : undefined;
+  const timed = detail === 'stops' ? new BusScheduleBuilder() : undefined;
   for await (const r of rows(files, 'trips.txt')) {
     trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined });
     timed?.addTrip(r);
@@ -416,17 +419,17 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
 
   const byStop = routesByStop(stops, stationOf, calls, transfers);
   if (detail === 'stops') byStop.routeStations = listedStops;
-  const timetables: Timetable[] = [];
+  const busSchedules: BusSchedule[] = [];
   if (timed) {
     for await (const r of rows(files, 'calendar.txt')) timed.addService(r);
     for await (const r of rows(files, 'calendar_dates.txt')) timed.addException(r);
-    timetables.push(timed.build(new Map([...listed].map(([routeId, l]) => [routeId, l.tripId]))));
+    busSchedules.push(timed.build(new Map([...listed].map(([routeId, l]) => [routeId, l.tripId]))));
   }
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop, timetables };
+  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop, busSchedules };
 }
 
-/** Gathers a stops-only schedule's trips, then packs them into a Timetable. */
-class TimetableBuilder {
+/** Gathers a stops-only schedule's trips, then packs them into a BusSchedule. */
+class BusScheduleBuilder {
   private serviceIds: string[] = [];
   private serviceIndex = new Map<string, number>();
   private services = new Map<string, Service>();
@@ -498,7 +501,7 @@ class TimetableBuilder {
   }
 
   /** `listed` names, by route, the trip whose stops the route's station list was taken from. */
-  build(listed: Map<string, string>): Timetable {
+  build(listed: Map<string, string>): BusSchedule {
     const routes = new Map<string, RouteTrips>();
     for (const [routeId, r] of this.byRoute) {
       const listedAt = listed.has(routeId) ? this.place.get(listed.get(routeId)!) : undefined;
@@ -566,12 +569,12 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     routeShapes: new Map(),
     stopRoutes: new Map(),
     routeStations: new Map(),
-    timetables: [],
+    busSchedules: [],
   };
   for (const index of indexes) {
-    merged.timetables.push(...index.timetables);
+    merged.busSchedules.push(...index.busSchedules);
     for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {
-      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes' || key === 'timetables') continue;
+      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes' || key === 'busSchedules') continue;
       const target = merged[key] as Map<string, unknown>;
       for (const [k, v] of index[key] as Map<string, unknown>) if (!target.has(k)) target.set(k, v);
     }

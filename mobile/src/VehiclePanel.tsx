@@ -6,9 +6,11 @@ import {
   MODE_LABELS,
   routeKey,
   sameStation,
+  sourceText,
   textColorFor,
   tidyStopName,
   transferLines,
+  vehicleNoun,
 } from '../../web/src/vehicles';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
@@ -126,7 +128,7 @@ export function Arrivals({
   onPick: (vehicleId: string) => void;
 }) {
   const c = palette(dark);
-  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  const nouns = noun === 'bus' ? 'buses' : noun === 'ferry' ? 'ferries' : `${noun}s`;
   if (!directions) return <Text style={[styles.muted, { color: c.muted }]}>Finding the {nouns} on the way…</Text>;
   if (!directions.length)
     return <Text style={[styles.muted, { color: c.muted }]}>No {nouns} on the way here right now.</Text>;
@@ -234,7 +236,8 @@ export function VehiclePanel({
         {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
         <View style={styles.meta}>
           <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
-            {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
+            {vehicle.source === 'gps' ? '● ' : '○ '}
+            {sourceText(vehicle)}
           </Text>
           <View style={styles.actions}>
             <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
@@ -295,7 +298,7 @@ export function VehiclePanel({
             <Arrivals
               directions={arrivals}
               selectedId={vehicle.id}
-              noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+              noun={vehicleNoun(vehicle.mode)}
               dark={dark}
               onPick={onArrival}
             />

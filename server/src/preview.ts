@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import { parseShare, shareTitle, type ShareTarget } from '../../web/src/share.js';
-import { displayName, tidyStopName } from '../../web/src/names.js';
+import { displayName, tidyStopName, vehicleNoun } from '../../web/src/names.js';
 import type { VehicleStore } from './store.js';
 
 /** What a pasted link says: the page's title and the line under it. */
@@ -24,7 +24,7 @@ export function describeShare(store: VehicleStore, target: ShareTarget, now: num
       const { vehicle, upcoming } = detail;
       const to = upcoming[upcoming.length - 1]?.name;
       const next = upcoming[0]?.name;
-      const noun = vehicle.mode === 'bus' ? 'bus' : 'train';
+      const noun = vehicleNoun(vehicle.mode);
       return {
         title: shareTitle({ vehicle: { name: displayName(vehicle.routeName ?? vehicle.routeId ?? '?'), mode: vehicle.mode, to: to && tidyStopName(to) } }),
         description: `${next ? `Next stop: ${tidyStopName(next)}. ` : ''}Watch this ${noun} move live on the map, with its stops and arrival times.`,
@@ -37,7 +37,7 @@ export function describeShare(store: VehicleStore, target: ShareTarget, now: num
   const info = store.routes().find((r) => r.key === target.line);
   if (!info) return null;
   const name = displayName(info.name);
-  const nouns = info.mode === 'bus' ? 'buses' : 'trains';
+  const nouns = vehicleNoun(info.mode, true);
   const stop = target.station ? store.routeLines([info.key])[0]?.stops.find((s) => s.stopId === target.station) : undefined;
   if (stop?.name) {
     const station = tidyStopName(stop.name);
@@ -50,8 +50,8 @@ export function describeShare(store: VehicleStore, target: ShareTarget, now: num
   return {
     title: shareTitle({ line: { name, mode: info.mode } }),
     description:
-      info.mode === 'bus'
-        ? `Every ${name} bus${long}, live on the map, with delays and service changes.`
+      info.mode === 'bus' || info.mode === 'ferry'
+        ? `Every ${name} ${vehicleNoun(info.mode)}${long}, live on the map, with delays and service changes.`
         : `Every station and train on the ${name} line${long}, live, with delays and service changes.`,
   };
 }
