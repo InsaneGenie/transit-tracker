@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines } from '../../web/src/vehicles';
+import { colorFor, displayName, MODE_LABELS, tidyStopName, transferLines, vehicleNoun } from '../../web/src/vehicles';
 import { towards } from '../../web/src/lines';
 import { WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
@@ -80,7 +80,7 @@ export function LinePage({
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
   const name = displayName(info?.name ?? lineKey.split(':')[1] ?? '?');
-  const noun = mode === 'bus' ? 'buses' : 'trains';
+  const noun = vehicleNoun(mode, true);
   const stops = line?.stops ?? [];
   const ordered = heading === 1 ? stops : [...stops].reverse();
   const going = useMemo(() => (vehicles ?? []).filter((v) => v.heading === heading), [vehicles, heading]);
@@ -184,7 +184,7 @@ export function LinePage({
                     onPress={() => onVehicle(v)}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel={`${name} ${mode === 'bus' ? 'bus' : 'train'}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
+                    accessibilityLabel={`${name} ${vehicleNoun(mode)}${v.destination ? ` to ${tidyStopName(v.destination)}` : ''}`}
                     style={[styles.vehicle, { top: place * ROW + ROW / 2 - MARKER / 2 }]}
                   >
                     <View style={styles.vehicleRing}>

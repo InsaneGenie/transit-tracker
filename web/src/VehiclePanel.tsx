@@ -7,7 +7,7 @@ import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { shareTitle, shareUrl } from './share';
 import { ShareButton } from './ShareButton';
-import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
+import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, textColorFor, tidyStopName, transferLines, vehicleNoun } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -87,7 +87,7 @@ export function Arrivals({
   noun: string;
   onPick: (vehicleId: string) => void;
 }) {
-  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  const nouns = noun === 'bus' ? 'buses' : noun === 'ferry' ? 'ferries' : `${noun}s`;
   if (!directions) return <p className="muted small">Finding the {nouns} on the way…</p>;
   if (!directions.length) return <p className="muted small">No {nouns} on the way here right now.</p>;
   return (
@@ -221,7 +221,7 @@ export function VehiclePanel({
           <Arrivals
             directions={arrivals}
             selectedId={vehicle.id}
-            noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+            noun={vehicleNoun(vehicle.mode)}
             onPick={onArrival}
           />
         </section>

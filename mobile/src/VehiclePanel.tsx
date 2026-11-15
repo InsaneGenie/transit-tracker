@@ -9,6 +9,7 @@ import {
   textColorFor,
   tidyStopName,
   transferLines,
+  vehicleNoun,
 } from '../../web/src/vehicles';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
@@ -126,7 +127,7 @@ export function Arrivals({
   onPick: (vehicleId: string) => void;
 }) {
   const c = palette(dark);
-  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  const nouns = noun === 'bus' ? 'buses' : noun === 'ferry' ? 'ferries' : `${noun}s`;
   if (!directions) return <Text style={[styles.muted, { color: c.muted }]}>Finding the {nouns} on the way…</Text>;
   if (!directions.length)
     return <Text style={[styles.muted, { color: c.muted }]}>No {nouns} on the way here right now.</Text>;
@@ -295,7 +296,7 @@ export function VehiclePanel({
             <Arrivals
               directions={arrivals}
               selectedId={vehicle.id}
-              noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+              noun={vehicleNoun(vehicle.mode)}
               dark={dark}
               onPick={onArrival}
             />

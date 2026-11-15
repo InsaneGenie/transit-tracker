@@ -5,4 +5,4 @@ export function palette(dark: boolean) {
     : { card: '#ffffff', text: '#111827', muted: '#6b7280', border: '#d1d5db', accent: '#2563eb', chip: 'rgba(255,255,255,0.94)', raised: '#f1f3f6', segmentOn: '#ffffff' };
 }
 
-export const MODE_DOT = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb' } as const;
+export const MODE_DOT = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb', ferry: '#0e7490' } as const;

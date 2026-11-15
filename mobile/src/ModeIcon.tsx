@@ -7,6 +7,7 @@ export const GLYPHS: Record<Mode, number> = {
   bus: require('../assets/vehicles/bus.png'),
   subway: require('../assets/vehicles/subway.png'),
   rail: require('../assets/vehicles/rail.png'),
+  ferry: require('../assets/vehicles/ferry.png'),
 };
 
 interface Props {
@@ -23,8 +24,8 @@ interface Props {
 }
 
 /**
- * The same icon vehicles have on the site: subway trains are circles, buses rounded squares and
- * commuter trains diamonds, each in the line's color with its own picture.
+ * The same icon vehicles have on the site: subway trains are circles, buses rounded squares, commuter
+ * trains diamonds and ferries shields (flat on top, round below), each in the line's color with its own picture.
  */
 export function ModeIcon({ mode, size, color, ink, border, hollow, onLoad }: Props) {
   const shape = MODE_SHAPES[mode];
@@ -33,6 +34,20 @@ export function ModeIcon({ mode, size, color, ink, border, hollow, onLoad }: Pro
   let outline: ViewStyle;
   if (shape === 'circle') outline = { width: size, height: size, borderRadius: size / 2 };
   else if (shape === 'square') outline = { width: size * 0.92, height: size * 0.92, borderRadius: size * 0.26 };
+  else if (shape === 'shield') {
+    // Matches shapePath's shield: small corners on top, the bottom rounded like a hull.
+    const side = size * 0.92;
+    const top = side * 0.11;
+    const bottom = side * 0.425;
+    outline = {
+      width: side,
+      height: side,
+      borderTopLeftRadius: top,
+      borderTopRightRadius: top,
+      borderBottomLeftRadius: bottom,
+      borderBottomRightRadius: bottom,
+    };
+  }
   // A square turned on its corner, sized so its points reach the icon's edge.
   else outline = { width: size * 0.72, height: size * 0.72, borderRadius: size * 0.08, transform: [{ rotate: '45deg' }] };
   const glyph = size * (shape === 'diamond' ? 0.56 : 0.6);
