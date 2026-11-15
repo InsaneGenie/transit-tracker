@@ -46,6 +46,11 @@ export interface FeedConfig {
    * where it reported and once placed from its trip's times.
    */
   matchTripsByVehicle?: boolean;
+  /**
+   * No realtime data: the trips running now come from the schedule's timetable instead (see timetable.ts),
+   * so `realtimeUrls` is empty and its vehicles are marked as scheduled, not tracked.
+   */
+  timetable?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -99,6 +104,18 @@ export const FEEDS: FeedConfig[] = [
     staticUrls: [`${NYC_FERRY}resource/gtfs.zip`],
     optional: true,
     matchTripsByVehicle: true,
+    pollSeconds: 30,
+  },
+  {
+    // Run by NYC DOT, not NYC Ferry, around the clock. It publishes a timetable but no realtime feed, so its
+    // boats are placed from the timetable (nyc.gov/html/dot/html/about/datafeeds.shtml).
+    id: 'si-ferry',
+    agency: 'Staten Island Ferry',
+    mode: 'ferry',
+    realtimeUrls: [],
+    staticUrls: ['https://www.nyc.gov/html/dot/downloads/misc/siferry-gtfs.zip'],
+    timetable: true,
+    optional: true,
     pollSeconds: 30,
   },
   {

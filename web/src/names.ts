@@ -7,6 +7,12 @@ export function vehicleNoun(mode: string, plural = false): string {
   return plural ? 'trains' : 'train';
 }
 
+/** Where a vehicle's position comes from, for its panel. */
+export function sourceText(v: { source: string; scheduled?: boolean }): string {
+  if (v.scheduled) return 'Placed from the timetable; not tracked live';
+  return v.source === 'gps' ? 'Live GPS position' : 'Estimated from arrival times';
+}
+
 /** Strips Bus Time's agency prefix ("MTA NYCT_M15") from names that arrive without a schedule match. */
 export const displayName = (name: string) => name.replace(/^MTA\s*\w*_/, '');
 

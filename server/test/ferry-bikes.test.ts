@@ -257,3 +257,23 @@ describe('Citi Bike docks', () => {
     expect(store.health().lastError).toBe('bikes down');
   });
 });
+
+describe('feed health', () => {
+  it('says what each URL sent, so an empty feed can be told from one read wrong', async () => {
+    const { createServer } = await import('node:http');
+    const { fetchFeed } = await import('../src/realtime.js');
+    const server = createServer((req, res) => res.end(req.url === '/empty' ? encodeFeed([]) : ferryVehicles)).listen(0);
+    try {
+      const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+      const store = new VehicleStore([{ ...ferry, realtimeUrls: [`${base}/boats`, `${base}/empty`] }], {}, (url) => fetchFeed(url), () => indexPromise);
+      await store.pollAll();
+      const [status] = store.status();
+      expect(status.sent).toEqual([
+        { bytes: ferryVehicles.length, entities: 1, publishedAt: expect.any(String) },
+        { bytes: encodeFeed([]).length, entities: 0, publishedAt: expect.any(String) },
+      ]);
+    } finally {
+      server.close();
+    }
+  });
+});

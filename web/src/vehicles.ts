@@ -1,7 +1,7 @@
 import type { Bounds, Mode, RouteInfo, Vehicle } from './api';
 import { displayName } from './names';
 
-export { displayName, tidyStopName, vehicleNoun } from './names';
+export { displayName, sourceText, tidyStopName, vehicleNoun } from './names';
 
 /**
  * Modes the server only sends when asked for by name (`?extra=`), since app versions from before them can't

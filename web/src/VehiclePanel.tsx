@@ -7,7 +7,7 @@ import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { shareTitle, shareUrl } from './share';
 import { ShareButton } from './ShareButton';
-import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, textColorFor, tidyStopName, transferLines, vehicleNoun } from './vehicles';
+import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, sourceText, textColorFor, tidyStopName, transferLines, vehicleNoun } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -182,7 +182,7 @@ export function VehiclePanel({
       <div className="panel-meta">
         <p className="muted small source">
           <span className={`source-dot source-${vehicle.source}`} aria-hidden="true" />
-          {vehicle.source === 'gps' ? 'Live GPS position' : 'Estimated from arrival times'}
+          {sourceText(vehicle)}
         </p>
         <div className="panel-actions">
           <button className="chip follow" onClick={onAllStations}>

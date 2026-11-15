@@ -43,6 +43,8 @@ export interface FeedSnapshot {
   gps: GpsVehicle[];
   /** Every trip with predictions, including ones whose vehicle also reported GPS. */
   trips: TripState[];
+  /** What the URL sent, for the health report: its size, how many entities it held and when it was published. */
+  sent?: { bytes: number; entities: number; publishedAt?: number };
 }
 
 /** protobufjs gives 64-bit fields as Long objects. */
@@ -174,5 +176,11 @@ export async function fetchFeed(url: string, signal?: AbortSignal): Promise<Feed
     throw new Error(`${where}: ${err.cause?.message ?? err.message}`);
   });
   if (!res.ok) throw new Error(`${where} returned ${res.status}`);
-  return snapshotFromFeed(decodeFeed(new Uint8Array(await res.arrayBuffer())));
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const message = decodeFeed(bytes);
+  const published = toNumber(message.header?.timestamp);
+  return {
+    ...snapshotFromFeed(message),
+    sent: { bytes: bytes.length, entities: message.entity.length, ...(published !== undefined && { publishedAt: published }) },
+  };
 }
