@@ -1,6 +1,12 @@
 import { SUBWAY_STATIONS_URL } from './accessibility.js';
 
-export type Mode = 'subway' | 'bus' | 'rail';
+export type Mode = 'subway' | 'bus' | 'rail' | 'ferry';
+
+/**
+ * Modes only sent to clients that ask for them by name. App versions from before ferries existed don't know
+ * how to draw one, so they are left out unless a request lists them (`?extra=ferry`).
+ */
+export const OPT_IN_MODES: Mode[] = ['ferry'];
 
 export interface FeedConfig {
   id: string;
@@ -31,6 +37,22 @@ export interface FeedConfig {
   bearingFromEast?: boolean;
   /** Realtime trip ids are the schedule's own (the LIRR's), so the report cards can look trips up by id. */
   tripIdsMatchSchedule?: boolean;
+  /**
+   * Not needed for the site to count as ready: a feed run by a smaller operator that may be down without
+   * holding up a deploy (the server otherwise waits for every feed's first positions).
+   */
+  optional?: boolean;
+  /**
+   * Positions and trip updates come from separate URLs and a position may not name its trip, so a position
+   * is matched to the trip update carrying the same vehicle id. Without that a boat could show twice: once
+   * where it reported and once placed from its trip's times.
+   */
+  matchTripsByVehicle?: boolean;
+  /**
+   * No realtime data: the trips running now come from the schedule's timetable instead (see timetable.ts),
+   * so `realtimeUrls` is empty and its vehicles are marked as scheduled, not tracked.
+   */
+  timetable?: boolean;
   /** Environment variable holding an API key, appended as `?key=`. The feed is skipped when it is unset. */
   apiKeyEnv?: string;
   pollSeconds: number;
@@ -38,11 +60,12 @@ export interface FeedConfig {
 
 const MTA_RT = 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/';
 const MTA_STATIC = 'https://rrgtfsfeeds.s3.amazonaws.com/';
+const NYC_FERRY = 'https://nycferry.connexionz.net/rtt/public/';
 
 const subwayGroups = ['gtfs', 'gtfs-ace', 'gtfs-bdfm', 'gtfs-g', 'gtfs-jz', 'gtfs-nqrw', 'gtfs-l', 'gtfs-si'];
 
 /**
- * New York State feeds. Other states are added as more entries here.
+ * New York State feeds, NYC Ferry included. Other states are added as more entries here.
  * Upstate agencies (CDTA, NFTA, RTS, Centro) are not listed yet: their realtime URLs still need confirming.
  */
 export const FEEDS: FeedConfig[] = [
@@ -72,6 +95,30 @@ export const FEEDS: FeedConfig[] = [
     realtimeUrls: [`${MTA_RT}mnr%2Fgtfs-mnr`],
     staticUrls: [`${MTA_STATIC}gtfsmnr.zip`],
     keepsPastStops: true,
+    pollSeconds: 30,
+  },
+  {
+    // Before the buses, whose schedules take longest to load, so ferries are listed as soon as buses are.
+    id: 'nyc-ferry',
+    agency: 'NYC Ferry',
+    mode: 'ferry',
+    // From ferry.nyc/developer-tools. Boats report GPS; trip updates give each one's next landings.
+    realtimeUrls: [`${NYC_FERRY}utility/gtfsrealtime.aspx/vehicleposition`, `${NYC_FERRY}utility/gtfsrealtime.aspx/tripupdate`],
+    staticUrls: [`${NYC_FERRY}resource/gtfs.zip`],
+    optional: true,
+    matchTripsByVehicle: true,
+    pollSeconds: 30,
+  },
+  {
+    // Run by NYC DOT, not NYC Ferry, around the clock. It publishes a timetable but no realtime feed, so its
+    // boats are placed from the timetable (nyc.gov/html/dot/html/about/datafeeds.shtml).
+    id: 'si-ferry',
+    agency: 'Staten Island Ferry',
+    mode: 'ferry',
+    realtimeUrls: [],
+    staticUrls: ['https://www.nyc.gov/html/dot/downloads/misc/siferry-gtfs.zip'],
+    timetable: true,
+    optional: true,
     pollSeconds: 30,
   },
   {

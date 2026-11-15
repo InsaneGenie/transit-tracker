@@ -1,4 +1,5 @@
 import { AlertStore } from './alerts.js';
+import { BikeStore } from './bikes.js';
 import { FEEDS } from './feeds.js';
 import { ReportBook, REPORTS_FILE } from './reports.js';
 import { createApiServer } from './server.js';
@@ -18,7 +19,10 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 // Alerts don't need the schedules, so they're ready while those load.
 alerts.start();
 
-createApiServer(store, undefined, undefined, alerts).listen(port, () => {
+// Citi Bike docks are only fetched while someone has them on the map.
+const bikes = new BikeStore();
+
+createApiServer(store, undefined, undefined, alerts, bikes).listen(port, () => {
   console.log(`Transit tracker API on http://localhost:${port}/api/vehicles`);
 });
 

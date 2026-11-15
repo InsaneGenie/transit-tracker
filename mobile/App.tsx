@@ -15,7 +15,7 @@ import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accessOf } from '../web/src/accessibility';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from '../web/src/panelHistory';
-import { colorFor, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { colorFor, displayName, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
   fetchAlertSummary,
@@ -40,26 +40,33 @@ import {
   type Vehicle,
   type VehicleDetail,
 } from './src/api';
+import { alertStatus, type LeaveControls } from '../web/src/leaveAlert';
 import { GuideSheet } from './src/GuideSheet';
+import { LeaveBanner } from './src/LeaveAlert';
 import { LinePage } from './src/LinePage';
 import { LinePanel } from './src/LinePanel';
 import { LinesScreen } from './src/LinesScreen';
 import { LinesSheet } from './src/LinesSheet';
+import { BikeCard, BikeChipIcon, bikeStatus, COUNT_MIN_ZOOM, DockMarker, docksInView, useBikeDocks } from './src/BikeLayer';
 import { ModeIcon } from './src/ModeIcon';
 import { DRAWER_LOW, LinesDrawer } from './src/LinesDrawer';
 import { PanelSheet, type Sheet } from './src/PanelSheet';
 import { boundsOf, GLIDE_MIN_ZOOM, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
+import { useLeaveAlert, useLeaveNotificationTap } from './src/useLeaveAlert';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { Transfers, VehiclePanel } from './src/VehiclePanel';
 
-const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
+const ALL_MODES: Mode[] = ['subway', 'rail', 'ferry', 'bus'];
+/** The modes every schedule-loaded server has; ferries can be missing when their operator's feed is down. */
+const CORE_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const SURVEY_DONE_KEY = 'transit-tracker:survey-done';
 const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
+const BIKES_KEY = 'transit-tracker:bikes';
 /** The server draws at most this many lines per request. */
 const MAX_DRAWN_LINES = 60;
 const STATION_LABEL_HEIGHT = 20;
@@ -283,6 +290,9 @@ function TransitMap() {
   const [surveyOpen, setSurveyOpen] = useState(false);
   // Every line's route drawn on the map, without opening Lines.
   const [allRoutesOn, setAllRoutesOn] = useState(false);
+  // Citi Bike docks on the map, and the one tapped.
+  const [bikesOn, setBikesOn] = useState(false);
+  const [dockId, setDockId] = useState<string | null>(null);
   const [region, setRegion] = useState<Region>(NEW_YORK);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
@@ -292,8 +302,14 @@ function TransitMap() {
   const [panelHeight, setPanelHeight] = useState(0);
   const [locating, setLocating] = useState(false);
   const [showsUser, setShowsUser] = useState(false);
+  // The toolbar's chips can wrap to a second row; the alert banner sits under them.
+  const [toolbarHeight, setToolbarHeight] = useState(80);
 
   const zoom = zoomOf(region, width);
+  const bikes = useBikeDocks(bikesOn, region, zoom, active);
+  const shownDocks = useMemo(() => docksInView(bikes.docks, region), [bikes.docks, region]);
+  const pickedDock = dockId ? bikes.docks.find((d) => d.id === dockId) : undefined;
+  const onDockPress = useCallback((id: string) => setDockId(id), []);
 
   // The line filter, and which of its routes are hidden, are remembered between launches.
   useEffect(() => {
@@ -308,6 +324,9 @@ function TransitMap() {
     void restore(HIDDEN_ROUTES_KEY, setHiddenRoutes);
     AsyncStorage.getItem(ALL_ROUTES_KEY)
       .then((saved) => setAllRoutesOn(saved === '1'))
+      .catch(() => {});
+    AsyncStorage.getItem(BIKES_KEY)
+      .then((saved) => setBikesOn(saved === '1'))
       .catch(() => {});
   }, []);
   // On the first launch, ask which lines they ride, then show the guide. People who already saw the
@@ -338,6 +357,11 @@ function TransitMap() {
   const changeHiddenRoutes = (next: string[]) => {
     setHiddenRoutes(next);
     AsyncStorage.setItem(HIDDEN_ROUTES_KEY, JSON.stringify(next)).catch(() => {});
+  };
+  const toggleBikes = () => {
+    setBikesOn(!bikesOn);
+    setDockId(null);
+    AsyncStorage.setItem(BIKES_KEY, bikesOn ? '' : '1').catch(() => {});
   };
   const toggleAllRoutes = () => {
     setAllRoutesOn(!allRoutesOn);
@@ -404,6 +428,39 @@ function TransitMap() {
     };
   }, [station?.lat, station?.lon, selectedLine, viewLine?.key, active]);
 
+  // "Should I run?": an alert for one direction at the picked station, kept going after the panel closes.
+  const leave = useLeaveAlert(active);
+  const arrivalsLine = selectedLine ?? viewLine?.key ?? null;
+  const leaveControls: LeaveControls | undefined =
+    station && arrivalsLine
+      ? {
+          watching:
+            leave.watch && leave.watch.line === arrivalsLine && sameStation(leave.watch.station, station) ? leave.watch.toward : null,
+          status: leave.watch ? alertStatus(leave.watch, leave.plan, leave.now) : undefined,
+          walk: leave.walk,
+          onStart: (toward, walkMinutes) => {
+            const info = routesByKey.get(arrivalsLine);
+            const own = detail && routeKey(detail.vehicle) === arrivalsLine ? detail.vehicle : null;
+            leave.start({
+              line: arrivalsLine,
+              name: displayName(info?.name ?? own?.routeName ?? own?.routeId ?? arrivalsLine.slice(arrivalsLine.indexOf(':') + 1)),
+              mode: info?.mode ?? own?.mode ?? viewRoute?.mode ?? 'subway',
+              station: {
+                stopId: station.stopId,
+                name: station.name,
+                lat: station.lat,
+                lon: station.lon,
+                transfers: station.transfers,
+                ...accessOf(station),
+              },
+              toward,
+              walkMinutes,
+            });
+          },
+          onStop: leave.stop,
+        }
+      : undefined;
+
   // The lines you can change to at the picked station, without express twins (7X beside the 7).
   const stationTransfers = useMemo(
     () => transferLines(station?.transfers, routesByKey).map((r) => r.key),
@@ -443,7 +500,8 @@ function TransitMap() {
         .then(({ routes }) => {
           setRoutes(routes);
           // Schedules can still be loading; ask again until every mode has its lines.
-          if (new Set(routes.map((r) => r.mode)).size < ALL_MODES.length) timer = setTimeout(load, 15_000);
+          const loaded = new Set(routes.map((r) => r.mode));
+          if (!CORE_MODES.every((m) => loaded.has(m))) timer = setTimeout(load, 15_000);
         })
         .catch(() => {
           if (!controller.signal.aborted) timer = setTimeout(load, 5_000);
@@ -676,6 +734,22 @@ function TransitMap() {
     if (at) mapRef.current?.animateCamera({ center: { latitude: at.lat, longitude: at.lon } }, { duration: 600 });
   };
 
+  // The alert's banner, or its notification, opens its line at its station.
+  const openLeaveStation = () => {
+    const w = leave.watch;
+    if (!w) return;
+    setLinesUp(false);
+    setLinePage(null);
+    setGuideOpen(false);
+    setFollowing(false);
+    if (!selectedId && viewLine?.key === w.line && station && sameStation(station, w.station)) {
+      mapRef.current?.animateCamera({ center: { latitude: station.lat, longitude: station.lon } }, { duration: 600 });
+      return;
+    }
+    openLine(w.line, { ...w.station });
+  };
+  useLeaveNotificationTap(openLeaveStation);
+
   // Every station on the open vehicle's line, from its drawn route or the panel.
   const openOwnLine = () => {
     if (selectedLine) openLine(selectedLine, undefined, detail?.upcoming);
@@ -798,6 +872,10 @@ function TransitMap() {
   const wide = width >= WIDE_MIN_WIDTH;
   const sideWidth = wide ? Math.min(400, Math.round(width * 0.42)) : 0;
   const sideLeft = wide ? sideWidth + 24 : 0;
+  // A dock's card sits where the panels do on a phone, so opening a panel closes it.
+  useEffect(() => {
+    if (anyPanel && !wide) setDockId(null);
+  }, [anyPanel, wide]);
   const mapWidth = width - sideLeft;
   // On a phone, a panel takes the bottom half of the screen, or nearly all of it when dragged up.
   const mapHeight = height - insets.bottom;
@@ -929,6 +1007,7 @@ function TransitMap() {
         backLabel={history[history.length - 1]?.label}
         onBack={goBack}
         onArrival={(id) => openVehicle(id, true)}
+        leave={leaveControls}
         onLine={(key) => openLine(key)}
         onStop={pickStation}
         onClose={closePanels}
@@ -950,6 +1029,7 @@ function TransitMap() {
         onBack={goBack}
         onStop={pickStation}
         onArrival={(id) => openVehicle(id, true)}
+        leave={leaveControls}
         onLine={(key) => openLine(key)}
         onClose={closePanels}
       />
@@ -991,7 +1071,9 @@ function TransitMap() {
   );
 
   const onMapPress = (e: MapPressEvent) => {
-    if (e.nativeEvent.action !== 'marker-press' && detail) closePanels();
+    if (e.nativeEvent.action === 'marker-press') return;
+    setDockId(null);
+    if (detail) closePanels();
   };
 
   return (
@@ -1044,6 +1126,20 @@ function TransitMap() {
                 onPress={openOwnLine}
               />
             )}
+            {/* Citi Bike docks, when switched on, under the stations and vehicles. A dock's view is drawn once, so
+                its key changes with what it shows. */}
+            {shownDocks.map((d) => {
+              const counted = zoom >= COUNT_MIN_ZOOM;
+              return (
+                <DockMarker
+                  key={`dock-${d.id}-${counted ? d.bikes : 'dot'}-${d.renting && d.bikes > 0 ? 'y' : 'n'}-${dark ? 'd' : 'l'}`}
+                  dock={d}
+                  counted={counted}
+                  outline={dark ? '#111827' : '#ffffff'}
+                  onPress={onDockPress}
+                />
+              );
+            })}
             {/* Stations of the picked lines: tapping one opens that line there. */}
             {otherStops.map(({ line, stop }) => (
               <StopMarker
@@ -1160,7 +1256,11 @@ function TransitMap() {
           </MapView>
         </View>
 
-        <View style={[styles.toolbar, { top: insets.top + 8, left: sideLeft + 12 }]} pointerEvents="box-none">
+        <View
+          style={[styles.toolbar, { top: insets.top + 8, left: sideLeft + 12 }]}
+          pointerEvents="box-none"
+          onLayout={(e) => setToolbarHeight(e.nativeEvent.layout.height)}
+        >
           <View style={[styles.brand, { backgroundColor: c.chip }]}>
             <View style={styles.brandDot} />
             <Text style={[styles.brandText, { color: c.text }]}>NY Transit Live</Text>
@@ -1181,6 +1281,16 @@ function TransitMap() {
                 </Pressable>
               );
             })}
+            <Pressable
+              onPress={toggleBikes}
+              accessibilityRole="button"
+              accessibilityLabel="Citi Bike docks"
+              accessibilityState={{ selected: bikesOn }}
+              style={[styles.chip, { backgroundColor: c.chip }, !bikesOn && styles.chipOff]}
+            >
+              <BikeChipIcon on={bikesOn} />
+              <Text style={[styles.chipText, { color: c.text }]}>Citi Bike</Text>
+            </Pressable>
             {/* The map shows only your lines while there are any; this says so and leads to them. */}
             {lines.length > 0 && (
               <Pressable
@@ -1203,7 +1313,7 @@ function TransitMap() {
           </View>
         </View>
 
-        {(!anyPanel || wide) && (
+        {(!anyPanel || wide) && !pickedDock && (
           <View style={[styles.statusRow, { bottom: bottomPad + 16, left: sideLeft }]} pointerEvents="none">
             <View style={[styles.status, { backgroundColor: c.chip }]}>
               <View
@@ -1212,12 +1322,23 @@ function TransitMap() {
                   { backgroundColor: status === 'live' ? '#16a34a' : status === 'error' ? '#dc2626' : '#9ca3af' },
                 ]}
               />
-              <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
+              <View>
+                <Text style={[styles.statusText, { color: c.text }]}>{statusText}</Text>
+                {bikesOn && <Text style={[styles.statusBikes, { color: c.muted }]}>{bikeStatus(bikes, shownDocks.length)}</Text>}
+              </View>
             </View>
           </View>
         )}
 
-        {(wide || !(anyPanel && panelHeight > halfPanel + 1)) && (
+        {/* A tapped dock's card, along the bottom beside the map buttons. */}
+        {(!anyPanel || wide) && pickedDock && (
+          <View style={[styles.dockCard, { bottom: bottomPad + 16, left: sideLeft + 12 }]}>
+            <BikeCard dock={pickedDock} updatedAt={bikes.updatedAt} dark={dark} onClose={() => setDockId(null)} />
+          </View>
+        )}
+
+        {/* Out of the way of a dock's card on a phone. */}
+        {(wide || !(anyPanel && panelHeight > halfPanel + 1)) && (wide || !pickedDock) && (
           <Pressable
             onPress={toggleAllRoutes}
             accessibilityRole="switch"
@@ -1250,6 +1371,15 @@ function TransitMap() {
           >
             <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
           </Pressable>
+        )}
+
+        {!(linesUp && !wide) && (
+          <LeaveBanner
+            alert={leave}
+            dark={dark}
+            onOpen={openLeaveStation}
+            style={{ top: insets.top + 8 + toolbarHeight + 8, left: sideLeft + 12, right: 12, maxWidth: wide ? 460 : undefined }}
+          />
         )}
 
         {panelOpen &&
@@ -1361,6 +1491,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusBikes: { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  // Clear of the location and Routes buttons on the right.
+  dockCard: { position: 'absolute', right: 68, maxWidth: 360 },
   statusText: { fontSize: 14, fontWeight: '500' },
   locate: {
     position: 'absolute',

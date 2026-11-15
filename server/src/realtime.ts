@@ -48,6 +48,8 @@ export interface FeedSnapshot {
   gps: GpsVehicle[];
   /** Every trip with predictions, including ones whose vehicle also reported GPS. */
   trips: TripState[];
+  /** What the URL sent, for the health report: its size, how many entities it held and when it was published. */
+  sent?: { bytes: number; entities: number; publishedAt?: number };
 }
 
 /** protobufjs gives 64-bit fields as Long objects. */
@@ -147,11 +149,45 @@ export function mergeSnapshots(snapshots: FeedSnapshot[]): FeedSnapshot {
   };
 }
 
+/**
+ * Each GPS position without a known trip gets the trip whose update names the same vehicle, so the vehicle is
+ * shown once, where it reported, with its trip's stops. A vehicle on more than one trip (the one it is on and
+ * its next) takes the one whose last stop comes first, which is the one it is on.
+ */
+export function linkTripsByVehicle(snapshot: FeedSnapshot): FeedSnapshot {
+  const tripIds = new Set(snapshot.trips.map((t) => t.tripId));
+  const byVehicle = new Map<string, TripState>();
+  const ends = (t: TripState) => {
+    const last = t.stops.at(-1);
+    return last?.arrival ?? last?.departure ?? Infinity;
+  };
+  for (const t of snapshot.trips) {
+    if (!t.vehicleId) continue;
+    const seen = byVehicle.get(t.vehicleId);
+    if (!seen || ends(t) < ends(seen)) byVehicle.set(t.vehicleId, t);
+  }
+  if (!byVehicle.size) return snapshot;
+  return {
+    ...snapshot,
+    gps: snapshot.gps.map((g) => {
+      if (g.tripId && tripIds.has(g.tripId)) return g;
+      const trip = byVehicle.get(g.vehicleId);
+      return trip ? { ...g, tripId: trip.tripId, routeId: g.routeId ?? trip.routeId } : g;
+    }),
+  };
+}
+
 export async function fetchFeed(url: string, signal?: AbortSignal): Promise<FeedSnapshot> {
   const where = `${new URL(url).host}${new URL(url).pathname}`;
   const res = await fetch(url, { signal }).catch((err: Error & { cause?: Error }) => {
     throw new Error(`${where}: ${err.cause?.message ?? err.message}`);
   });
   if (!res.ok) throw new Error(`${where} returned ${res.status}`);
-  return snapshotFromFeed(decodeFeed(new Uint8Array(await res.arrayBuffer())));
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const message = decodeFeed(bytes);
+  const published = toNumber(message.header?.timestamp);
+  return {
+    ...snapshotFromFeed(message),
+    sent: { bytes: bytes.length, entities: message.entity.length, ...(published !== undefined && { publishedAt: published }) },
+  };
 }

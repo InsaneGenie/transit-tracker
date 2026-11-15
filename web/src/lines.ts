@@ -1,11 +1,10 @@
 import { SEVERITY_COLORS, SEVERITY_LABELS } from './alerts';
 import type { AlertSeverity, LineVehicle, Mode, UpcomingStop } from './api';
-import { tidyStopName } from './vehicles';
+import { tidyStopName, vehicleNoun } from './vehicles';
 
 /** "14 trains", "1 bus". */
 export function vehicleCount(n: number, mode: Mode): string {
-  const noun = mode === 'bus' ? (n === 1 ? 'bus' : 'buses') : n === 1 ? 'train' : 'trains';
-  return `${n} ${noun}`;
+  return `${n} ${vehicleNoun(mode, n !== 1)}`;
 }
 
 /**

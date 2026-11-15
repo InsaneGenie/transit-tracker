@@ -6,15 +6,19 @@ import {
   MODE_LABELS,
   routeKey,
   sameStation,
+  sourceText,
   textColorFor,
   tidyStopName,
   transferLines,
+  vehicleNoun,
 } from '../../web/src/vehicles';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
+import type { LeaveControls } from '../../web/src/leaveAlert';
 import { BackButton } from './BackButton';
+import { DirectionHeading } from './LeaveAlert';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
 import { palette } from './theme';
@@ -40,6 +44,8 @@ interface Props {
   alerts: ServiceAlert[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer line at the station shows that whole line. */
   onLine: (key: string) => void;
   dark: boolean;
@@ -116,6 +122,7 @@ export function Arrivals({
   selectedId,
   noun,
   dark,
+  leave,
   onPick,
 }: {
   directions: ArrivalDirection[] | null;
@@ -123,20 +130,29 @@ export function Arrivals({
   selectedId?: string;
   noun: string;
   dark: boolean;
+  /** Lets each direction set a "should I run?" alert. */
+  leave?: LeaveControls;
   onPick: (vehicleId: string) => void;
 }) {
   const c = palette(dark);
-  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  const nouns = noun === 'bus' ? 'buses' : noun === 'ferry' ? 'ferries' : `${noun}s`;
   if (!directions) return <Text style={[styles.muted, { color: c.muted }]}>Finding the {nouns} on the way…</Text>;
   if (!directions.length)
     return <Text style={[styles.muted, { color: c.muted }]}>No {nouns} on the way here right now.</Text>;
   return (
     <View style={styles.arrivals}>
       {directions.map((d) => (
-        <View key={d.arrivals[0].vehicle.id} accessibilityLabel={`To ${d.destinations.join(', ')}`}>
-          <Text style={[styles.arrivalsHeading, { color: c.muted }]}>
-            {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
-          </Text>
+        <View key={d.destinations.join('|') || d.arrivals[0].vehicle.id} accessibilityLabel={`To ${d.destinations.join(', ')}`}>
+          <DirectionHeading
+            destinations={d.destinations}
+            leave={leave}
+            dark={dark}
+            heading={
+              <Text style={[styles.arrivalsHeading, { color: c.muted }]}>
+                {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
+              </Text>
+            }
+          />
           {d.arrivals.map(({ vehicle: v, time, stopsAway }) => {
             const stop = v.stopName && tidyStopName(v.stopName);
             const where = v.status === 'STOPPED_AT' && stop ? `At ${stop}` : stop ? `Heading to ${stop}` : 'On the way';
@@ -184,6 +200,7 @@ export function VehiclePanel({
   arrivals,
   alerts,
   onArrival,
+  leave,
   onLine,
   dark,
   bottomInset,
@@ -234,7 +251,8 @@ export function VehiclePanel({
         {where && <Text style={[styles.where, { color: c.text }]}>{where}</Text>}
         <View style={styles.meta}>
           <Text style={[styles.muted, styles.metaText, { color: c.muted }]}>
-            {vehicle.source === 'gps' ? '● Live GPS position' : '○ Estimated from arrival times'}
+            {vehicle.source === 'gps' ? '● ' : '○ '}
+            {sourceText(vehicle)}
           </Text>
           <View style={styles.actions}>
             <Pressable onPress={onAllStations} accessibilityRole="button" style={[styles.follow, { borderColor: c.border }]}>
@@ -295,8 +313,9 @@ export function VehiclePanel({
             <Arrivals
               directions={arrivals}
               selectedId={vehicle.id}
-              noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+              noun={vehicleNoun(vehicle.mode)}
               dark={dark}
+              leave={leave}
               onPick={onArrival}
             />
           </View>

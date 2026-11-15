@@ -5,7 +5,7 @@ export const GUIDE: GuideSection[] = [
   {
     title: 'The map',
     points: [
-      'Every icon is a vehicle, moving where it is right now: circles are subway trains, rounded squares are buses and diamonds are LIRR and Metro-North trains. Its color is its line’s color.',
+      'Every icon is a vehicle, moving where it is right now: circles are subway trains, rounded squares are buses, diamonds are LIRR and Metro-North trains, and shields (flat on top, round below like a hull) are NYC Ferry boats. Its color is its line’s color.',
       'Zoom in to see them. Vehicles are hidden while the whole city fits on the screen.',
       'Closer in, a small arrow beside each one shows which way it is heading, the stations of drawn lines get their names, and line names appear beside the icons.',
       'Subway trains don’t send GPS, so they are placed from their arrival times. A vehicle’s card says which kind of position it has.',
@@ -14,8 +14,9 @@ export const GUIDE: GuideSection[] = [
   {
     title: 'Show only what you want',
     points: [
-      'Subway, Rail and Bus switch each kind on or off.',
-      'Routes draws every subway and rail line’s route on the map, so you can see where each line goes. Bus routes are left out, as there are too many.',
+      'Subway, Rail, Ferry and Bus switch each kind on or off.',
+      'Citi Bike shows the bike docks once you zoom in to street level: blue with bikes to take, gray without, with how many bikes each has. Tap one to see its bikes, e-bikes and open docks.',
+      'Routes draws every subway, rail and ferry route on the map, so you can see where each line goes. Bus routes are left out, as there are too many.',
       'Lines lists every line. Tap ☆ on the ones you ride to make them your lines; the map then shows only those, with their routes and stations drawn.',
       'Search finds any line or bus route, such as M15 or Q44. Clear brings every line back to the map.',
       'The Route switch on each of your lines shows its route and vehicles on the map or hides them; tap a line’s badge under My lines to find it. Hide all routes switches them all off at once.',
@@ -53,6 +54,15 @@ export const GUIDE: GuideSection[] = [
     ],
   },
   {
+    title: 'Should I run? Leave-now alerts',
+    points: [
+      'Pick a station, then tap Alert me above the direction you want and choose how long your walk there takes.',
+      'You get a notification when it’s time to leave, so you reach the platform or stop just before the next train or bus you can still make. It follows where that vehicle really is, so a late train means you leave later.',
+      'A bar over the map counts down until then, even after you close the station. Tap it to see the station again, or ✕ to stop the alert.',
+      'Allow notifications when asked. On the website, keep the page open in a tab; on a phone’s browser, keep it on screen. In the app, the notification comes even when the app is closed, set from the latest arrival times it saw.',
+    ],
+  },
+  {
     title: 'Delays and service changes',
     points: [
       'A train or bus card, and a line’s page, list that line’s MTA alerts: delays, suspensions, and planned work or schedule changes coming up in the next few days.',
@@ -64,7 +74,7 @@ export const GUIDE: GuideSection[] = [
   {
     title: 'Good to know',
     points: [
-      'Positions and arrival times come from the MTA’s live feeds and refresh every few seconds. Times are predictions and can change.',
+      'Positions and arrival times come from the MTA’s and NYC Ferry’s live feeds and refresh every few seconds. Times are predictions and can change. Citi Bike counts come from Citi Bike’s live feed and refresh every minute.',
       'The location button takes the map to where you are.',
       'The map turns dark after sunset.',
       'If the map stays empty at first, give it a minute; the server may be waking up.',

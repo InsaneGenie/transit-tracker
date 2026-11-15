@@ -135,11 +135,12 @@ function Arrow({ bearing, half, color, outline }: { bearing: number; half: { w: 
   );
 }
 
-/** Name tags keep a hint of their mode's outline: round for subway, square-ish for buses, sharp for rail. */
+/** Name tags keep a hint of their mode's outline: round for subway, square-ish for buses, sharp for rail, a hull for ferries. */
 const TAG_CORNERS = {
   subway: { borderRadius: 11 },
   bus: { borderRadius: 6 },
   rail: { borderRadius: 2 },
+  ferry: { borderTopLeftRadius: 3, borderTopRightRadius: 3, borderBottomLeftRadius: 11, borderBottomRightRadius: 11 },
 } as const;
 
 /** Every poll brings new vehicle objects; only the dots that look different or have moved are redrawn. */
