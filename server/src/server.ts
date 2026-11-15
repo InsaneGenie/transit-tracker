@@ -289,6 +289,11 @@ export function createApiServer(
       });
     }
 
+    if (url.pathname === '/api/feed-snapshot') {
+      const snapshot = store.feedSnapshot(url.searchParams.get('feed') ?? '');
+      return snapshot ? send(200, snapshot) : send(404, { error: 'only small optional feeds can be read' });
+    }
+
     if (url.pathname.startsWith('/api/')) return send(404, { error: 'not found' });
 
     const page = (html: string) => pageFor(html, url, originOf(req), store, now());

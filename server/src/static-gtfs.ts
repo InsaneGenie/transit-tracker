@@ -42,6 +42,11 @@ export interface StaticIndex {
   shapes: Map<string, Polyline>;
   /** Shape of each scheduled trip, for feeds whose realtime trip ids match the schedule's. */
   tripShapes: Map<string, string>;
+  /**
+   * The route of each scheduled trip, for realtime feeds that leave it off (NYC Ferry's). Only kept for
+   * schedules read in full: a bus schedule's trips would run to hundreds of thousands.
+   */
+  tripRoutes: Map<string, string>;
   /** Every shape a route's trips follow, for drawing the whole line. */
   routeShapes: Map<string, Set<string>>;
   /**
@@ -327,6 +332,7 @@ export async function buildStaticIndex(
 
   const trips = new Map<string, { routeId: string; shapeId?: string; serviceId: string; direction: string }>();
   const tripShapes = new Map<string, string>();
+  const tripRoutes = new Map<string, string>();
   const routeShapes = new Map<string, Set<string>>();
   // Without every stop time, a route's stops come from one typical trip each way: one that follows the
   // shape most of its trips that way take.
@@ -334,6 +340,7 @@ export async function buildStaticIndex(
   const timed = detail === 'stops' ? new BusScheduleBuilder() : undefined;
   for await (const r of rows(files, 'trips.txt')) {
     trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined, serviceId: r.service_id ?? '', direction: r.direction_id ?? '' });
+    if (detail === 'full' && r.route_id) tripRoutes.set(r.trip_id, r.route_id);
     timed?.addTrip(r);
     if (detail === 'stops' || report === 'gaps') {
       const way = `${r.route_id}|${r.direction_id ?? ''}`;
@@ -516,6 +523,7 @@ export async function buildStaticIndex(
     segments,
     shapes,
     tripShapes,
+    tripRoutes,
     routeShapes,
     ...byStop,
     calendar,
@@ -727,6 +735,7 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     segments: new Map(),
     shapes: new Map(),
     tripShapes: new Map(),
+    tripRoutes: new Map(),
     routeShapes: new Map(),
     stopRoutes: new Map(),
     routeStations: new Map(),
