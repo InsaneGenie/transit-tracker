@@ -15,7 +15,7 @@ import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accessOf } from '../web/src/accessibility';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from '../web/src/panelHistory';
-import { colorFor, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
+import { colorFor, displayName, facingWay, holdMissing, MODE_LABELS, routeKey, sameStation, tidyStopName, transferLines } from '../web/src/vehicles';
 import {
   fetchAlerts,
   fetchAlertSummary,
@@ -40,7 +40,9 @@ import {
   type Vehicle,
   type VehicleDetail,
 } from './src/api';
+import { alertStatus, type LeaveControls } from '../web/src/leaveAlert';
 import { GuideSheet } from './src/GuideSheet';
+import { LeaveBanner } from './src/LeaveAlert';
 import { LinePage } from './src/LinePage';
 import { LinePanel } from './src/LinePanel';
 import { LinesScreen } from './src/LinesScreen';
@@ -52,6 +54,7 @@ import { PanelSheet, type Sheet } from './src/PanelSheet';
 import { boundsOf, GLIDE_MIN_ZOOM, LABEL_MIN_ZOOM, MAX_MARKERS, nearestToCenter, pollMsFor, VEHICLE_MIN_ZOOM, zoomOf } from './src/region';
 import { SidePanel } from './src/SidePanel';
 import { MODE_DOT, palette } from './src/theme';
+import { useLeaveAlert, useLeaveNotificationTap } from './src/useLeaveAlert';
 import { StopMarker, VehicleMarker } from './src/VehicleMarker';
 import { Transfers, VehiclePanel } from './src/VehiclePanel';
 
@@ -299,6 +302,8 @@ function TransitMap() {
   const [panelHeight, setPanelHeight] = useState(0);
   const [locating, setLocating] = useState(false);
   const [showsUser, setShowsUser] = useState(false);
+  // The toolbar's chips can wrap to a second row; the alert banner sits under them.
+  const [toolbarHeight, setToolbarHeight] = useState(80);
 
   const zoom = zoomOf(region, width);
   const bikes = useBikeDocks(bikesOn, region, zoom, active);
@@ -422,6 +427,39 @@ function TransitMap() {
       clearInterval(timer);
     };
   }, [station?.lat, station?.lon, selectedLine, viewLine?.key, active]);
+
+  // "Should I run?": an alert for one direction at the picked station, kept going after the panel closes.
+  const leave = useLeaveAlert(active);
+  const arrivalsLine = selectedLine ?? viewLine?.key ?? null;
+  const leaveControls: LeaveControls | undefined =
+    station && arrivalsLine
+      ? {
+          watching:
+            leave.watch && leave.watch.line === arrivalsLine && sameStation(leave.watch.station, station) ? leave.watch.toward : null,
+          status: leave.watch ? alertStatus(leave.watch, leave.plan, leave.now) : undefined,
+          walk: leave.walk,
+          onStart: (toward, walkMinutes) => {
+            const info = routesByKey.get(arrivalsLine);
+            const own = detail && routeKey(detail.vehicle) === arrivalsLine ? detail.vehicle : null;
+            leave.start({
+              line: arrivalsLine,
+              name: displayName(info?.name ?? own?.routeName ?? own?.routeId ?? arrivalsLine.slice(arrivalsLine.indexOf(':') + 1)),
+              mode: info?.mode ?? own?.mode ?? viewRoute?.mode ?? 'subway',
+              station: {
+                stopId: station.stopId,
+                name: station.name,
+                lat: station.lat,
+                lon: station.lon,
+                transfers: station.transfers,
+                ...accessOf(station),
+              },
+              toward,
+              walkMinutes,
+            });
+          },
+          onStop: leave.stop,
+        }
+      : undefined;
 
   // The lines you can change to at the picked station, without express twins (7X beside the 7).
   const stationTransfers = useMemo(
@@ -696,6 +734,22 @@ function TransitMap() {
     if (at) mapRef.current?.animateCamera({ center: { latitude: at.lat, longitude: at.lon } }, { duration: 600 });
   };
 
+  // The alert's banner, or its notification, opens its line at its station.
+  const openLeaveStation = () => {
+    const w = leave.watch;
+    if (!w) return;
+    setLinesUp(false);
+    setLinePage(null);
+    setGuideOpen(false);
+    setFollowing(false);
+    if (!selectedId && viewLine?.key === w.line && station && sameStation(station, w.station)) {
+      mapRef.current?.animateCamera({ center: { latitude: station.lat, longitude: station.lon } }, { duration: 600 });
+      return;
+    }
+    openLine(w.line, { ...w.station });
+  };
+  useLeaveNotificationTap(openLeaveStation);
+
   // Every station on the open vehicle's line, from its drawn route or the panel.
   const openOwnLine = () => {
     if (selectedLine) openLine(selectedLine, undefined, detail?.upcoming);
@@ -953,6 +1007,7 @@ function TransitMap() {
         backLabel={history[history.length - 1]?.label}
         onBack={goBack}
         onArrival={(id) => openVehicle(id, true)}
+        leave={leaveControls}
         onLine={(key) => openLine(key)}
         onStop={pickStation}
         onClose={closePanels}
@@ -974,6 +1029,7 @@ function TransitMap() {
         onBack={goBack}
         onStop={pickStation}
         onArrival={(id) => openVehicle(id, true)}
+        leave={leaveControls}
         onLine={(key) => openLine(key)}
         onClose={closePanels}
       />
@@ -1200,7 +1256,11 @@ function TransitMap() {
           </MapView>
         </View>
 
-        <View style={[styles.toolbar, { top: insets.top + 8, left: sideLeft + 12 }]} pointerEvents="box-none">
+        <View
+          style={[styles.toolbar, { top: insets.top + 8, left: sideLeft + 12 }]}
+          pointerEvents="box-none"
+          onLayout={(e) => setToolbarHeight(e.nativeEvent.layout.height)}
+        >
           <View style={[styles.brand, { backgroundColor: c.chip }]}>
             <View style={styles.brandDot} />
             <Text style={[styles.brandText, { color: c.text }]}>NY Transit Live</Text>
@@ -1311,6 +1371,15 @@ function TransitMap() {
           >
             <Text style={[styles.locateIcon, { color: c.accent }]}>➤</Text>
           </Pressable>
+        )}
+
+        {!(linesUp && !wide) && (
+          <LeaveBanner
+            alert={leave}
+            dark={dark}
+            onOpen={openLeaveStation}
+            style={{ top: insets.top + 8 + toolbarHeight + 8, left: sideLeft + 12, right: 12, maxWidth: wide ? 460 : undefined }}
+          />
         )}
 
         {panelOpen &&

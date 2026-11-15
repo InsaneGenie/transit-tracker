@@ -487,6 +487,223 @@ button {
   text-transform: uppercase;
 }
 
+.arrivals-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+}
+
+.arrivals-top .arrivals-heading {
+  margin: 0;
+  min-width: 0;
+}
+
+/* "Should I run?" alerts: the bell beside each direction, the walk times, and the alert that is on. */
+
+.bell-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.leave-bell {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-bell:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.leave-ask,
+.leave-on {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-solid);
+  font-size: 13px;
+}
+
+.leave-on {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.leave-on-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.leave-ask-label {
+  color: var(--muted);
+}
+
+.leave-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.leave-choice {
+  min-width: 52px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-choice:hover,
+.leave-choice-last {
+  border-color: var(--accent);
+}
+
+.leave-link {
+  flex: none;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-link:hover {
+  color: var(--ink);
+}
+
+.leave-banner {
+  position: absolute;
+  z-index: 3;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  max-width: min(460px, calc(100% - 24px));
+  padding: 4px 4px 4px 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 0 0 1.5px var(--accent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+}
+
+.leave-banner-go {
+  background: #15803d;
+  box-shadow: var(--shadow);
+  animation: leave-go 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes leave-go {
+  to {
+    transform: translateX(-50%) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leave-banner-go {
+    animation: none;
+  }
+}
+
+.leave-banner-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leave-banner-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.leave-banner-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.leave-banner-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leave-banner-go .leave-banner-main,
+.leave-banner-go .leave-banner-sub,
+.leave-banner-go .leave-banner-close {
+  color: #fff;
+}
+
+.leave-banner-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.leave-banner-close:hover {
+  color: var(--ink);
+}
+
 .arrival-list {
   margin: 0;
   padding: 0;
@@ -1874,6 +2091,27 @@ button.service-row:not(:disabled) {
   .status {
     left: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  /* Lines covers the whole screen on phones; the banner comes back when it closes. */
+  .app:has(.lines-panel) .leave-banner {
+    display: none;
+  }
+
+  /* Under the toolbar, clear of the cards along the bottom. */
+  .leave-banner {
+    top: 58px;
+    bottom: auto;
+    left: 10px;
+    right: 64px;
+    max-width: none;
+    transform: none;
+  }
+
+  @keyframes leave-go {
+    to {
+      transform: scale(1.02);
+    }
   }
 
   /* Above the vehicle count, which takes the bottom left. */

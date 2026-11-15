@@ -16,7 +16,9 @@ import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, UpcomingStop, VehicleDetail } from './api';
+import type { LeaveControls } from '../../web/src/leaveAlert';
 import { BackButton } from './BackButton';
+import { DirectionHeading } from './LeaveAlert';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
 import { palette } from './theme';
@@ -42,6 +44,8 @@ interface Props {
   alerts: ServiceAlert[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer line at the station shows that whole line. */
   onLine: (key: string) => void;
   dark: boolean;
@@ -118,6 +122,7 @@ export function Arrivals({
   selectedId,
   noun,
   dark,
+  leave,
   onPick,
 }: {
   directions: ArrivalDirection[] | null;
@@ -125,6 +130,8 @@ export function Arrivals({
   selectedId?: string;
   noun: string;
   dark: boolean;
+  /** Lets each direction set a "should I run?" alert. */
+  leave?: LeaveControls;
   onPick: (vehicleId: string) => void;
 }) {
   const c = palette(dark);
@@ -135,10 +142,17 @@ export function Arrivals({
   return (
     <View style={styles.arrivals}>
       {directions.map((d) => (
-        <View key={d.arrivals[0].vehicle.id} accessibilityLabel={`To ${d.destinations.join(', ')}`}>
-          <Text style={[styles.arrivalsHeading, { color: c.muted }]}>
-            {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
-          </Text>
+        <View key={d.destinations.join('|') || d.arrivals[0].vehicle.id} accessibilityLabel={`To ${d.destinations.join(', ')}`}>
+          <DirectionHeading
+            destinations={d.destinations}
+            leave={leave}
+            dark={dark}
+            heading={
+              <Text style={[styles.arrivalsHeading, { color: c.muted }]}>
+                {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
+              </Text>
+            }
+          />
           {d.arrivals.map(({ vehicle: v, time, stopsAway }) => {
             const stop = v.stopName && tidyStopName(v.stopName);
             const where = v.status === 'STOPPED_AT' && stop ? `At ${stop}` : stop ? `Heading to ${stop}` : 'On the way';
@@ -186,6 +200,7 @@ export function VehiclePanel({
   arrivals,
   alerts,
   onArrival,
+  leave,
   onLine,
   dark,
   bottomInset,
@@ -300,6 +315,7 @@ export function VehiclePanel({
               selectedId={vehicle.id}
               noun={vehicleNoun(vehicle.mode)}
               dark={dark}
+              leave={leave}
               onPick={onArrival}
             />
           </View>

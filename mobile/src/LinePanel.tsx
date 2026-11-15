@@ -4,6 +4,7 @@ import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStop
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
+import type { LeaveControls } from '../../web/src/leaveAlert';
 import { BackButton } from './BackButton';
 import { SheetHandle, type Sheet } from './PanelSheet';
 import { ShareButton } from './ShareButton';
@@ -30,6 +31,8 @@ interface Props {
   onBack: () => void;
   onStop: (stop: UpcomingStop) => void;
   onArrival: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer at the picked station shows that line instead. */
   onLine: (key: string) => void;
   onClose: () => void;
@@ -50,6 +53,7 @@ export function LinePanel({
   onBack,
   onStop,
   onArrival,
+  leave,
   onLine,
   onClose,
 }: Props) {
@@ -113,7 +117,7 @@ export function LinePanel({
                 <Text style={[styles.muted, { color: c.muted }]}>No transfers here</Text>
               )}
             </View>
-            <Arrivals directions={arrivals} noun={noun} dark={dark} onPick={onArrival} />
+            <Arrivals directions={arrivals} noun={noun} dark={dark} leave={leave} onPick={onArrival} />
           </View>
         )}
 
