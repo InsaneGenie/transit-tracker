@@ -438,6 +438,54 @@ export function addStraightShapes(index: StaticIndex): void {
   }
 }
 
+/** Fills in the route of trips and vehicles whose feed leaves it off (NYC Ferry's), from the schedule. */
+export function withScheduledRoutes(snapshot: FeedSnapshot, index: StaticIndex): FeedSnapshot {
+  const missing = snapshot.trips.some((t) => !t.routeId) || snapshot.gps.some((g) => !g.routeId && g.tripId);
+  if (!missing || !index.tripRoutes.size) return snapshot;
+  const routeOf = (tripId?: string) => (tripId ? index.tripRoutes.get(tripId) : undefined);
+  return {
+    ...snapshot,
+    trips: snapshot.trips.map((t) => (t.routeId ? t : { ...t, routeId: routeOf(t.tripId) })),
+    gps: snapshot.gps.map((g) => (g.routeId ? g : { ...g, routeId: routeOf(g.tripId) })),
+  };
+}
+
+/** A reported position and a trip placed from its times this close together are the same boat, in meters. */
+const SAME_BOAT_M = 500;
+
+/**
+ * A boat whose position names a trip with no update (NYC Ferry's positions can name the trip before or
+ * after the one its update is for) takes the nearest trip update no other boat has, on its route, when
+ * that trip is placed close to where the boat is. Otherwise it would show twice: once where it reported,
+ * with no times, and once placed from its times.
+ */
+export function pairByPlace(snapshot: FeedSnapshot, index: StaticIndex): FeedSnapshot {
+  const tripIds = new Set(snapshot.trips.map((t) => t.tripId));
+  const vehicles = new Set(snapshot.gps.map((g) => g.vehicleId));
+  const claimed = new Set(snapshot.gps.flatMap((g) => (g.tripId && tripIds.has(g.tripId) ? [g.tripId] : [])));
+  const free = snapshot.trips.filter((t) => !claimed.has(t.tripId) && !(t.vehicleId && vehicles.has(t.vehicleId)));
+  if (!free.length) return snapshot;
+  const placed = free.flatMap((t) => {
+    const at = estimatePosition(t, snapshot.fetchedAt, index);
+    return at ? [{ trip: t, at }] : [];
+  });
+  return {
+    ...snapshot,
+    gps: snapshot.gps.map((g) => {
+      if (g.tripId && tripIds.has(g.tripId)) return g;
+      let best: { trip: TripState; meters: number } | undefined;
+      for (const { trip, at } of placed) {
+        if (claimed.has(trip.tripId) || (g.routeId && trip.routeId && g.routeId !== trip.routeId)) continue;
+        const meters = distanceMeters(g, at);
+        if (meters <= SAME_BOAT_M && (!best || meters < best.meters)) best = { trip, meters };
+      }
+      if (!best) return g;
+      claimed.add(best.trip.tripId);
+      return { ...g, tripId: best.trip.tripId, routeId: g.routeId ?? best.trip.routeId };
+    }),
+  };
+}
+
 /** A stop's accessibility, for the API. */
 function accessOf(stop: { access?: Access; accessNote?: string } | undefined) {
   if (!stop?.access) return {};
@@ -515,7 +563,12 @@ export class VehicleStore {
     if (ok.length) {
       let merged = mergeSnapshots(ok);
       if (feed.config.agencyPrefixedIds) merged = withoutAgencyPrefixes(merged);
-      feed.snapshot = feed.config.matchTripsByVehicle ? linkTripsByVehicle(merged) : merged;
+      if (feed.index) merged = withScheduledRoutes(merged, feed.index);
+      if (feed.config.matchTripsByVehicle) {
+        merged = linkTripsByVehicle(merged);
+        if (feed.index) merged = pairByPlace(merged, feed.index);
+      }
+      feed.snapshot = merged;
     }
     // Only polls where every URL answered, so a stretch counted as watched was watched for every line.
     if (this.reports && feed.snapshot && !failed.length && hasReportCard(feed.config)) {
@@ -599,8 +652,11 @@ export class VehicleStore {
 
       if (!index) continue;
       const tracked = new Set(live.map((g) => g.tripId));
+      // A boat's update can list its next trip too; the boat is already shown where it reported.
+      const boats = config.matchTripsByVehicle ? new Set(live.map((g) => g.vehicleId)) : undefined;
       for (const trip of snapshot.trips) {
         if (tracked.has(trip.tripId)) continue; // its GPS position is already listed
+        if (trip.vehicleId && boats?.has(trip.vehicleId)) continue;
         if (bbox) {
           const next = trip.stops.find((s) => (s.departure ?? s.arrival ?? 0) > now);
           const stop = next && index.stops.get(next.stopId);
@@ -1333,6 +1389,16 @@ export class VehicleStore {
             (f.snapshot || f.lastError) && (!f.config.staticUrls?.length || f.index || f.staticError)
           : f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError),
       );
+  }
+
+  /**
+   * What a small optional feed (a ferry's) sent, as read: each URL's positions and trips before they were
+   * matched, then the result. For checking a feed the server can reach and a developer's machine can't.
+   */
+  feedSnapshot(id: string): { sent: (FeedSnapshot | null)[]; matched: FeedSnapshot } | null {
+    const feed = this.feeds.find((f) => f.config.id === id);
+    if (!feed?.config.optional || !feed.snapshot || feed.snapshot.trips.length > 500) return null;
+    return { sent: (feed.parts ?? []).map((p) => p?.snapshot ?? null), matched: feed.snapshot };
   }
 
   status(): FeedStatus[] {

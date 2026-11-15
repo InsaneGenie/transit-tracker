@@ -277,3 +277,77 @@ describe('feed health', () => {
     }
   });
 });
+
+describe('NYC Ferry as it really sends', () => {
+  let close: (() => void) | undefined;
+  afterEach(() => close?.());
+
+  // Seen live on Nov 15: no route ids anywhere, and a boat's position naming a different trip from the
+  // update that times it.
+  const positions = encodeFeed([
+    { id: 'p1', vehicle: { vehicle: { id: '13' }, trip: { tripId: 'gone' }, position: { latitude: 40.7899, longitude: -73.95 }, timestamp: T } },
+  ]);
+  const updates = encodeFeed([
+    {
+      id: 'u1',
+      tripUpdate: {
+        trip: { tripId: 't1' },
+        stopTimeUpdate: [
+          { stopId: 'A', departure: { time: T - 120 } },
+          { stopId: 'B', arrival: { time: T + 2 } },
+          { stopId: 'C', arrival: { time: T + 180 } },
+        ],
+      },
+    },
+  ]);
+  const store = () =>
+    new VehicleStore(
+      [ferry],
+      {},
+      async (url) => snapshotFromFeed(decodeFeed(url.includes('/ferry/vehicles') ? positions : updates), T),
+      () => indexPromise,
+    );
+
+  it('takes routes from the schedule and shows each boat once, where it reported, with its times', async () => {
+    const s = store();
+    await s.loadStatic();
+    await s.pollAll();
+    const boats = s.vehicles(T);
+    expect(boats).toHaveLength(1);
+    expect(boats[0]).toMatchObject({ id: 'test-ferry:13', source: 'gps', tripId: 't1', routeId: '1', routeName: '1' });
+    expect(s.lineCounts(T)).toEqual({ 'test-ferry:1': 1 });
+    expect(s.detail('test-ferry:13', T)?.upcoming.map((u) => u.name)).toEqual(['Bravo', 'Charlie']);
+    const near = s.arrivals('test-ferry:1', { lat: 40.78, lon: -73.95 }, T);
+    expect(near.flatMap((d) => d.arrivals.map((a) => a.time))).toEqual([T + 180]);
+  });
+
+  it("doesn't pair a boat with a trip placed far from it", async () => {
+    const far = snapshotFromFeed(decodeFeed(positions), T);
+    far.gps[0].lat = 40.7;
+    const s = new VehicleStore(
+      [ferry],
+      {},
+      async (url) => (url.includes('/ferry/vehicles') ? far : snapshotFromFeed(decodeFeed(updates), T)),
+      () => indexPromise,
+    );
+    await s.loadStatic();
+    await s.pollAll();
+    expect(s.vehicles(T).map((v) => [v.source, v.tripId]).sort()).toEqual([
+      ['estimated', 't1'],
+      ['gps', 'gone'],
+    ]);
+  });
+
+  it('shows what a ferry feed sent, for checking it from outside', async () => {
+    const s = store();
+    await s.loadStatic();
+    await s.pollAll();
+    const server = createApiServer(s, () => T).listen(0);
+    close = () => server.close();
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+    const body = await (await fetch(`${base}/api/feed-snapshot?feed=test-ferry`)).json();
+    expect(body.sent[0].gps[0].tripId).toBe('gone');
+    expect(body.matched.gps[0].tripId).toBe('t1');
+    expect((await fetch(`${base}/api/feed-snapshot?feed=test-train`)).status).toBe(404);
+  });
+});
