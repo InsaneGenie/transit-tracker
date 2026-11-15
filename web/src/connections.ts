@@ -19,8 +19,8 @@ export interface ConnectionView {
 
 const NEAR_MISS_S = 150;
 
-/** Subway bullets first, then railroad branches, then buses: the short badges line up best together. */
-const MODE_ORDER: Record<Mode, number> = { subway: 0, rail: 1, bus: 2 };
+/** Subway bullets first, then railroad branches, buses and boats: the short badges line up best together. */
+const MODE_ORDER: Record<Mode, number> = { subway: 0, rail: 1, bus: 2, ferry: 3 };
 
 const minutes = (seconds: number) => Math.max(0, Math.round(seconds / 60));
 

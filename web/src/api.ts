@@ -1,4 +1,6 @@
-export type Mode = 'subway' | 'bus' | 'rail';
+import { EXTRA_MODES } from './vehicles';
+
+export type Mode = 'subway' | 'bus' | 'rail' | 'ferry';
 
 /** Mirrors `Vehicle` in server/src/store.ts. */
 export interface Vehicle {
@@ -17,6 +19,8 @@ export interface Vehicle {
   stopId?: string;
   stopName?: string;
   source: 'gps' | 'estimated';
+  /** Placed from the published timetable, with no live data at all (the Staten Island Ferry). */
+  scheduled?: boolean;
 }
 
 export interface UpcomingStop {
@@ -48,6 +52,36 @@ export interface LineVehicle {
   /** 1 when it is heading toward the end of the line's `stops`, -1 toward the start. */
   heading: 1 | -1;
   destination?: string;
+  /** How far behind the next vehicle ahead going the same way it is, for buses. */
+  gap?: Gap;
+}
+
+/** Mirrors `Gap` in server/src/service.ts. */
+export interface Gap {
+  aheadId: string;
+  meters: number;
+  /** About how far behind it is, in minutes, at the line's scheduled pace. */
+  minutes?: number;
+  kind?: 'bunched' | 'long';
+}
+
+/** Mirrors `MissingTrip` in server/src/service.ts: a scheduled trip with no bus behind it. */
+export interface MissingTrip {
+  tripId: string;
+  /** Unix seconds. */
+  start: number;
+  end: number;
+  headsign?: string;
+  heading?: 1 | -1;
+}
+
+/** Mirrors `LineService` in server/src/service.ts: a bus line against its schedule right now. */
+export interface LineService {
+  scheduled: number;
+  missing: MissingTrip[];
+  /** About how often a bus is due each way, in minutes. */
+  headways: { forward?: number; back?: number };
+  tripMinutes?: number;
 }
 
 /** Mirrors `RouteInfo` in server/src/store.ts. */
@@ -126,6 +160,28 @@ export interface StopConnections {
   lines: LineConnection[];
 }
 
+/** A Citi Bike dock. Mirrors `BikeDock` in server/src/bikes.ts. */
+export interface BikeDock {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Bikes ready to ride, e-bikes included. */
+  bikes: number;
+  ebikes?: number;
+  /** Free spots to return a bike to. */
+  docks: number;
+  renting: boolean;
+  returning: boolean;
+}
+
+/** The docks in an area; `zoomIn` when the area is too big to list them. */
+export interface BikeDocks {
+  updatedAt?: string;
+  zoomIn?: boolean;
+  docks: BikeDock[];
+}
+
 /** Mirrors `AlertSeverity` in server/src/alerts.ts. */
 export type AlertSeverity = 'suspended' | 'delays' | 'changes' | 'info';
 
@@ -154,7 +210,7 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
 export type Bounds = [west: number, south: number, east: number, north: number];
 
 export function fetchVehicles(bounds: Bounds, signal?: AbortSignal): Promise<{ vehicles: Vehicle[] }> {
-  return get(`/api/vehicles?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}`, signal);
+  return get(`/api/vehicles?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}&extra=${EXTRA_MODES}`, signal);
 }
 
 export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<VehicleDetail> {
@@ -162,16 +218,21 @@ export function fetchVehicleDetail(id: string, signal?: AbortSignal): Promise<Ve
 }
 
 export function fetchRoutes(signal?: AbortSignal): Promise<{ routes: RouteInfo[] }> {
-  return get('/api/routes', signal);
+  return get(`/api/routes?extra=${EXTRA_MODES}`, signal);
 }
 
 export function fetchRouteLines(keys: string[], signal?: AbortSignal): Promise<{ lines: RouteLine[] }> {
   return get(`/api/route-lines?keys=${keys.map(encodeURIComponent).join(',')}`, signal);
 }
 
-/** Every subway and rail line's path, for drawing all of them at once. */
+/** Every subway, rail and ferry line's path, for drawing all of them at once. */
 export function fetchRoutePaths(signal?: AbortSignal): Promise<{ lines: RoutePath[] }> {
-  return get('/api/route-paths?modes=subway,rail', signal);
+  return get('/api/route-paths?modes=subway,rail,ferry', signal);
+}
+
+/** The Citi Bike docks in an area, with their bikes and free docks. */
+export function fetchBikes(bounds: Bounds, signal?: AbortSignal): Promise<BikeDocks> {
+  return get(`/api/bikes?bbox=${bounds.map((n) => n.toFixed(4)).join(',')}`, signal);
 }
 
 export function fetchArrivals(
@@ -192,7 +253,7 @@ export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ ale
 }
 
 /** Every vehicle of a line, placed along its stations. */
-export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[] }> {
+export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[]; service?: LineService }> {
   return get(`/api/line-vehicles?line=${encodeURIComponent(line)}`, signal);
 }
 

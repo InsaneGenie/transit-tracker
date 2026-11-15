@@ -1,14 +1,15 @@
-import { Fragment, type CSSProperties, type Ref } from 'react';
+import { Fragment, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, StopConnections, UpcomingStop, VehicleDetail } from './api';
 import { connectionHeading, connectionLines, connectionSummary, describeConnection } from './connections';
 import { BackButton } from './BackButton';
+import { sameDirection, WALK_CHOICES, type LeaveControls } from './leaveAlert';
 import { CloseButton } from './CloseButton';
 import type { Station } from './MapView';
 import { shareTitle, shareUrl } from './share';
 import { ShareButton } from './ShareButton';
-import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, textColorFor, tidyStopName, transferLines } from './vehicles';
+import { colorFor, displayName, formatEta, MODE_LABELS, routeKey, sameStation, sourceText, textColorFor, tidyStopName, transferLines, vehicleNoun } from './vehicles';
 
 const MAX_STOPS = 12;
 
@@ -33,6 +34,8 @@ interface Props {
   onArrival: (vehicleId: string) => void;
   /** Tapping a connection opens the vehicle you would catch. */
   onConnection: (vehicleId: string) => void;
+  /** "Should I run?" alerts for the picked station. */
+  leave?: LeaveControls;
   /** Tapping a transfer line at the station shows that whole line. */
   onLine: (key: string) => void;
   onFollow: () => void;
@@ -80,28 +83,98 @@ export function Transfers({ lines, onPick }: { lines: RouteInfo[]; onPick?: (key
   );
 }
 
+function BellIcon() {
+  return (
+    <svg className="bell-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d="M8 1.75a4 4 0 0 0-4 4v2.6L2.75 10.6v.9h10.5v-.9L12 8.35v-2.6a4 4 0 0 0-4-4Z" />
+      <path d="M6.4 12.75a1.65 1.65 0 0 0 3.2 0" />
+    </svg>
+  );
+}
+
+/** A direction's heading with its bell, and the walk times to pick from once the bell is tapped. */
+function DirectionHeading({ heading, destinations, leave }: { heading: ReactNode; destinations: string[]; leave?: LeaveControls }) {
+  const [asking, setAsking] = useState(false);
+  const on = leave?.watching != null && sameDirection(destinations, leave.watching);
+  return (
+    <>
+      <div className="arrivals-top">
+        {heading}
+        {leave && !on && !asking && (
+          <button className="leave-bell" onClick={() => setAsking(true)} title="Tell me when to leave for one of these">
+            <BellIcon />
+            Alert me
+          </button>
+        )}
+      </div>
+      {leave && on && (
+        <div className="leave-on" role="status">
+          <span className="leave-on-text">
+            <BellIcon />
+            {leave.status ?? 'Alert on'}
+          </span>
+          <button className="leave-link" onClick={leave.onStop}>
+            Stop alert
+          </button>
+        </div>
+      )}
+      {leave && !on && asking && (
+        <div className="leave-ask" role="group" aria-label="Your walk to the station">
+          <span className="leave-ask-label">How long is your walk here? You'll be told when to leave.</span>
+          <div className="leave-choices">
+            {WALK_CHOICES.map((m) => (
+              <button
+                key={m}
+                className={`leave-choice${m === leave.walk ? ' leave-choice-last' : ''}`}
+                onClick={() => {
+                  setAsking(false);
+                  leave.onStart(destinations, m);
+                }}
+              >
+                {m} min
+              </button>
+            ))}
+            <button className="leave-link" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Arrivals({
   directions,
   selectedId,
   noun,
+  leave,
   onPick,
 }: {
   directions: ArrivalDirection[] | null;
   /** The open vehicle, marked in the list. */
   selectedId?: string;
   noun: string;
+  /** Lets each direction set a "should I run?" alert. */
+  leave?: LeaveControls;
   onPick: (vehicleId: string) => void;
 }) {
-  const nouns = noun === 'bus' ? 'buses' : `${noun}s`;
+  const nouns = noun === 'bus' ? 'buses' : noun === 'ferry' ? 'ferries' : `${noun}s`;
   if (!directions) return <p className="muted small">Finding the {nouns} on the way…</p>;
   if (!directions.length) return <p className="muted small">No {nouns} on the way here right now.</p>;
   return (
     <div className="arrivals">
       {directions.map((d) => (
-        <section key={d.arrivals[0].vehicle.id} aria-label={`To ${d.destinations.join(', ')}`}>
-          <h3 className="arrivals-heading">
-            {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
-          </h3>
+        <section key={d.destinations.join('|') || d.arrivals[0].vehicle.id} aria-label={`To ${d.destinations.join(', ')}`}>
+          <DirectionHeading
+            destinations={d.destinations}
+            leave={leave}
+            heading={
+              <h3 className="arrivals-heading">
+                {d.destinations.length ? `To ${d.destinations.map(tidyStopName).join(' / ')}` : 'On the way'}
+              </h3>
+            }
+          />
           <ol className="arrival-list">
             {d.arrivals.map(({ vehicle: v, time, stopsAway }) => {
               const stop = v.stopName && tidyStopName(v.stopName);
@@ -230,6 +303,7 @@ export function VehiclePanel({
   connections,
   onArrival,
   onConnection,
+  leave,
   onLine,
   onFollow,
   onAllStations,
@@ -273,7 +347,7 @@ export function VehiclePanel({
       <div className="panel-meta">
         <p className="muted small source">
           <span className={`source-dot source-${vehicle.source}`} aria-hidden="true" />
-          {vehicle.source === 'gps' ? 'Live GPS position' : 'Estimated from arrival times'}
+          {sourceText(vehicle)}
         </p>
         <div className="panel-actions">
           <button className="chip follow" onClick={onAllStations}>
@@ -312,7 +386,8 @@ export function VehiclePanel({
           <Arrivals
             directions={arrivals}
             selectedId={vehicle.id}
-            noun={vehicle.mode === 'bus' ? 'bus' : 'train'}
+            noun={vehicleNoun(vehicle.mode)}
+            leave={leave}
             onPick={onArrival}
           />
         </section>

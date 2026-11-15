@@ -7,7 +7,7 @@ import { LineBadge, lineStatus } from './LineBadge';
 import { MyLineBadges } from './MyLineBadges';
 import { palette } from './theme';
 
-const BROWSE_MODES: Mode[] = ['subway', 'rail', 'bus'];
+const BROWSE_MODES: Mode[] = ['subway', 'rail', 'ferry', 'bus'];
 /** The borough whose buses were last shown, kept while the app runs. */
 let lastBorough = 'Manhattan';
 

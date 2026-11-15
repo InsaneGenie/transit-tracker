@@ -6,7 +6,7 @@ import { boroughLabel, lineStatus, vehicleCount } from './lines';
 import { useDragOrder } from './useDragOrder';
 import { legendGroups, MODE_LABELS } from './vehicles';
 
-const BROWSE_MODES: Mode[] = ['subway', 'rail', 'bus'];
+const BROWSE_MODES: Mode[] = ['subway', 'rail', 'ferry', 'bus'];
 const BOROUGH_KEY = 'transit-tracker:borough';
 
 /** The borough whose buses were last shown, when the browser allows remembering it. */

@@ -16,6 +16,8 @@
   --subway: #475569;
   --rail: #7c3aed;
   --bus: #2563eb;
+  --ferry: #0e7490;
+  --bike: #0369a1;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
@@ -38,6 +40,8 @@
   --subway: #94a3b8;
   --rail: #a78bfa;
   --bus: #60a5fa;
+  --ferry: #22b8cf;
+  --bike: #38bdf8;
   color-scheme: dark;
 }
 
@@ -171,6 +175,9 @@ button {
 }
 .chip-bus {
   --mode: var(--bus);
+}
+.chip-ferry {
+  --mode: var(--ferry);
 }
 
 .chip[aria-pressed='true'] {
@@ -482,6 +489,223 @@ button {
   text-transform: uppercase;
 }
 
+.arrivals-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+}
+
+.arrivals-top .arrivals-heading {
+  margin: 0;
+  min-width: 0;
+}
+
+/* "Should I run?" alerts: the bell beside each direction, the walk times, and the alert that is on. */
+
+.bell-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.leave-bell {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-bell:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.leave-ask,
+.leave-on {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-solid);
+  font-size: 13px;
+}
+
+.leave-on {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.leave-on-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.leave-ask-label {
+  color: var(--muted);
+}
+
+.leave-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.leave-choice {
+  min-width: 52px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-choice:hover,
+.leave-choice-last {
+  border-color: var(--accent);
+}
+
+.leave-link {
+  flex: none;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leave-link:hover {
+  color: var(--ink);
+}
+
+.leave-banner {
+  position: absolute;
+  z-index: 3;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  max-width: min(460px, calc(100% - 24px));
+  padding: 4px 4px 4px 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 0 0 1.5px var(--accent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+}
+
+.leave-banner-go {
+  background: #15803d;
+  box-shadow: var(--shadow);
+  animation: leave-go 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes leave-go {
+  to {
+    transform: translateX(-50%) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leave-banner-go {
+    animation: none;
+  }
+}
+
+.leave-banner-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leave-banner-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.leave-banner-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.leave-banner-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leave-banner-go .leave-banner-main,
+.leave-banner-go .leave-banner-sub,
+.leave-banner-go .leave-banner-close {
+  color: #fff;
+}
+
+.leave-banner-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.leave-banner-close:hover {
+  color: var(--ink);
+}
+
 .arrival-list {
   margin: 0;
   padding: 0;
@@ -541,7 +765,7 @@ button {
   flex: none;
   flex-direction: column;
   gap: 6px;
-  max-height: 38vh;
+  max-height: 30vh;
   margin: 0 0 8px;
   overflow-y: auto;
 }
@@ -802,6 +1026,76 @@ button.connection-way:hover {
   box-shadow: var(--shadow);
   color: var(--ink);
   font-size: 12px;
+}
+
+/* A tapped Citi Bike dock: its name, bikes and open docks, above its dot. */
+.bike-tag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  max-width: 240px;
+  padding: 7px 8px 7px 11px;
+  border-radius: 12px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.bike-tag-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.bike-tag-head strong {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.bike-tag-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -3px -2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bike-tag-close:hover {
+  background: var(--hover);
+}
+
+.bike-tag-count {
+  color: var(--bike);
+  font-weight: 600;
+}
+
+.bike-tag-none {
+  color: var(--muted);
+}
+
+.bike-tag .small {
+  margin-top: 2px;
+}
+
+.chip-bikes {
+  --mode: var(--bike);
+}
+
+.bike-icon .bike-glyph {
+  stroke: #fff;
+  transition: stroke 0.15s;
+}
+.chip[aria-pressed='false'] .bike-icon .bike-glyph {
+  stroke: var(--mode);
 }
 
 .station-tag .transfers {
@@ -1758,6 +2052,140 @@ button.connection-way:hover {
   transform: translateY(-50%) scale(1.12);
 }
 
+/* Ghost buses and bunching on a bus line's page. */
+.service-check {
+  display: flex;
+  flex-direction: column;
+  margin: 10px 0 4px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.service-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+button.service-row:not(:disabled) {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.service-row:hover:not(:disabled) {
+    background: var(--hover);
+  }
+}
+
+.service-row + .service-row,
+.service-missing + .service-row {
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+}
+
+.service-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.service-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.service-open .alert-chevron {
+  margin-bottom: -3px;
+  transform: rotate(-135deg);
+}
+
+.service-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 12px 10px 31px;
+  font-size: 13px;
+  list-style: none;
+}
+
+.service-missing li {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-missing .link {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* A stretch of the strip: buses bunched together, ringed, or a long wait between two, striped. */
+.strip-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.strip-mark::before {
+  position: absolute;
+  content: '';
+}
+
+.strip-mark-bunched::before {
+  top: -17px;
+  bottom: -17px;
+  left: 5px;
+  width: 30px;
+  border: 2px solid #ea580c;
+  border-radius: 17px;
+  background: rgb(234 88 12 / 0.22);
+}
+
+.strip-mark-long::before {
+  top: 0;
+  bottom: 0;
+  left: 19px;
+  width: 6px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(#dc2626 0 6px, var(--surface-solid) 6px 10px);
+}
+
+.strip-mark-label {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #ea580c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.strip-mark-long .strip-mark-label {
+  background: #dc2626;
+}
+
 /* Not wide enough for the toolbar and the Lines panel side by side: the panel starts below the toolbar. */
 @media (max-width: 1060px) {
   .lines-panel {
@@ -1856,6 +2284,27 @@ button.connection-way:hover {
   .status {
     left: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  /* Lines covers the whole screen on phones; the banner comes back when it closes. */
+  .app:has(.lines-panel) .leave-banner {
+    display: none;
+  }
+
+  /* Under the toolbar, clear of the cards along the bottom. */
+  .leave-banner {
+    top: 58px;
+    bottom: auto;
+    left: 10px;
+    right: 64px;
+    max-width: none;
+    transform: none;
+  }
+
+  @keyframes leave-go {
+    to {
+      transform: scale(1.02);
+    }
   }
 
   /* Above the vehicle count, which takes the bottom left. */

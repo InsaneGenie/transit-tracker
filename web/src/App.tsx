@@ -3,24 +3,31 @@ import { accessOf } from './accessibility';
 import { worstSeverity } from './alerts';
 import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchConnections, fetchLineCounts, fetchRouteLines, fetchRoutePaths, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type RoutePath, type ServiceAlert, type StopConnections, type UpcomingStop, type VehicleDetail } from './api';
 import { Guide } from './Guide';
+import { alertStatus, type LeaveControls } from './leaveAlert';
+import { LeaveBanner } from './LeaveBanner';
 import { LinePage } from './LinePage';
 import { LinePanel } from './LinePanel';
 import { LinesScreen } from './LinesScreen';
+import { BikeIcon } from './BikeIcon';
 import { ModeIcon } from './ModeIcon';
-import { MapView, SELECTED_POLL_MS, type MapInfo, type Station } from './MapView';
+import { MapView, SELECTED_POLL_MS, type BikeInfo, type MapInfo, type Station } from './MapView';
 import { pushStep, stepLabel, type PanelStep, type ViewLine } from './panelHistory';
 import { parseShare, withoutShare } from './share';
 import { APP_STORE_URL, TESTFLIGHT_URL } from './testflight';
 import { themeFor, type Theme } from './theme';
+import { useLeaveAlert } from './useLeaveAlert';
 import { VehiclePanel } from './VehiclePanel';
-import { facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
+import { displayName, facingWay, MODE_LABELS, routeKey, sameStation, transferLines } from './vehicles';
 import { everyWhileVisible } from './visible';
 
-const ALL_MODES: Mode[] = ['subway', 'rail', 'bus'];
+const ALL_MODES: Mode[] = ['subway', 'rail', 'ferry', 'bus'];
+/** The modes every schedule-loaded server has; ferries can be missing when their operator's feed is down. */
+const CORE_MODES: Mode[] = ['subway', 'rail', 'bus'];
 const LINES_KEY = 'transit-tracker:lines';
 const HIDDEN_ROUTES_KEY = 'transit-tracker:hidden-routes';
 const GUIDE_SEEN_KEY = 'transit-tracker:guide-seen';
 const ALL_ROUTES_KEY = 'transit-tracker:all-routes';
+const BIKES_KEY = 'transit-tracker:bikes';
 // A new key since the app reached the App Store, so people who closed the beta invite see it once more.
 const APP_INVITE_CLOSED_KEY = 'transit-tracker:app-store-invite-closed';
 /** The server draws at most this many lines per request. */
@@ -40,6 +47,15 @@ function savedKeys(key: string): string[] {
 function savedAllRoutes(): boolean {
   try {
     return localStorage.getItem(ALL_ROUTES_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Whether Citi Bike docks were shown last time. */
+function savedBikes(): boolean {
+  try {
+    return localStorage.getItem(BIKES_KEY) === '1';
   } catch {
     return false;
   }
@@ -190,6 +206,13 @@ function useLineCounts(on: boolean): Record<string, number> | null {
   return counts;
 }
 
+/** The Citi Bike part of the status line. */
+function bikeStatus(b: BikeInfo): string {
+  if (b.zoomIn) return 'Zoom in for Citi Bike docks';
+  if (b.error && !b.count) return "Can't load Citi Bike docks";
+  return `${b.count.toLocaleString()} Citi Bike ${b.count === 1 ? 'dock' : 'docks'}`;
+}
+
 /** The train, bus, line or station a shared link opened the site on. */
 const SHARED = parseShare(location.search);
 
@@ -209,6 +232,9 @@ export function App() {
   const [appInviteOpen, setAppInviteOpen] = useState(() => !appInviteClosed());
   // Every line's route drawn on the map, without opening Lines.
   const [allRoutesOn, setAllRoutesOn] = useState(savedAllRoutes);
+  // Citi Bike docks on the map, and how many are in view.
+  const [bikesOn, setBikesOn] = useState(savedBikes);
+  const [bikeInfo, setBikeInfo] = useState<BikeInfo | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => (SHARED && 'vehicle' in SHARED ? SHARED.vehicle : null));
   const [following, setFollowing] = useState(() => Boolean(SHARED && 'vehicle' in SHARED));
   // A shared vehicle's line, shown instead if the trip has ended; and the map goes to the vehicle once found.
@@ -247,6 +273,7 @@ export function App() {
   useEffect(() => save(LINES_KEY, JSON.stringify(lines)), [lines]);
   useEffect(() => save(HIDDEN_ROUTES_KEY, JSON.stringify(hiddenRoutes)), [hiddenRoutes]);
   useEffect(() => save(ALL_ROUTES_KEY, allRoutesOn ? '1' : ''), [allRoutesOn]);
+  useEffect(() => save(BIKES_KEY, bikesOn ? '1' : ''), [bikesOn]);
 
   // The whole route of the tapped vehicle's line, with its stations.
   const selectedLine = detail ? routeKey(detail.vehicle) : null;
@@ -328,6 +355,39 @@ export function App() {
     };
   }, [station?.lat, station?.lon, selectedLine, viewLine?.key]);
 
+  // "Should I run?": an alert for one direction at the picked station, kept going after the panel closes.
+  const leave = useLeaveAlert();
+  const arrivalsLine = selectedLine ?? viewLine?.key ?? null;
+  const leaveControls: LeaveControls | undefined =
+    station && arrivalsLine
+      ? {
+          watching:
+            leave.watch && leave.watch.line === arrivalsLine && sameStation(leave.watch.station, station) ? leave.watch.toward : null,
+          status: leave.watch ? alertStatus(leave.watch, leave.plan, leave.now) : undefined,
+          walk: leave.walk,
+          onStart: (toward, walkMinutes) => {
+            const info = routesByKey.get(arrivalsLine);
+            const own = detail && routeKey(detail.vehicle) === arrivalsLine ? detail.vehicle : null;
+            leave.start({
+              line: arrivalsLine,
+              name: displayName(info?.name ?? own?.routeName ?? own?.routeId ?? arrivalsLine.slice(arrivalsLine.indexOf(':') + 1)),
+              mode: info?.mode ?? own?.mode ?? viewRoute?.mode ?? 'subway',
+              station: {
+                stopId: station.stopId,
+                name: station.name,
+                lat: station.lat,
+                lon: station.lon,
+                transfers: station.transfers,
+                ...accessOf(station),
+              },
+              toward,
+              walkMinutes,
+            });
+          },
+          onStop: leave.stop,
+        }
+      : undefined;
+
   // Reordering your lines changes none of the drawn ones, so it fetches nothing.
   const drawnKeys = [...lines.slice(0, MAX_DRAWN_LINES)].sort().join(',');
   // The lines picked in the Lines tab are drawn as soon as they're picked.
@@ -389,7 +449,8 @@ export function App() {
         .then(({ routes }) => {
           setRoutes(routes);
           // Schedules can still be loading; ask again until every mode has its lines.
-          if (new Set(routes.map((r) => r.mode)).size < ALL_MODES.length) timer = setTimeout(load, 15_000);
+          const loaded = new Set(routes.map((r) => r.mode));
+          if (!CORE_MODES.every((m) => loaded.has(m))) timer = setTimeout(load, 15_000);
         })
         .catch((err: Error) => {
           if (err.name !== 'AbortError') timer = setTimeout(load, 5_000);
@@ -580,6 +641,18 @@ export function App() {
     setGoTo({ lon: vehicle.lon, lat: vehicle.lat, at: Date.now() });
   };
 
+  // The alert's banner opens its line at its station.
+  const openLeaveStation = () => {
+    const w = leave.watch;
+    if (!w) return;
+    setLinesOpen(false);
+    if (!selectedId && viewLine?.key === w.line && station && sameStation(station, w.station)) {
+      setStation({ ...station, at: Date.now() });
+      return;
+    }
+    openLine(w.line, { ...w.station, at: Date.now() });
+  };
+
   // Once closed, the guide doesn't open by itself again.
   const closeGuide = () => {
     setGuideOpen(false);
@@ -663,6 +736,8 @@ export function App() {
         onUpdate={setInfo}
         panelRef={panelRef}
         goTo={goTo}
+        bikes={bikesOn}
+        onBikes={setBikeInfo}
       />
 
       <div className="toolbar">
@@ -682,6 +757,15 @@ export function App() {
               {MODE_LABELS[mode]}
             </button>
           ))}
+          <button
+            className="chip chip-bikes"
+            aria-pressed={bikesOn}
+            title="Citi Bike docks, with their bikes and open docks"
+            onClick={() => setBikesOn((on) => !on)}
+          >
+            <BikeIcon />
+            Citi Bike
+          </button>
           {routesButton('chip chip-routes')}
           <button
             className={`chip chip-lines${linesOpen ? ' chip-active' : ''}`}
@@ -738,10 +822,13 @@ export function App() {
 
       <div className={`status${info.error ? ' status-error' : info.zoomedOut ? '' : ' status-live'}`} role="status">
         {info.error ?? (info.zoomedOut ? 'Zoom in to see vehicles' : `${info.count.toLocaleString()} vehicles in view`)}
+        {bikeInfo && <span className="status-bikes"> · {bikeStatus(bikeInfo)}</span>}
       </div>
 
       {/* Kept out of the way of the guide and the cards, which sit along the bottom on phones. */}
-      {appInviteOpen && !guideOpen && !linesOpen && !detail && !viewLine && !station && (
+      <LeaveBanner alert={leave} onOpen={openLeaveStation} />
+
+      {appInviteOpen && !leave.watch && !guideOpen && !linesOpen && !detail && !viewLine && !station && (
         <div className="app-invite" role="note">
           <a href={APP_STORE_URL} target="_blank" rel="noopener" onClick={closeAppInvite}>
             Get the iPhone app
@@ -768,6 +855,7 @@ export function App() {
           onBack={goBack}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}
           onArrival={(id) => openVehicle(id, true)}
+          leave={leaveControls}
           onLine={(key) => openLine(key)}
           onClose={closePanels}
         />
@@ -791,6 +879,7 @@ export function App() {
           onBack={goBack}
           onArrival={(id) => openVehicle(id, true)}
           onConnection={(id) => openVehicle(id)}
+          leave={leaveControls}
           onLine={(key) => openLine(key)}
           onShowTransfers={setShowTransfers}
           onStop={(stop) => pickStation({ stopId: stop.stopId, name: stop.name, lon: stop.lon!, lat: stop.lat!, ...accessOf(stop) })}

@@ -3,12 +3,12 @@ import type { Mode } from './api';
 /**
  * Each kind of vehicle gets its own outline and picture, so a bus, a subway train and a commuter train
  * can be told apart even where they share a color: subway trains are circles (like the line bullets),
- * buses rounded squares and commuter trains diamonds. Shared by the site's map and the app, whose
+ * buses rounded squares, commuter trains diamonds and ferries shields, flat on top and round below like a hull. Shared by the site's map and the app, whose
  * pictures are rendered from these paths by mobile/scripts/vehicle-icons.mjs.
  */
-export type IconShape = 'circle' | 'square' | 'diamond';
+export type IconShape = 'circle' | 'square' | 'diamond' | 'shield';
 
-export const MODE_SHAPES: Record<Mode, IconShape> = { subway: 'circle', bus: 'square', rail: 'diamond' };
+export const MODE_SHAPES: Record<Mode, IconShape> = { subway: 'circle', bus: 'square', rail: 'diamond', ferry: 'shield' };
 
 /** Pictures on a 24×24 grid, filled with the even-odd rule so windows and lights are cut out. */
 export const MODE_GLYPHS: Record<Mode, string> = {
@@ -37,10 +37,19 @@ export const MODE_GLYPHS: Record<Mode, string> = {
     'M6 18.2a1.6 1.6 0 1 0 0.01 0z' +
     'M17 18.2a1.6 1.6 0 1 0 0.01 0z' +
     'M1 21.5h22v1H1z',
+  // A ferry from the side: a hull, a cabin with a row of windows and the wheelhouse on top, on the water.
+  ferry:
+    'M8 4.5h5.5v3.5H8z' +
+    'M5 8h12.5l2.5 5H5z' +
+    'M6.5 9.5h2.5v2H6.5z' +
+    'M10.25 9.5h2.5v2h-2.5z' +
+    'M14 9.5h2.6l0.9 2H14z' +
+    'M1.5 13h21l-2.7 5.4a1.5 1.5 0 0 1-1.35 0.85H5.55a1.5 1.5 0 0 1-1.35-0.85z' +
+    'M1 21.5h22v1H1z',
 };
 
 /** How much of the icon's width the picture takes, so it sits inside the outline with some room. */
-export const GLYPH_SCALE: Record<IconShape, number> = { circle: 0.6, square: 0.62, diamond: 0.56 };
+export const GLYPH_SCALE: Record<IconShape, number> = { circle: 0.6, square: 0.62, diamond: 0.56, shield: 0.6 };
 
 /** The outline as an SVG path in a `size`-wide box, inset by `inset` for its border. */
 export function shapePath(shape: IconShape, size: number, inset = 0): string {
@@ -53,6 +62,16 @@ export function shapePath(shape: IconShape, size: number, inset = 0): string {
     return (
       `M${c - s + k} ${c - s}h${2 * (s - k)}a${k} ${k} 0 0 1 ${k} ${k}v${2 * (s - k)}a${k} ${k} 0 0 1 ${-k} ${k}` +
       `h${-2 * (s - k)}a${k} ${k} 0 0 1 ${-k} ${-k}v${-2 * (s - k)}a${k} ${k} 0 0 1 ${k} ${-k}z`
+    );
+  }
+  if (shape === 'shield') {
+    // Flat on top with small corners, and round along the bottom like a hull.
+    const s = r * 0.92;
+    const k = s * 0.22;
+    const b = s * 0.85;
+    return (
+      `M${c - s + k} ${c - s}h${2 * (s - k)}a${k} ${k} 0 0 1 ${k} ${k}v${2 * s - k - b}a${b} ${b} 0 0 1 ${-b} ${b}` +
+      `h${-2 * (s - b)}a${b} ${b} 0 0 1 ${-b} ${-b}v${-(2 * s - k - b)}a${k} ${k} 0 0 1 ${k} ${-k}z`
     );
   }
   // A diamond with softened corners.
