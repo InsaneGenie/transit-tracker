@@ -33,12 +33,18 @@ Paste these into App Store Connect (https://appstoreconnect.apple.com > Apps > N
 > • Show only the lines you ride, and the app remembers them
 > • Find yourself on the map to see what's coming nearby
 > • Light and dark map, following your phone
+> • Follow a train or bus on your Lock Screen and in the Dynamic Island, with a live countdown to your station
+> • Home Screen and Lock Screen widgets with the next arrivals at the stations you save
 >
 > Bus positions come from GPS. Subway trains don't report GPS, so their positions are worked out from the MTA's live arrival times and the real track shapes, and are marked as estimated.
 >
 > No account, no ads, no tracking.
 >
 > Data comes from the MTA's public realtime feeds. NY Transit Live is not made by or affiliated with the MTA.
+
+**What's New in This Version** (for the version that adds widgets and Live Activities):
+
+> Follow your train or bus on the Lock Screen and in the Dynamic Island: tap it, then Track on Lock Screen. And add stations to the new Home Screen and Lock Screen widgets with Add to widget.
 
 **Keywords** [100, commas, no spaces needed]:
 
@@ -54,7 +60,7 @@ Before you submit, replace both `CONTACT_EMAIL`s in `web/public/privacy.html` wi
 
 ## App privacy
 
-Click **Get Started** under App Privacy and answer **No, we do not collect data from this app**. That's true: there are no accounts or analytics, and the location never leaves the phone. The label then reads "Data Not Collected".
+Click **Get Started** under App Privacy and answer **No, we do not collect data from this app**. That's true: there are no accounts or analytics, and the location never leaves the phone. The label then reads "Data Not Collected". Following a train on the Lock Screen sends the server that train's id and a push code from Apple, held in memory only until the trip ends and never linked to anyone, which Apple doesn't count as collected data (the privacy policy says so too).
 
 ## Screenshots
 
@@ -73,6 +79,6 @@ The app runs on iPad too, so Apple also needs at least one iPad screenshot at th
 
 Under **App Review Information**, untick "Sign-in required" and paste:
 
-> No account is needed. The app opens on New York City and shows live subway trains, buses, LIRR and Metro-North trains from the MTA's public realtime feeds. Tap any dot to see that vehicle's route and next stops, and tap Follow to follow it. Use the chips at the top to show only some kinds of vehicle, or Lines to pick specific lines. Location is only used when you tap the location button, to show where you are on the map.
+> No account is needed. The app opens on New York City and shows live subway trains, buses, LIRR and Metro-North trains from the MTA's public realtime feeds. Tap any dot to see that vehicle's route and next stops, and tap Follow to follow it. Track on Lock Screen starts a Live Activity for it, and Add to widget (on a station) puts that station on the Home Screen widget. Use the chips at the top to show only some kinds of vehicle, or Lines to pick specific lines. Location is only used when you tap the location button, to show where you are on the map.
 
 Also fill in your name, phone number and email there. Apple only uses them to contact you about the review.

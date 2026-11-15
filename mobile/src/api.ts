@@ -90,3 +90,39 @@ export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ ale
 export function fetchReport(line: string, signal?: AbortSignal): Promise<LineReport> {
   return get(`/api/report?line=${encodeURIComponent(line)}`, signal);
 }
+
+/** What the server needs to keep a Live Activity up to date while the app is closed. */
+export interface LiveActivitySignUp {
+  /** The Live Activity's push token, in hex. */
+  token: string;
+  vehicleId: string;
+  stop: { stopId: string; name: string; lat?: number; lon?: number };
+  badge: { line: string; color: string; textColor: string };
+  startedAt: number;
+}
+
+/**
+ * Asks the server to push fresh content to a Live Activity. Resolves to whether it will: it can't
+ * without an Apple push key, and then the app keeps the Live Activity up to date itself while open.
+ */
+export async function signUpLiveActivity(body: LiveActivitySignUp): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_URL}/api/live-activities`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) return false;
+    return Boolean(((await res.json()) as { push?: boolean }).push);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Tells the server a Live Activity is over, so it stops pushing to it. */
+export async function signOffLiveActivity(token: string): Promise<void> {
+  await fetch(`${API_URL}/api/live-activities/${encodeURIComponent(token)}`, { method: 'DELETE' });
+}

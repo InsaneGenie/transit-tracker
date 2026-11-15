@@ -2,6 +2,7 @@ import { AlertStore } from './alerts.js';
 import { BikeStore } from './bikes.js';
 import { FEEDS } from './feeds.js';
 import { ReportBook, REPORTS_FILE } from './reports.js';
+import { apnsConfigFromEnv, apnsSender, LiveActivityPusher } from './liveActivities.js';
 import { createApiServer } from './server.js';
 import { VehicleStore } from './store.js';
 
@@ -22,7 +23,19 @@ alerts.start();
 // Citi Bike docks are only fetched while someone has them on the map.
 const bikes = new BikeStore();
 
-createApiServer(store, undefined, undefined, alerts, bikes).listen(port, () => {
+// Live Activity pushes, when an Apple push key is set (see liveActivities.ts).
+const apns = apnsConfigFromEnv();
+let sender = null;
+try {
+  sender = apns && apnsSender(apns);
+} catch (err) {
+  console.error(`APNS_KEY could not be read, so Live Activities won't get pushes: ${(err as Error).message}`);
+}
+const liveActivities = new LiveActivityPusher(store, sender);
+liveActivities.start();
+console.log(sender ? 'Live Activity pushes are on.' : 'Live Activity pushes are off (no APNS_KEY, APNS_KEY_ID and APNS_TEAM_ID).');
+
+createApiServer(store, undefined, undefined, alerts, bikes, liveActivities).listen(port, () => {
   console.log(`Transit tracker API on http://localhost:${port}/api/vehicles`);
 });
 
