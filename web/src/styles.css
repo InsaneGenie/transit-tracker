@@ -1642,6 +1642,140 @@ button {
   transform: translateY(-50%) scale(1.12);
 }
 
+/* Ghost buses and bunching on a bus line's page. */
+.service-check {
+  display: flex;
+  flex-direction: column;
+  margin: 10px 0 4px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.service-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+button.service-row:not(:disabled) {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.service-row:hover:not(:disabled) {
+    background: var(--hover);
+  }
+}
+
+.service-row + .service-row,
+.service-missing + .service-row {
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+}
+
+.service-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.service-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.service-open .alert-chevron {
+  margin-bottom: -3px;
+  transform: rotate(-135deg);
+}
+
+.service-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 12px 10px 31px;
+  font-size: 13px;
+  list-style: none;
+}
+
+.service-missing li {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-missing .link {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* A stretch of the strip: buses bunched together, ringed, or a long wait between two, striped. */
+.strip-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.strip-mark::before {
+  position: absolute;
+  content: '';
+}
+
+.strip-mark-bunched::before {
+  top: -17px;
+  bottom: -17px;
+  left: 5px;
+  width: 30px;
+  border: 2px solid #ea580c;
+  border-radius: 17px;
+  background: rgb(234 88 12 / 0.22);
+}
+
+.strip-mark-long::before {
+  top: 0;
+  bottom: 0;
+  left: 19px;
+  width: 6px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(#dc2626 0 6px, var(--surface-solid) 6px 10px);
+}
+
+.strip-mark-label {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #ea580c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.strip-mark-long .strip-mark-label {
+  background: #dc2626;
+}
+
 /* Not wide enough for the toolbar and the Lines panel side by side: the panel starts below the toolbar. */
 @media (max-width: 1060px) {
   .lines-panel {

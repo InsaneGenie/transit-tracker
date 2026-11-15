@@ -52,6 +52,36 @@ export interface LineVehicle {
   /** 1 when it is heading toward the end of the line's `stops`, -1 toward the start. */
   heading: 1 | -1;
   destination?: string;
+  /** How far behind the next vehicle ahead going the same way it is, for buses. */
+  gap?: Gap;
+}
+
+/** Mirrors `Gap` in server/src/service.ts. */
+export interface Gap {
+  aheadId: string;
+  meters: number;
+  /** About how far behind it is, in minutes, at the line's scheduled pace. */
+  minutes?: number;
+  kind?: 'bunched' | 'long';
+}
+
+/** Mirrors `MissingTrip` in server/src/service.ts: a scheduled trip with no bus behind it. */
+export interface MissingTrip {
+  tripId: string;
+  /** Unix seconds. */
+  start: number;
+  end: number;
+  headsign?: string;
+  heading?: 1 | -1;
+}
+
+/** Mirrors `LineService` in server/src/service.ts: a bus line against its schedule right now. */
+export interface LineService {
+  scheduled: number;
+  missing: MissingTrip[];
+  /** About how often a bus is due each way, in minutes. */
+  headways: { forward?: number; back?: number };
+  tripMinutes?: number;
 }
 
 /** Mirrors `RouteInfo` in server/src/store.ts. */
@@ -187,7 +217,7 @@ export function fetchAlerts(keys: string[], signal?: AbortSignal): Promise<{ ale
 }
 
 /** Every vehicle of a line, placed along its stations. */
-export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[] }> {
+export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[]; service?: LineService }> {
   return get(`/api/line-vehicles?line=${encodeURIComponent(line)}`, signal);
 }
 

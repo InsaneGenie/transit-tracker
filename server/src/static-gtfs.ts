@@ -52,6 +52,47 @@ export interface StaticIndex {
   routeStations: Map<string, string[]>;
   /** Every trip with its times and days, for a feed placed from its timetable (FeedConfig.timetable). */
   timetable?: Timetable;
+  /**
+   * When each scheduled trip runs, for stops-only schedules (buses), to tell which trips should be out on
+   * the road. One per schedule read: a merged index keeps each, as their service and block ids are their own.
+   */
+  busSchedules: BusSchedule[];
+}
+
+/** The days a service runs, from calendar.txt and calendar_dates.txt. */
+export interface Service {
+  /** Monday is bit 0, Sunday bit 6. */
+  days: number;
+  /** YYYYMMDD, inclusive. */
+  start: string;
+  end: string;
+  added: Set<string>;
+  removed: Set<string>;
+}
+
+/** One route's scheduled trips, column by column so a city's worth of bus trips stays small. */
+export interface RouteTrips {
+  tripIds: string[];
+  /** Index into the schedule's `serviceIds`. */
+  service: Uint16Array;
+  /** direction_id: 0 or 1. */
+  direction: Uint8Array;
+  /** The vehicle's day of work the trip is part of (block_id), as a number; -1 when unknown. */
+  block: Int32Array;
+  /** Index into `headsigns`. */
+  headsign: Uint16Array;
+  headsigns: string[];
+  /** Scheduled first departure and last arrival, in seconds after the service day's midnight; -1 when unknown. */
+  start: Int32Array;
+  end: Int32Array;
+  /** The direction of the trip `routeStations` lists the stops of, when it was this schedule's. */
+  listedDirection?: number;
+}
+
+export interface BusSchedule {
+  serviceIds: string[];
+  services: Map<string, Service>;
+  routes: Map<string, RouteTrips>;
 }
 
 /** Opens a file inside a GTFS feed, or returns null when the feed doesn't have it. */
@@ -99,11 +140,27 @@ function splitCsv(line: string): string[] {
  * The rows of a big file whose `column` is in `wanted`, skimming the rest without parsing them. A bus
  * schedule's stop times run to millions of rows; a full CSV parse of them is too slow for a small server.
  */
-async function* rowsWhere(files: GtfsFiles, name: string, column: string, wanted: Set<string>): AsyncGenerator<Row> {
+async function* rowsWhere(
+  files: GtfsFiles,
+  name: string,
+  column: string,
+  wanted: Set<string>,
+  spans?: (value: string, first: number | undefined, last: number | undefined) => void,
+): AsyncGenerator<Row> {
   const input = files(name);
   if (!input) return;
   let header: string[] | undefined;
   let at = -1;
+  // Each run of rows with the same value: its first and last row's time. Stop times come grouped by trip and
+  // in order, so those are when the trip starts and ends, found without reading the times of every row.
+  let times: [number, number] = [-1, -1];
+  let runValue: string | undefined;
+  let runFirst = '';
+  let runLast = '';
+  const timeOf = (line: string) => timeInLine(line, times[0]) ?? timeInLine(line, times[1]);
+  const endRun = () => {
+    if (spans && runValue !== undefined) spans(runValue, timeOf(runFirst), timeOf(runLast));
+  };
   let rest = '';
   let count = 0;
   // Keeps a character split between two chunks whole.
@@ -117,10 +174,20 @@ async function* rowsWhere(files: GtfsFiles, name: string, column: string, wanted
         header = splitCsv(line.replace(/^\uFEFF/, '')).map((h) => h.trim());
         at = header.indexOf(column);
         if (at < 0) return;
+        times = [header.indexOf('departure_time'), header.indexOf('arrival_time')];
         continue;
       }
+      if (!line) continue;
       // The trip id usually leads the row, so most rows are passed over on their first field.
       const value = at === 0 && !line.startsWith('"') ? line.slice(0, line.indexOf(',')) : splitCsv(line)[at];
+      if (spans) {
+        if (value !== runValue) {
+          endRun();
+          runValue = value;
+          runFirst = line;
+        }
+        runLast = line;
+      }
       if (!wanted.has(value)) continue;
       const fields = splitCsv(line);
       yield Object.fromEntries(header.map((h, i) => [h, fields[i] ?? '']));
@@ -128,9 +195,53 @@ async function* rowsWhere(files: GtfsFiles, name: string, column: string, wanted
     if (++count % 20 === 0) await breather();
   }
   if (rest && header) {
-    const fields = splitCsv(rest);
+    const line = rest.endsWith('\r') ? rest.slice(0, -1) : rest;
+    const fields = splitCsv(line);
+    if (spans) {
+      if (fields[at] !== runValue) {
+        endRun();
+        runValue = fields[at];
+        runFirst = line;
+      }
+      runLast = line;
+    }
     if (wanted.has(fields[at])) yield Object.fromEntries(header.map((h, i) => [h, fields[i] ?? '']));
   }
+  endRun();
+}
+
+/**
+ * The GTFS time in a line's `column`, read in place: splitting every trip's first and last stop time into
+ * fields made enough garbage to swell the server's memory while reading a bus schedule.
+ */
+export function timeInLine(line: string, column: number): number | undefined {
+  if (column < 0) return undefined;
+  if (line.includes('"')) return parseGtfsTime(splitCsv(line)[column]);
+  let at = 0;
+  for (let c = 0; c < column; c++) {
+    at = line.indexOf(',', at) + 1;
+    if (at === 0) return undefined;
+  }
+  // h:mm:ss or hh:mm:ss, the hours running past 24 after midnight.
+  let value = 0;
+  let part = 0;
+  let parts = 0;
+  let digits = 0;
+  for (let i = at; i <= line.length; i++) {
+    const code = i < line.length ? line.charCodeAt(i) : 44;
+    if (code >= 48 && code <= 57) {
+      part = part * 10 + code - 48;
+      digits++;
+    } else if (code === 58 || code === 44) {
+      if (!digits) return undefined;
+      value = value * 60 + part;
+      parts++;
+      part = 0;
+      digits = 0;
+      if (code === 44) break;
+    } else if (code !== 32) return undefined;
+  }
+  return parts === 3 ? value : undefined;
 }
 
 /** GTFS times can run past 24:00 for trips that continue after midnight. */
@@ -175,8 +286,10 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   // Without every stop time, a route's stops come from one typical trip each way: one that follows the
   // shape most of its trips that way take.
   const patterns = new Map<string, Map<string, { count: number; tripId: string }>>();
+  const timed = detail === 'stops' ? new BusScheduleBuilder() : undefined;
   for await (const r of rows(files, 'trips.txt')) {
     trips.set(r.trip_id, { routeId: r.route_id, shapeId: r.shape_id || undefined });
+    timed?.addTrip(r);
     if (detail === 'stops') {
       const way = `${r.route_id}|${r.direction_id ?? ''}`;
       let byShape = patterns.get(way);
@@ -261,7 +374,10 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
   }
   patterns.clear();
   const listedStops = new Map<string, string[]>();
-  const stopTimes = detail === 'full' ? rows(files, 'stop_times.txt') : rowsWhere(files, 'stop_times.txt', 'trip_id', typical);
+  const stopTimes =
+    detail === 'full'
+      ? rows(files, 'stop_times.txt')
+      : rowsWhere(files, 'stop_times.txt', 'trip_id', typical, (tripId, first, last) => timed?.setSpan(tripId, first, last));
   for await (const r of stopTimes) {
     if (r.trip_id !== currentTrip) {
       if (currentTrip) flushTrip(currentTrip, buffer);
@@ -303,7 +419,106 @@ export async function buildStaticIndex(files: GtfsFiles, detail: 'full' | 'stops
 
   const byStop = routesByStop(stops, stationOf, calls, transfers);
   if (detail === 'stops') byStop.routeStations = listedStops;
-  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop };
+  const busSchedules: BusSchedule[] = [];
+  if (timed) {
+    for await (const r of rows(files, 'calendar.txt')) timed.addService(r);
+    for await (const r of rows(files, 'calendar_dates.txt')) timed.addException(r);
+    busSchedules.push(timed.build(new Map([...listed].map(([routeId, l]) => [routeId, l.tripId]))));
+  }
+  return { stops, routes, segments, shapes, tripShapes, routeShapes, ...byStop, busSchedules };
+}
+
+/** Gathers a stops-only schedule's trips, then packs them into a BusSchedule. */
+class BusScheduleBuilder {
+  private serviceIds: string[] = [];
+  private serviceIndex = new Map<string, number>();
+  private services = new Map<string, Service>();
+  private blocks = new Map<string, number>();
+  /** By route: the trips in the order read, and each trip's place in them by id. */
+  private byRoute = new Map<string, { tripIds: string[]; service: number[]; direction: number[]; block: number[]; headsign: number[]; headsigns: string[]; start: number[]; end: number[] }>();
+  private place = new Map<string, { routeId: string; i: number }>();
+
+  addTrip(r: Row): void {
+    let route = this.byRoute.get(r.route_id);
+    if (!route) {
+      route = { tripIds: [], service: [], direction: [], block: [], headsign: [], headsigns: [], start: [], end: [] };
+      this.byRoute.set(r.route_id, route);
+    }
+    let service = this.serviceIndex.get(r.service_id);
+    if (service === undefined) {
+      service = this.serviceIds.push(r.service_id) - 1;
+      this.serviceIndex.set(r.service_id, service);
+    }
+    let block = -1;
+    if (r.block_id) {
+      block = this.blocks.get(r.block_id) ?? this.blocks.size;
+      this.blocks.set(r.block_id, block);
+    }
+    const sign = r.trip_headsign?.trim() ?? '';
+    let headsign = route.headsigns.indexOf(sign);
+    if (headsign < 0) headsign = route.headsigns.push(sign) - 1;
+    this.place.set(r.trip_id, { routeId: r.route_id, i: route.tripIds.length });
+    route.tripIds.push(r.trip_id);
+    route.service.push(service);
+    route.direction.push(r.direction_id === '1' ? 1 : 0);
+    route.block.push(block);
+    route.headsign.push(headsign);
+    route.start.push(-1);
+    route.end.push(-1);
+  }
+
+  setSpan(tripId: string, first: number | undefined, last: number | undefined): void {
+    const at = this.place.get(tripId);
+    if (!at || first === undefined || last === undefined) return;
+    const route = this.byRoute.get(at.routeId)!;
+    const [start, end] = first <= last ? [first, last] : [last, first];
+    // A trip's rows should come together, but if they don't, take in every run of them.
+    route.start[at.i] = route.start[at.i] < 0 ? start : Math.min(route.start[at.i], start);
+    route.end[at.i] = Math.max(route.end[at.i], end);
+  }
+
+  addService(r: Row): void {
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].reduce(
+      (bits, day, i) => (r[day]?.trim() === '1' ? bits | (1 << i) : bits),
+      0,
+    );
+    const service = this.serviceOf(r.service_id);
+    Object.assign(service, { days, start: r.start_date?.trim() ?? '', end: r.end_date?.trim() ?? '' });
+  }
+
+  addException(r: Row): void {
+    const date = r.date?.trim();
+    if (!date) return;
+    const service = this.serviceOf(r.service_id);
+    if (r.exception_type?.trim() === '1') service.added.add(date);
+    else if (r.exception_type?.trim() === '2') service.removed.add(date);
+  }
+
+  private serviceOf(id: string): Service {
+    let service = this.services.get(id);
+    if (!service) this.services.set(id, (service = { days: 0, start: '', end: '', added: new Set(), removed: new Set() }));
+    return service;
+  }
+
+  /** `listed` names, by route, the trip whose stops the route's station list was taken from. */
+  build(listed: Map<string, string>): BusSchedule {
+    const routes = new Map<string, RouteTrips>();
+    for (const [routeId, r] of this.byRoute) {
+      const listedAt = listed.has(routeId) ? this.place.get(listed.get(routeId)!) : undefined;
+      routes.set(routeId, {
+        tripIds: r.tripIds,
+        service: Uint16Array.from(r.service),
+        direction: Uint8Array.from(r.direction),
+        block: Int32Array.from(r.block),
+        headsign: Uint16Array.from(r.headsign),
+        headsigns: r.headsigns,
+        start: Int32Array.from(r.start),
+        end: Int32Array.from(r.end),
+        ...(listedAt && { listedDirection: r.direction[listedAt.i] }),
+      });
+    }
+    return { serviceIds: this.serviceIds, services: this.services, routes };
+  }
 }
 
 /**
@@ -354,10 +569,12 @@ export function mergeIndexes(indexes: StaticIndex[]): StaticIndex {
     routeShapes: new Map(),
     stopRoutes: new Map(),
     routeStations: new Map(),
+    busSchedules: [],
   };
   for (const index of indexes) {
+    merged.busSchedules.push(...index.busSchedules);
     for (const key of Object.keys(merged) as (keyof StaticIndex)[]) {
-      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes') continue;
+      if (key === 'routeShapes' || key === 'routeStations' || key === 'stopRoutes' || key === 'busSchedules') continue;
       const target = merged[key] as Map<string, unknown>;
       for (const [k, v] of index[key] as Map<string, unknown>) if (!target.has(k)) target.set(k, v);
     }

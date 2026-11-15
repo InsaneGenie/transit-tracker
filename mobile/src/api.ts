@@ -1,9 +1,9 @@
 import { EXTRA_MODES } from '../../web/src/vehicles';
 import type { BikeDocks } from '../../web/src/api';
-import type { AlertSeverity, ArrivalDirection, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+import type { AlertSeverity, ArrivalDirection, LineService, LineVehicle, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 import type { Bounds } from './region';
 
-export type { AlertSeverity, Arrival, BikeDock, BikeDocks, ArrivalDirection, LineVehicle, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
+export type { AlertSeverity, Arrival, BikeDock, BikeDocks, ArrivalDirection, Gap, LineService, LineVehicle, MissingTrip, Mode, RouteInfo, RouteLine, RoutePath, ServiceAlert, UpcomingStop, Vehicle, VehicleDetail } from '../../web/src/api';
 
 /** A station picked from the stop list or the map. */
 export type Station = Pick<UpcomingStop, 'stopId' | 'name' | 'transfers' | 'access' | 'accessNote'> & { lon: number; lat: number };
@@ -67,7 +67,7 @@ export function fetchArrivals(
 }
 
 /** Every vehicle of a line, placed along its stations. */
-export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[] }> {
+export function fetchLineVehicles(line: string, signal?: AbortSignal): Promise<{ vehicles: LineVehicle[]; service?: LineService }> {
   return get(`/api/line-vehicles?line=${encodeURIComponent(line)}`, signal);
 }
 
