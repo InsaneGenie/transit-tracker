@@ -1,5 +1,5 @@
 import type { Arrival, ArrivalDirection, Mode, UpcomingStop } from './api';
-import { displayName, tidyStopName } from './names';
+import { displayName, tidyStopName, vehicleNoun } from './names';
 
 /**
  * "Should I run?" alerts: pick a station and a direction, say how long your walk there takes, and you are
@@ -117,9 +117,6 @@ export function watchDone(watch: LeaveWatch, plan: LeavePlan | null, now: number
   const time = plan?.kind === 'leave' ? plan.time : watch.told.time;
   return now > time + AFTER_ARRIVAL_S;
 }
-
-/** "train" or "bus". */
-export const vehicleNoun = (mode: Mode) => (mode === 'bus' ? 'bus' : 'train');
 
 /** The countdown shown while waiting, e.g. "Leave in 6 min". */
 export function leaveIn(plan: LeavePlan, now: number): string {

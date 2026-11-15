@@ -12,8 +12,11 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { ACCESS_BLUE, WHEELCHAIR_GLYPH } from './accessibility';
+import { BIKE_MIN_ZOOM, BIKE_POLL_MS, bikeArea, bikesText, covers, dockColor, docksText, updatedText } from './bikes';
 import {
+  fetchBikes,
   fetchVehicles,
+  type BikeDock,
   type Bounds,
   type Mode,
   type RouteInfo,
@@ -70,6 +73,9 @@ function glideFrameMsFor(zoom: number): number {
 
 export type MapInfo = { count: number; error?: string; zoomedOut?: boolean };
 
+/** How the Citi Bike layer is doing: docks in view, or why there are none. */
+export type BikeInfo = { count: number; zoomIn?: boolean; error?: boolean };
+
 /** A station picked on the map or in the stop list; `at` makes picking the same one twice re-center it. */
 export type Station = Pick<UpcomingStop, 'stopId' | 'name' | 'transfers' | 'access' | 'accessNote'> & {
   lon: number;
@@ -110,6 +116,10 @@ interface Props {
   onUpdate: (info: MapInfo) => void;
   /** The vehicle panel, so a followed vehicle is kept in the part of the map it doesn't cover. */
   panelRef: RefObject<HTMLElement | null>;
+  /** Whether Citi Bike docks are shown. */
+  bikes: boolean;
+  /** Called as the docks in view change; null when the layer is off. */
+  onBikes: (info: BikeInfo | null) => void;
 }
 
 /** Direction arrows are made per line color, like the vehicle icons. */
@@ -252,6 +262,18 @@ function routeLineData(line: RouteLine | null): { path: GeoJSON.FeatureCollectio
   return {
     path: linesData([line]),
     stops: stopFeatures(line.stops, colorFor({ routeColor: line.color, mode: line.mode })),
+  };
+}
+
+/** Citi Bike docks as map points, colored by whether there's a bike to take. */
+function bikeFeatures(docks: BikeDock[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: docks.map((d) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [d.lon, d.lat] },
+      properties: { id: d.id, bikes: d.renting ? d.bikes : 0, color: dockColor(d) },
+    })),
   };
 }
 
@@ -418,6 +440,7 @@ function addVehicleLayers(
 
 interface LayerState {
   vehicles: GeoJSON.FeatureCollection;
+  bikes: GeoJSON.FeatureCollection;
   routeLine: RouteLine | null;
   otherLines: RouteLine[];
   allRoutes: RoutePath[];
@@ -448,6 +471,7 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
   map.addSource('selected-path', { type: 'geojson', data: selection.path });
   map.addSource('selected-stops', { type: 'geojson', data: selection.stops });
   map.addSource('station-names', { type: 'geojson', data: drawnStationNames(state) });
+  map.addSource('bikes', { type: 'geojson', data: state.bikes });
 
   // Every line's route, when switched on, under everything else.
   map.addLayer({
@@ -503,6 +527,34 @@ function installLayers(map: MapLibreMap, theme: Theme, state: LayerState) {
     source: 'selected-path',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': 0.75 },
+  });
+  // Citi Bike docks, over the lines but under the stations and vehicles: a dot, with its bikes counted once
+  // there's room for the number.
+  map.addLayer({
+    id: 'bike-docks',
+    type: 'circle',
+    source: 'bikes',
+    minzoom: BIKE_MIN_ZOOM,
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], BIKE_MIN_ZOOM, 4, 15, 8, 17, 11],
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': outline,
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'bike-counts',
+    type: 'symbol',
+    source: 'bikes',
+    minzoom: 15,
+    layout: {
+      'text-field': ['to-string', ['get', 'bikes']],
+      'text-font': ['Noto Sans Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 15, 9.5, 17, 12],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+    },
+    paint: { 'text-color': '#ffffff' },
   });
   // Every station on the line, behind the stops still ahead.
   map.addLayer({
@@ -650,7 +702,7 @@ function uncoveredOffset(map: MapLibreMap, panel: HTMLElement | null): [number, 
 }
 
 export function MapView(props: Props) {
-  const { theme, modes, lines, routeLine, focusLine, otherLines, allRoutes, station, selectedId, detail, following } = props;
+  const { theme, modes, lines, routeLine, focusLine, otherLines, allRoutes, station, selectedId, detail, following, bikes } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const callbacks = useRef(props);
@@ -659,6 +711,7 @@ export function MapView(props: Props) {
   const state = useRef<LayerState & { theme: Theme; following: boolean; latest: Vehicle[]; easeUntil: number }>({
     theme,
     vehicles: EMPTY,
+    bikes: EMPTY,
     routeLine,
     otherLines,
     allRoutes,
@@ -677,6 +730,10 @@ export function MapView(props: Props) {
   const [tags] = useState(() => ({ hover: stationTag('station-tag-hover'), picked: stationTag('station-tag-picked') }));
   // The tapped vehicle's glide: from where it was drawn to its newest reported position.
   const glide = useRef<{ from?: Vehicle; to?: Vehicle; start: number }>({ start: 0 });
+  // Citi Bike docks loaded for the area around the view, the tapped one's id, and the tag showing it.
+  const [docks, setDocks] = useState<{ updatedAt?: string; docks: BikeDock[] }>({ docks: [] });
+  const [dockId, setDockId] = useState<string | null>(null);
+  const [dockTag] = useState(() => new Marker({ element: document.createElement('div'), anchor: 'bottom', offset: [0, -14] }));
 
   useEffect(() => {
     const map = new MapLibreMap({
@@ -811,6 +868,8 @@ export function MapView(props: Props) {
 
     const clickable = ['vehicle-dots', 'vehicle-labels', 'vehicle-arrows', 'selected-dots'];
     map.on('click', (e) => {
+      // Any tap closes an open dock's tag; a tap on a dock opens that one's below.
+      setDockId(null);
       // A fingertip needs more room than a mouse pointer to land on a small station dot.
       const pad = matchMedia('(pointer: coarse)').matches ? 16 : 8;
       const box: [[number, number], [number, number]] = [
@@ -840,6 +899,12 @@ export function MapView(props: Props) {
         callbacks.current.onLineStation(line, { stopId, name: name || undefined, lon, lat, ...accessProps(access) });
         return;
       }
+      // A Citi Bike dock: how many bikes and free docks it has.
+      const dock = hit || !map.getLayer('bike-docks') ? undefined : map.queryRenderedFeatures(box, { layers: ['bike-docks'] })[0];
+      if (dock) {
+        setDockId(String(dock.properties.id));
+        return;
+      }
       // The tapped vehicle's own line: show all of its stations.
       if (!hit && state.current.detail && map.queryRenderedFeatures(box, { layers: ROUTE_LAYERS }).length) {
         callbacks.current.onRouteLine();
@@ -847,7 +912,7 @@ export function MapView(props: Props) {
       }
       callbacks.current.onSelect(hit ? String(hit.properties.id) : null);
     });
-    for (const layer of [...clickable, ...STATION_LAYERS, 'other-stops']) {
+    for (const layer of [...clickable, ...STATION_LAYERS, 'other-stops', 'bike-docks']) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
@@ -927,6 +992,110 @@ export function MapView(props: Props) {
     state.current.theme = theme;
     mapRef.current?.setStyle(STYLES[theme], { diff: false });
   }, [theme]);
+
+  // Citi Bike docks, while switched on: loaded for a little more than the view, so a short pan asks for
+  // nothing, then again each minute while the page is showing.
+  useEffect(() => {
+    const map = mapRef.current;
+    const show = (list: BikeDock[]) => {
+      state.current.bikes = bikeFeatures(list);
+      (map?.getSource('bikes') as GeoJSONSource | undefined)?.setData(state.current.bikes);
+    };
+    if (!map || !bikes) {
+      show([]);
+      setDocks({ docks: [] });
+      setDockId(null);
+      callbacks.current.onBikes(null);
+      return;
+    }
+    let controller: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let moveTimer: ReturnType<typeof setTimeout> | undefined;
+    let area: Bounds | null = null;
+    let loadedAt = 0;
+    let list: BikeDock[] = [];
+    let failed = false;
+    let paused = false;
+    const report = (zoomIn = false) => {
+      const [west, south, east, north] = boundsOf(map);
+      const count = zoomIn ? 0 : list.filter((d) => d.lon >= west && d.lon <= east && d.lat >= south && d.lat <= north).length;
+      callbacks.current.onBikes({ count, zoomIn, error: failed });
+    };
+    const load = async (force: boolean) => {
+      clearTimeout(timer);
+      if (!pageVisible()) {
+        paused = true;
+        return;
+      }
+      if (map.getZoom() < BIKE_MIN_ZOOM) {
+        // Too far out: nothing shown or fetched until zoomed back in.
+        controller?.abort();
+        area = null;
+        list = [];
+        failed = false;
+        show([]);
+        setDocks({ docks: [] });
+        report(true);
+        return;
+      }
+      const view = boundsOf(map);
+      if (!force && area && covers(area, view) && Date.now() - loadedAt < BIKE_POLL_MS) {
+        report();
+        timer = setTimeout(() => void load(true), BIKE_POLL_MS - (Date.now() - loadedAt));
+        return;
+      }
+      controller?.abort();
+      const mine = (controller = new AbortController());
+      const want = bikeArea(view);
+      try {
+        const r = await fetchBikes(want, mine.signal);
+        area = r.zoomIn ? null : want;
+        loadedAt = Date.now();
+        list = r.docks;
+        failed = false;
+        show(list);
+        setDocks({ updatedAt: r.updatedAt, docks: list });
+        report(Boolean(r.zoomIn));
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        // Keep showing what was loaded; try again sooner than usual.
+        failed = true;
+        report();
+        timer = setTimeout(() => void load(true), 15_000);
+        return;
+      }
+      timer = setTimeout(() => void load(true), BIKE_POLL_MS);
+    };
+    const onMove = () => {
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => void load(false), 300);
+    };
+    const onVisibility = () => {
+      if (!pageVisible() || !paused) return;
+      paused = false;
+      void load(false);
+    };
+    show(list);
+    map.on('moveend', onMove);
+    document.addEventListener('visibilitychange', onVisibility);
+    void load(true);
+    return () => {
+      map.off('moveend', onMove);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearTimeout(timer);
+      clearTimeout(moveTimer);
+      controller?.abort();
+    };
+  }, [bikes]);
+
+  // The tapped dock's tag, kept up to date as its counts refresh. It closes if the dock drops out of the list.
+  const dock = dockId ? docks.docks.find((d) => d.id === dockId) : undefined;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !dock) return;
+    dockTag.setLngLat([dock.lon, dock.lat]).addTo(map);
+    return () => void dockTag.remove();
+  }, [dock?.id, dock?.lon, dock?.lat]);
 
   // Show only the chosen kinds of vehicle and lines, leaving out the tapped one, which is drawn separately.
   useEffect(() => {
@@ -1096,6 +1265,21 @@ export function MapView(props: Props) {
             )}
           </div>,
           tags.hover.getElement(),
+        )}
+      {dock &&
+        createPortal(
+          <div className="bike-tag" role="dialog" aria-label={`Citi Bike dock ${dock.name}`}>
+            <div className="bike-tag-head">
+              <strong>{dock.name || 'Citi Bike dock'}</strong>
+              <button className="bike-tag-close" aria-label="Close" title="Close" onClick={() => setDockId(null)}>
+                ×
+              </button>
+            </div>
+            <span className={dock.renting && dock.bikes > 0 ? 'bike-tag-count' : 'bike-tag-none'}>{bikesText(dock)}</span>
+            <span className={dock.returning && dock.docks > 0 ? '' : 'bike-tag-none'}>{docksText(dock)}</span>
+            {docks.updatedAt && <span className="muted small">Citi Bike · {updatedText(docks.updatedAt)}</span>}
+          </div>,
+          dockTag.getElement(),
         )}
       {pickedLines.length > 0 &&
         createPortal(

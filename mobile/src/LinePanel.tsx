@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
-import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines } from '../../web/src/vehicles';
+import { colorFor, displayName, MODE_LABELS, sameStation, textColorFor, tidyStopName, transferLines, vehicleNoun } from '../../web/src/vehicles';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
 import type { ArrivalDirection, RouteInfo, RouteLine, ServiceAlert, Station, UpcomingStop } from './api';
@@ -61,7 +61,7 @@ export function LinePanel({
   const mode = info?.mode ?? line?.mode ?? 'subway';
   const color = colorFor({ routeColor: info?.color ?? line?.color, mode });
   const name = displayName(info?.name ?? line?.key.split(':')[1] ?? '?');
-  const noun = mode === 'bus' ? 'bus' : 'train';
+  const noun = vehicleNoun(mode);
   const stationTransfers = transferLines(station?.transfers, routes).filter((r) => r.key !== line?.key);
   const key = info?.key ?? line?.key;
 
@@ -154,7 +154,7 @@ export function LinePanel({
           </View>
         ) : (
           <Text style={[styles.muted, { color: c.muted }]}>
-            The schedule doesn't list this line's stops, but its route and {noun === 'bus' ? 'buses' : 'trains'} are on
+            The schedule doesn't list this line's stops, but its route and {vehicleNoun(mode, true)} are on
             the map.
           </Text>
         )}

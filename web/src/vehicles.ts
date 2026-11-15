@@ -1,9 +1,15 @@
 import type { Bounds, Mode, RouteInfo, Vehicle } from './api';
 import { displayName } from './names';
 
-export { displayName, tidyStopName } from './names';
+export { displayName, sourceText, tidyStopName, vehicleNoun } from './names';
 
-const MODE_COLORS: Record<Mode, string> = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb' };
+/**
+ * Modes the server only sends when asked for by name (`?extra=`), since app versions from before them can't
+ * draw them. Kept here rather than in api.ts, which the app can't load.
+ */
+export const EXTRA_MODES = 'ferry';
+
+const MODE_COLORS: Record<Mode, string> = { subway: '#4b5563', rail: '#7c3aed', bus: '#2563eb', ferry: '#0e7490' };
 
 export function colorFor(v: Pick<Vehicle, 'routeColor' | 'mode'>): string {
   return v.routeColor ? `#${v.routeColor.replace(/^#/, '')}` : MODE_COLORS[v.mode];
@@ -92,7 +98,7 @@ export function formatEta(time: number | undefined, now = Date.now() / 1000): st
   return new Date(time * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export const MODE_LABELS: Record<Mode, string> = { subway: 'Subway', rail: 'Rail', bus: 'Bus' };
+export const MODE_LABELS: Record<Mode, string> = { subway: 'Subway', rail: 'Rail', bus: 'Bus', ferry: 'Ferry' };
 
 
 
@@ -120,13 +126,13 @@ export function busGroup(name: string): string {
 
 /**
  * Lines arranged for the legend: subway lines grouped by their shared color (1 2 3 are all red),
- * rail lines by railroad, and buses by borough, with express buses on their own.
+ * rail lines by railroad, ferry routes by operator, and buses by borough, with express buses on their own.
  */
 export function legendGroups(routes: RouteInfo[], mode: Mode): LegendGroup[] {
   const of = routes.filter((r) => r.mode === mode);
   const groups = new Map<string, RouteInfo[]>();
   for (const r of of) {
-    const key = mode === 'subway' ? (r.color ?? '').toUpperCase() : mode === 'rail' ? r.agency : busGroup(r.name);
+    const key = mode === 'subway' ? (r.color ?? '').toUpperCase() : mode === 'bus' ? busGroup(r.name) : r.agency;
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
   return [...groups.entries()]
@@ -136,7 +142,7 @@ export function legendGroups(routes: RouteInfo[], mode: Mode): LegendGroup[] {
       routes: rs.sort(byName),
     }))
     .sort((a, b) =>
-      mode === 'rail'
+      mode === 'rail' || mode === 'ferry'
         ? a.title.localeCompare(b.title)
         : mode === 'bus'
           ? BUS_GROUPS.indexOf(a.title) - BUS_GROUPS.indexOf(b.title)

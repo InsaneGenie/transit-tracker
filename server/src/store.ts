@@ -1,9 +1,11 @@
 import { estimatePosition, projectFix, shapeBetween, trackBetween, type EstimatedPosition } from './estimate.js';
 import { distanceMeters, nearestOnPath, Polyline, simplifyPath, type LatLon } from './geo.js';
 import type { FeedConfig, Mode } from './feeds.js';
-import { fetchFeed, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
+import { fetchFeed, linkTripsByVehicle, mergeSnapshots, type FeedSnapshot, type GpsVehicle, type TripState } from './realtime.js';
 import { applyStationAccess, loadStationAccess } from './accessibility.js';
-import { loadStaticIndex, type Access, type StaticIndex } from './static-gtfs.js';
+import { download, loadStaticIndex, zipFiles, type Access, type StaticIndex } from './static-gtfs.js';
+import { loadTimetable, tripsAt, type Timetable } from './timetable.js';
+import { blocksAtWork, gapsAlong, lineService, type AtWork, type Gap, type LineService } from './service.js';
 
 export interface Vehicle {
   id: string;
@@ -22,6 +24,8 @@ export interface Vehicle {
   stopName?: string;
   /** "gps" when the vehicle reported its position, "estimated" when placed from predicted arrival times. */
   source: 'gps' | 'estimated';
+  /** Placed from the published timetable, with no realtime data at all (the Staten Island Ferry). */
+  scheduled?: boolean;
 }
 
 export interface UpcomingStop {
@@ -91,6 +95,8 @@ export interface LineVehicle {
   heading: 1 | -1;
   /** Where the trip ends. */
   destination?: string;
+  /** How far behind the next vehicle ahead going the same way it is, for buses. */
+  gap?: Gap;
 }
 
 /** A line on the legend. */
@@ -117,6 +123,10 @@ export interface FeedStatus {
   lastError?: string;
   gpsVehicles: number;
   estimatedTrips: number;
+  /** What each realtime URL last sent, in `realtimeUrls` order, to tell an empty feed from one misread. */
+  sent?: ({ bytes: number; entities: number; publishedAt?: string } | null)[];
+  /** Placed from the timetable: how many of its trips it holds. */
+  timetableTrips?: number;
 }
 
 interface FeedState {
@@ -168,6 +178,16 @@ const ALONG_LINE_M = 400;
 /** A vehicle this close to its next station is at it. */
 const AT_STATION_M = 80;
 
+/**
+ * When fewer than this share of the trips scheduled out across the whole city have a bus, the buses' feed
+ * or the schedule is off (a new schedule not yet read, or positions not coming in), not the buses, so no
+ * line's buses are called missing.
+ */
+const MIN_RUNNING_SHARE = 0.5;
+
+/** A bus feed this old says too little about which buses are out to call any missing, in seconds. */
+const SERVICE_MAX_AGE_S = 3 * 60;
+
 /** How long the count of vehicles on each line is reused, in seconds. */
 const COUNTS_MAX_AGE_S = 20;
 
@@ -190,9 +210,9 @@ const PROGRESS_KEPT_S = 120;
 /**
  * Faster than this between two reported positions, in meters per second, the newer one is a glitch (Metro-North
  * sometimes reports a train miles from where it was seconds before, then back again). About 155 mph for
- * trains and 80 mph for buses.
+ * trains, 80 mph for buses and 55 mph for ferries (they cruise at about 30).
  */
-const MAX_SPEED: Record<Mode, number> = { subway: 70, rail: 70, bus: 35 };
+const MAX_SPEED: Record<Mode, number> = { subway: 70, rail: 70, bus: 35, ferry: 25 };
 
 /** A position that looks like a glitch is believed once it has been reported this long, in seconds. */
 const GLITCH_TRUSTED_S = 90;
@@ -294,6 +314,17 @@ export type Fetcher = (url: string) => Promise<FeedSnapshot>;
 /** A feed's schedule, with which stations are accessible when that comes from elsewhere. */
 async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
   const index = await loadStaticIndex(config.id, config.staticUrls!, config.staticDetail);
+  if (config.timetable) {
+    const tables: Timetable[] = [];
+    // Already downloaded for the index, so read from the copy kept on disk.
+    for (const url of config.staticUrls!) tables.push(await loadTimetable(zipFiles(await download(config.id, url))));
+    index.timetable = {
+      trips: tables.flatMap((t) => t.trips),
+      services: new Map(tables.flatMap((t) => [...t.services])),
+      exceptions: new Map(tables.flatMap((t) => [...t.exceptions])),
+    };
+    addStraightShapes(index);
+  }
   if (config.accessibilityUrl) {
     try {
       applyStationAccess(index, await loadStationAccess(config.id, config.accessibilityUrl));
@@ -303,6 +334,27 @@ async function loadWithAccess(config: FeedConfig): Promise<StaticIndex> {
     }
   }
   return index;
+}
+
+/**
+ * A route whose schedule has no shapes gets one through its stops, in order, from its trip with the most
+ * stops, so its line can be drawn and opened like any other. A ferry crosses open water, so stop to stop
+ * is close to the way it goes.
+ */
+export function addStraightShapes(index: StaticIndex): void {
+  const longest = new Map<string, string[]>();
+  for (const trip of index.timetable?.trips ?? []) {
+    if (index.routeShapes.get(trip.routeId)?.size) continue;
+    const stops = trip.stops.map((s) => s.stopId).filter((id) => index.stops.has(id));
+    if (stops.length >= 2 && stops.length > (longest.get(trip.routeId)?.length ?? 0)) longest.set(trip.routeId, stops);
+  }
+  for (const [routeId, stops] of longest) {
+    const id = `straight:${routeId}`;
+    index.shapes.set(id, new Polyline(stops.map((s) => index.stops.get(s)!)));
+    index.routeShapes.set(routeId, new Set([id]));
+    // Its stations, in order, for the line's page, when calls per station didn't list them.
+    if (!index.routeStations.get(routeId)?.length) index.routeStations.set(routeId, stops);
+  }
 }
 
 /** A stop's accessibility, for the API. */
@@ -327,6 +379,8 @@ export class VehicleStore {
     env: Record<string, string | undefined> = process.env,
     private fetcher: Fetcher = (url) => fetchFeed(url, AbortSignal.timeout(15_000)),
     private loadIndex: (config: FeedConfig) => Promise<StaticIndex> = loadWithAccess,
+    /** Now, in Unix seconds: when a timetable feed's trips are listed for. */
+    private clock: () => number = () => Date.now() / 1000,
   ) {
     this.feeds = configs.map((config) => ({
       config,
@@ -350,6 +404,17 @@ export class VehicleStore {
   }
 
   async poll(feed: FeedState): Promise<void> {
+    if (feed.config.timetable) {
+      const timetable = feed.index?.timetable;
+      if (!timetable) {
+        feed.lastError = feed.staticError ?? 'timetable not loaded yet';
+        return;
+      }
+      const now = this.clock();
+      feed.snapshot = { fetchedAt: now, gps: [], trips: tripsAt(timetable, now) };
+      feed.lastError = undefined;
+      return;
+    }
     const urls = feed.config.realtimeUrls.map((u) => {
       if (!feed.apiKey) return u;
       const url = new URL(u);
@@ -365,8 +430,9 @@ export class VehicleStore {
     feed.parts = parts;
     const ok = parts.flatMap((p) => (p ? [p.snapshot] : []));
     if (ok.length) {
-      const merged = mergeSnapshots(ok);
-      feed.snapshot = feed.config.agencyPrefixedIds ? withoutAgencyPrefixes(merged) : merged;
+      let merged = mergeSnapshots(ok);
+      if (feed.config.agencyPrefixedIds) merged = withoutAgencyPrefixes(merged);
+      feed.snapshot = feed.config.matchTripsByVehicle ? linkTripsByVehicle(merged) : merged;
     }
     feed.lastError = failed.length ? failed.join('; ') : undefined;
   }
@@ -467,6 +533,7 @@ export class VehicleStore {
           stopId: pos.stopId,
           stopName: index.stops.get(pos.stopId)?.name,
           source: 'estimated',
+          ...(config.timetable && { scheduled: true }),
         });
       }
     }
@@ -845,7 +912,85 @@ export class VehicleStore {
       const last = trip?.stops.at(-1);
       out.push({ vehicle, at, heading, destination: last && index.stops.get(last.stopId)?.name });
     }
-    return out.sort((a, b) => a.at - b.at);
+    out.sort((a, b) => a.at - b.at);
+    if (index.busSchedules.length) this.addGaps(out, line.stops, this.lineService(key, now));
+    return out;
+  }
+
+  /**
+   * The gap from each bus to the one ahead of it, in meters along the line's stations and in minutes at its
+   * scheduled pace, marking bunched buses and long gaps.
+   */
+  private addGaps(vehicles: LineVehicle[], stops: UpcomingStop[], service: LineService | undefined): void {
+    // Meters along the station list to each station.
+    const meters = [0];
+    for (let i = 1; i < stops.length; i++) {
+      const [a, b] = [stops[i - 1], stops[i]];
+      const hop = a.lat !== undefined && a.lon !== undefined && b.lat !== undefined && b.lon !== undefined ? distanceMeters({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon }) : 0;
+      meters.push(meters[i - 1] + hop);
+    }
+    // A vehicle between two stations is placed halfway on the strip; for gaps, how far it really is along.
+    const metersAt = (v: LineVehicle) => {
+      if (Number.isInteger(v.at)) return meters[v.at];
+      const next = v.at + v.heading * 0.5;
+      const from = next - v.heading;
+      const [a, b] = [stops[from], stops[next]];
+      if (!a || !b || a.lat === undefined || a.lon === undefined || b.lat === undefined || b.lon === undefined) return meters[Math.floor(v.at)];
+      const kx = Math.cos((a.lat * Math.PI) / 180);
+      const [bx, by] = [(b.lon - a.lon) * kx, b.lat - a.lat];
+      const [px, py] = [(v.vehicle.lon - a.lon) * kx, v.vehicle.lat - a.lat];
+      const len2 = bx * bx + by * by;
+      const t = len2 > 0 ? Math.min(1, Math.max(0, (px * bx + py * by) / len2)) : 0.5;
+      return meters[from] + (meters[next] - meters[from]) * t;
+    };
+    const length = meters.at(-1) ?? 0;
+    const perMinute = service?.tripMinutes && length > 0 ? length / service.tripMinutes : undefined;
+    for (const heading of [1, -1] as const) {
+      const going = vehicles.filter((v) => v.heading === heading);
+      const gaps = gapsAlong(
+        going.map((v) => ({ id: v.vehicle.id, along: heading * metersAt(v), atEnd: v.at <= 0 || v.at >= stops.length - 1 })),
+        perMinute,
+        heading === 1 ? service?.headways.forward : service?.headways.back,
+      );
+      for (const v of going) {
+        const gap = gaps.get(v.vehicle.id);
+        if (gap) v.gap = gap;
+      }
+    }
+  }
+
+  private atWork?: { snapshot: FeedSnapshot; minute: number; work: AtWork; covered: Set<string> };
+
+  /** The trips the bus feed's buses report running, and what that says about the whole schedule, reused per poll. */
+  private busesAtWork(feed: FeedState, now: number): { work: AtWork; covered: Set<string> } | undefined {
+    const { snapshot, index } = feed;
+    if (!snapshot || !index?.busSchedules.length || !snapshot.gps.length || now - snapshot.fetchedAt > SERVICE_MAX_AGE_S) return undefined;
+    // Reworked each poll, and each minute between them as trips come due.
+    const minute = Math.floor(now / 60);
+    if (this.atWork?.snapshot !== snapshot || this.atWork.minute !== minute) {
+      const covered = new Set<string>();
+      for (const g of snapshot.gps) if (g.tripId) covered.add(g.tripId);
+      // A bus is also listed on the trip it does next, which it may still be finishing the one before of.
+      for (const t of snapshot.trips) if (t.vehicleId) covered.add(t.tripId);
+      this.atWork = { snapshot, minute, covered, work: blocksAtWork(index.busSchedules, covered, now) };
+    }
+    return this.atWork;
+  }
+
+  /**
+   * How a bus line is running against its schedule: how many trips should be out, which have no bus (ghost
+   * buses) and how often buses are due. Undefined for lines without a timetable, or when the bus feed can't
+   * be trusted to say.
+   */
+  lineService(key: string, now = Date.now() / 1000): LineService | undefined {
+    const split = key.indexOf(':');
+    const routeId = key.slice(split + 1);
+    const feed = this.feeds.find((f) => f.config.id === key.slice(0, split));
+    const index = feed?.index;
+    if (!feed || !index?.busSchedules.length) return undefined;
+    const atWork = this.busesAtWork(feed, now);
+    if (!atWork || atWork.work.running < atWork.work.scheduled * MIN_RUNNING_SHARE) return undefined;
+    return lineService(index.busSchedules, routeId, atWork.covered, atWork.work.blocks, now);
   }
 
   private counts?: { at: number; lines: Record<string, number> };
@@ -879,7 +1024,12 @@ export class VehicleStore {
   ready(): boolean {
     return this.feeds
       .filter((f) => this.enabled(f))
-      .every((f) => f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError));
+      .every((f) =>
+        f.config.optional
+          ? // Tried once, worked or not: an optional feed being down doesn't hold the rest up.
+            (f.snapshot || f.lastError) && (!f.config.staticUrls?.length || f.index || f.staticError)
+          : f.snapshot && (!f.config.staticUrls?.length || f.index || f.staticError),
+      );
   }
 
   status(): FeedStatus[] {
@@ -893,6 +1043,21 @@ export class VehicleStore {
       lastError: this.enabled(f) ? f.lastError : `set ${f.config.apiKeyEnv} to enable`,
       gpsVehicles: f.snapshot?.gps.length ?? 0,
       estimatedTrips: f.snapshot?.trips.length ?? 0,
+      ...(f.parts &&
+        f.config.realtimeUrls.length && {
+          sent: f.parts.map((p) =>
+            p?.snapshot.sent
+              ? {
+                  bytes: p.snapshot.sent.bytes,
+                  entities: p.snapshot.sent.entities,
+                  ...(p.snapshot.sent.publishedAt !== undefined && {
+                    publishedAt: new Date(p.snapshot.sent.publishedAt * 1000).toISOString(),
+                  }),
+                }
+              : null,
+          ),
+        }),
+      ...(f.index?.timetable && { timetableTrips: f.index.timetable.trips.length }),
     }));
   }
 }
