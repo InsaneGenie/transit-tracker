@@ -136,6 +136,13 @@ describe('timetable', () => {
     expect(crossing).toMatchObject({ mode: 'ferry', source: 'estimated', scheduled: true, status: 'IN_TRANSIT_TO', stopId: 'SG' });
     // Halfway across the harbor: 12 of 25 minutes.
     expect(crossing.lat).toBeCloseTo(40.7013 + (40.6437 - 40.7013) * (12 / 25), 2);
+    // The 11:00 back hasn't left St. George: not out on the water heading in.
+    expect(boats.map((b) => b.tripId)).toEqual(['sat-2230']);
+    now = nyNov(14, 22, 57);
+    await store.pollAll();
+    expect(store.vehicles(now).find((b) => b.tripId === 'sat-2300-back')).toMatchObject({ status: 'STOPPED_AT', stopId: 'SG', lat: 40.6437 });
+    now = nyNov(14, 22, 42);
+    await store.pollAll();
     expect(store.detail(crossing.id, now)?.upcoming.map((u) => u.name)).toEqual(['St. George Terminal']);
     expect(store.status()[0]).toMatchObject({ timetableTrips: 5, estimatedTrips: 2 });
     const [line] = store.routePaths(['ferry']);
