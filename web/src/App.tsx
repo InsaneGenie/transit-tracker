@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { accessOf } from './accessibility';
 import { worstSeverity } from './alerts';
-import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchLineCounts, fetchRouteLines, fetchRoutePaths, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type RoutePath, type ServiceAlert, type UpcomingStop, type VehicleDetail } from './api';
+import { fetchAlerts, fetchAlertSummary, fetchArrivals, fetchConnections, fetchLineCounts, fetchRouteLines, fetchRoutePaths, fetchRoutes, fetchVehicleDetail, type AlertSeverity, type ArrivalDirection, type LineVehicle, type Mode, type RouteInfo, type RouteLine, type RoutePath, type ServiceAlert, type StopConnections, type UpcomingStop, type VehicleDetail } from './api';
 import { Guide } from './Guide';
 import { alertStatus, type LeaveControls } from './leaveAlert';
 import { LeaveBanner } from './LeaveBanner';
@@ -142,6 +142,8 @@ function useAllRoutes(on: boolean): RoutePath[] {
 
 /** Alerts change every few minutes at most. */
 const ALERT_POLL_MS = 120_000;
+/** How often the open vehicle's connections are checked again. */
+const CONNECTIONS_POLL_MS = 15_000;
 
 /** Service alerts on these lines, kept fresh; null while loading. */
 function useLineAlerts(keys: string[]): ServiceAlert[] | null {
@@ -245,6 +247,7 @@ export function App() {
   const [transferRoutes, setTransferRoutes] = useState<RouteLine[]>([]);
   const [filterRoutes, setFilterRoutes] = useState<RouteLine[]>([]);
   const [arrivals, setArrivals] = useState<ArrivalDirection[] | null>(null);
+  const [connections, setConnections] = useState<StopConnections[] | null>(null);
   // Set when a vehicle is picked from the station's arrivals, so the station stays picked.
   const keepStation = useRef(false);
   const [theme, setTheme] = useState<Theme>(() => themeFor(new Date()));
@@ -548,6 +551,24 @@ export function App() {
     setStation({ ...restoreStation, at: Date.now() });
     setRestoreStation(null);
   }, [detail, restoreStation]);
+
+  // Whether the open vehicle's connections will still be there when it gets to each station where you
+  // can change. Arrival times shift slowly, so this is asked for less often than the vehicle itself.
+  useEffect(() => {
+    setConnections(null);
+    if (!selectedId) return;
+    const controller = new AbortController();
+    const load = () =>
+      fetchConnections(selectedId, controller.signal)
+        .then((r) => setConnections(r.stops))
+        .catch(() => {});
+    void load();
+    const stop = everyWhileVisible(load, CONNECTIONS_POLL_MS);
+    return () => {
+      controller.abort();
+      stop();
+    };
+  }, [selectedId]);
 
   // Keep the open vehicle's position, stops and arrival times fresh.
   useEffect(() => {
@@ -853,9 +874,11 @@ export function App() {
           showTransfers={showTransfers}
           arrivals={arrivals}
           alerts={panelAlerts}
+          connections={connections}
           backLabel={history[history.length - 1]?.label}
           onBack={goBack}
           onArrival={(id) => openVehicle(id, true)}
+          onConnection={(id) => openVehicle(id)}
           leave={leaveControls}
           onLine={(key) => openLine(key)}
           onShowTransfers={setShowTransfers}

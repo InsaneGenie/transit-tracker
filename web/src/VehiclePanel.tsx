@@ -1,7 +1,8 @@
 import { Fragment, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
-import type { ArrivalDirection, RouteInfo, ServiceAlert, UpcomingStop, VehicleDetail } from './api';
+import type { ArrivalDirection, RouteInfo, ServiceAlert, StopConnections, UpcomingStop, VehicleDetail } from './api';
+import { connectionHeading, connectionLines, connectionSummary, describeConnection } from './connections';
 import { BackButton } from './BackButton';
 import { sameDirection, WALK_CHOICES, type LeaveControls } from './leaveAlert';
 import { CloseButton } from './CloseButton';
@@ -27,8 +28,12 @@ interface Props {
   arrivals: ArrivalDirection[] | null;
   /** Delays and service changes on the vehicle's line; null while loading. */
   alerts: ServiceAlert[] | null;
+  /** The stations ahead where you can change, with how each connection lines up; null while loading. */
+  connections: StopConnections[] | null;
   /** Tapping one of them opens it. */
   onArrival: (vehicleId: string) => void;
+  /** Tapping a connection opens the vehicle you would catch. */
+  onConnection: (vehicleId: string) => void;
   /** "Should I run?" alerts for the picked station. */
   leave?: LeaveControls;
   /** Tapping a transfer line at the station shows that whole line. */
@@ -201,6 +206,90 @@ export function Arrivals({
   );
 }
 
+/**
+ * The stations ahead where you can change, and whether each line's next vehicle each way will still be
+ * coming when you get there. The first station is open; the rest open with a tap, or when picked.
+ */
+export function Connections({
+  stops,
+  routes,
+  station,
+  onVehicle,
+}: {
+  /** Null while loading. */
+  stops: StopConnections[] | null;
+  routes: Map<string, RouteInfo>;
+  /** The picked station, opened when it's one of them. */
+  station: Station | null;
+  /** Tapping a connection opens the vehicle you would catch. */
+  onVehicle: (vehicleId: string) => void;
+}) {
+  const shown = (stops ?? []).filter((s) => connectionLines(s, routes).length > 0);
+  if (!shown.length) return null;
+  return (
+    <section className="connections" aria-label="Your transfers">
+      <h3 className="arrivals-heading">Your transfers</h3>
+      {shown.map((s, i) => {
+        const lines = connectionLines(s, routes);
+        const running = lines.filter((l) => l.connection.directions.length > 0);
+        const idle = lines.filter((l) => l.connection.directions.length === 0);
+        const picked = station !== null && sameStation(s, station);
+        return (
+          <details key={s.stopId} className="connection-stop" open={i === 0 || picked}>
+            <summary>
+              <span className="connection-stop-text">
+                <strong className="connection-stop-name">{s.name ? tidyStopName(s.name) : s.stopId}</strong>
+                <span className="muted small">{connectionSummary(s, routes)}</span>
+              </span>
+              <span className="eta" title="When you get there">
+                {formatEta(s.time)}
+              </span>
+            </summary>
+            <ul className="connection-lines">
+              {running.map(({ route, connection }) => (
+                <li key={route.key} className={`connection-line${route.mode === 'subway' ? '' : ' connection-line-named'}`}>
+                  <Transfers lines={[route]} />
+                  <ul className="connection-ways">
+                    {connection.directions.map((d, j) => {
+                      const view = describeConnection(d, s.time);
+                      const vehicleId = view.vehicleId;
+                      const body = (
+                        <span className="connection-text">
+                          <span className="connection-row">
+                            <span className="connection-to">{connectionHeading(d)}</span>
+                            <span className={`connection-status connection-${view.status}`}>{view.text}</span>
+                          </span>
+                          {view.note && <span className="muted small">{view.note}</span>}
+                        </span>
+                      );
+                      return (
+                        <li key={j}>
+                          {vehicleId ? (
+                            <button className="connection-way" onClick={() => onVehicle(vehicleId)}>
+                              {body}
+                            </button>
+                          ) : (
+                            <div className="connection-way">{body}</div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+            {idle.length > 0 && (
+              <p className="muted small connection-idle">
+                None on the way now: {idle.map((l) => l.route.name).join(', ')}
+              </p>
+            )}
+          </details>
+        );
+      })}
+    </section>
+  );
+}
+
 export function VehiclePanel({
   detail,
   routes,
@@ -211,7 +300,9 @@ export function VehiclePanel({
   onShowTransfers,
   arrivals,
   alerts,
+  connections,
   onArrival,
+  onConnection,
   leave,
   onLine,
   onFollow,
@@ -301,6 +392,8 @@ export function VehiclePanel({
           />
         </section>
       )}
+
+      <Connections key={vehicle.id} stops={connections} routes={routes} station={station} onVehicle={onConnection} />
 
       {upcoming.length > 0 ? (
         <ol className="stops">
