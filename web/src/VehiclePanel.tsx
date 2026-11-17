@@ -1,3 +1,4 @@
+import { Tip, useTipOpen } from './Tip';
 import { Fragment, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
@@ -96,12 +97,13 @@ function BellIcon() {
 function DirectionHeading({ heading, destinations, leave }: { heading: ReactNode; destinations: string[]; leave?: LeaveControls }) {
   const [asking, setAsking] = useState(false);
   const on = leave?.watching != null && sameDirection(destinations, leave.watching);
+  const coach = useTipOpen('station');
   return (
     <>
       <div className="arrivals-top">
         {heading}
         {leave && !on && !asking && (
-          <button className="leave-bell" onClick={() => setAsking(true)} title="Tell me when to leave for one of these">
+          <button className={`leave-bell${coach ? ' coach' : ''}`} onClick={() => setAsking(true)} title="Tell me when to leave for one of these">
             <BellIcon />
             Alert me
           </button>
@@ -314,6 +316,7 @@ export function VehiclePanel({
   ref,
 }: Props) {
   const { vehicle, upcoming, routeLongName } = detail;
+  const coachFollow = useTipOpen('vehicle');
   const color = colorFor(vehicle);
   const name = displayName(vehicle.routeName ?? vehicle.routeId ?? '?');
   const stopName = vehicle.stopName && tidyStopName(vehicle.stopName);
@@ -353,11 +356,13 @@ export function VehiclePanel({
           <button className="chip follow" onClick={onAllStations}>
             All stations
           </button>
-          <button className={`chip follow${following ? ' chip-active' : ''}`} aria-pressed={following} onClick={onFollow}>
+          <button className={`chip follow${following ? ' chip-active' : ''}${coachFollow ? ' coach' : ''}`} aria-pressed={following} onClick={onFollow}>
             {following ? 'Following' : 'Follow'}
           </button>
         </div>
       </div>
+
+      <Tip id="vehicle" />
 
       <AlertList alerts={alerts} routes={routes} />
 
@@ -383,6 +388,7 @@ export function VehiclePanel({
               </button>
             )}
           </div>
+          {leave && <Tip id="station" />}
           <Arrivals
             directions={arrivals}
             selectedId={vehicle.id}

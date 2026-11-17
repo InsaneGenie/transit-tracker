@@ -1,66 +1,94 @@
+import { useState } from 'react';
 import { CloseButton } from './CloseButton';
 import { FEEDBACK_EMAIL, feedbackMailto } from './feedback';
-import { GUIDE } from './guide';
+import { GUIDE, GUIDE_NOTE } from './guide';
+import { guideArt } from './guideArt';
 import { SUPPORT_URL } from './support';
 import { APP_STORE_URL, TESTFLIGHT_URL } from './testflight';
+import { resetTips } from './Tip';
 
-/** How to use the map, opened from the toolbar's "?" and shown once on a first visit. */
-export function Guide({ onClose }: { onClose: () => void }) {
+/** A few pages, each a picture and one line, opened from the toolbar's "?" and shown once on a first visit. */
+export function Guide({ dark, onClose }: { dark: boolean; onClose: () => void }) {
+  const [page, setPage] = useState(0);
+  const step = GUIDE[page];
+  const last = page === GUIDE.length - 1;
+
   return (
-    <aside className="legend guide" aria-label="How to use">
+    <aside
+      className="legend guide"
+      aria-label="How to use"
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowRight' && !last) setPage(page + 1);
+        if (e.key === 'ArrowLeft' && page > 0) setPage(page - 1);
+      }}
+    >
       <div className="sheet-handle" aria-hidden="true" />
       <header className="legend-header">
         <strong>How to use</strong>
+        {!last && (
+          <button className="link guide-skip" onClick={onClose}>
+            Skip
+          </button>
+        )}
         <CloseButton onClick={onClose} />
       </header>
-      <p className="muted small legend-hint">Live trains and buses across New York, wherever you zoom in.</p>
 
       <div className="legend-body">
-        {GUIDE.map((section) => (
-          <section key={section.title}>
-            <h3>{section.title}</h3>
-            <ul className="guide-points">
-              {section.points.map((point) => (
-                <li key={point}>{point}</li>
-              ))}
-            </ul>
-          </section>
-        ))}
-        <section className="guide-feedback">
-          <h3>iPhone app</h3>
-          <p className="muted small">The map is also a free iPhone and iPad app, NY Transit Live, on the App Store.</p>
-          <a className="chip guide-feedback-button" href={APP_STORE_URL} target="_blank" rel="noopener">
-            Get it on the App Store
-          </a>
-          <p className="muted small">
-            Want new features early? <a href={TESTFLIGHT_URL} target="_blank" rel="noopener">Join the beta</a> on your
-            iPhone; Apple's free TestFlight app installs it.
-          </p>
-        </section>
-        <section className="guide-feedback">
-          <h3>Feedback</h3>
-          <p className="muted small">Found a bug, or have an idea? Tell us; it opens an email that's ready to send.</p>
-          <a className="chip guide-feedback-button" href={feedbackMailto({ from: 'Website', device: navigator.userAgent })}>
-            Report a bug or send feedback
-          </a>
-          <p className="muted small">
-            No email app? Write to <a href={`mailto:${FEEDBACK_EMAIL}`}>{FEEDBACK_EMAIL}</a>.
-          </p>
-        </section>
-        {SUPPORT_URL && (
-          <section className="guide-feedback">
-            <h3>Support the map</h3>
-            <p className="muted small">
-              NY Transit Live is free, with no ads. If it helps your commute, a small tip keeps the live data running.
+        {/* Our own drawing, built from fixed shapes; nothing from outside goes into it. */}
+        <div className="guide-art" aria-hidden="true" dangerouslySetInnerHTML={{ __html: guideArt(page, dark) }} />
+        <h3 className="guide-title" aria-live="polite">
+          {step.title}
+        </h3>
+        <p className="guide-text">{step.text}</p>
+
+        <div className="guide-nav">
+          <button className="chip" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous">
+            ‹
+          </button>
+          <div className="guide-dots" role="tablist" aria-label="Pages">
+            {GUIDE.map((s, i) => (
+              <button
+                key={s.title}
+                role="tab"
+                aria-selected={i === page}
+                aria-label={`${i + 1}. ${s.title}`}
+                className={`guide-dot${i === page ? ' on' : ''}`}
+                onClick={() => setPage(i)}
+              />
+            ))}
+          </div>
+          <button className="chip guide-next" onClick={last ? onClose : () => setPage(page + 1)}>
+            {last ? 'Start' : 'Next'}
+          </button>
+        </div>
+
+        {last && (
+          <>
+            <p className="muted small guide-note">
+              {GUIDE_NOTE}{' '}
+              <button className="link" onClick={resetTips}>
+                Show them again
+              </button>
             </p>
-            <a className="chip guide-feedback-button guide-support-button" href={SUPPORT_URL} target="_blank" rel="noopener">
-              <span aria-hidden="true">♥</span> Support me
-            </a>
-          </section>
+            <div className="guide-more">
+              <a className="chip" href={APP_STORE_URL} target="_blank" rel="noopener">
+                Get the iPhone app
+              </a>
+              <a className="chip" href={feedbackMailto({ from: 'Website', device: navigator.userAgent })}>
+                Send feedback
+              </a>
+              {SUPPORT_URL && (
+                <a className="chip guide-support-button" href={SUPPORT_URL} target="_blank" rel="noopener">
+                  <span aria-hidden="true">♥</span> Support
+                </a>
+              )}
+            </div>
+            <p className="muted small guide-fine">
+              Free, with no ads. Want features early? <a href={TESTFLIGHT_URL} target="_blank" rel="noopener">Join the iPhone beta</a>.
+              No email app? Write to <a href={`mailto:${FEEDBACK_EMAIL}`}>{FEEDBACK_EMAIL}</a>.
+            </p>
+          </>
         )}
-        <button className="chip guide-done" onClick={onClose}>
-          Got it
-        </button>
       </div>
     </aside>
   );

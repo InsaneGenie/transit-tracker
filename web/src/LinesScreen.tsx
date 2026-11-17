@@ -1,3 +1,4 @@
+import { Tip } from './Tip';
 import { useMemo, useState } from 'react';
 import type { AlertSeverity, Mode, RouteInfo } from './api';
 import { CloseButton } from './CloseButton';
@@ -222,6 +223,7 @@ export function LinesScreen({ routes, chosen, hiddenRoutes, alertSummary, counts
             <>
               <ul className="line-chips">{mine.map(chip)}</ul>
               {pickedLine && details(pickedLine)}
+              <Tip id="myLines" />
             </>
           ) : (
             <p className="muted lines-empty">

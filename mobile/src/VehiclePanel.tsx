@@ -17,6 +17,7 @@ import { connectionHeading, connectionLines, connectionSummary, describeConnecti
 import { shareTitle, shareUrl, SITE_URL } from '../../web/src/share';
 import { AccessLine, WithAccess } from './AccessIcon';
 import { AlertList } from './AlertList';
+import { CoachRing, Tip } from './Tip';
 import type { ArrivalDirection, RouteInfo, ServiceAlert, Station, StopConnections, UpcomingStop, VehicleDetail } from './api';
 import type { LeaveControls } from '../../web/src/leaveAlert';
 import { BackButton } from './BackButton';
@@ -422,6 +423,7 @@ export function VehiclePanel({
               <Text style={[styles.followText, { color: following ? '#ffffff' : c.text }]}>
                 {following ? 'Following' : 'Follow'}
               </Text>
+              <CoachRing id="vehicle" radius={16} />
             </Pressable>
           </View>
         </View>
@@ -446,6 +448,7 @@ export function VehiclePanel({
       </View>
 
       <ScrollView style={styles.body}>
+        <Tip id="vehicle" dark={dark} />
         <AlertList alerts={alerts} routes={routes} dark={dark} />
 
         {station && (
@@ -480,6 +483,7 @@ export function VehiclePanel({
               )}
             </View>
             {widget && <WidgetButton widget={widget} dark={dark} />}
+            {leave && <Tip id="station" dark={dark} />}
             <Arrivals
               directions={arrivals}
               selectedId={vehicle.id}

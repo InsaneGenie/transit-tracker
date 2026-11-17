@@ -1,3 +1,4 @@
+import { Tip } from './Tip';
 import type { CSSProperties, Ref } from 'react';
 import { AccessIcon, AccessLine } from './AccessIcon';
 import { AlertList } from './AlertList';
@@ -88,6 +89,7 @@ export function LinePanel({ info, line, routes, station, arrivals, alerts, backL
               )}
             </div>
           </div>
+          {leave && <Tip id="station" />}
           <Arrivals directions={arrivals} noun={noun} leave={leave} onPick={onArrival} />
         </section>
       )}
